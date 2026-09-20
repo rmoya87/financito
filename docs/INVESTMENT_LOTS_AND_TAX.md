@@ -64,3 +64,31 @@ Permitir estimar:
 - liquidez resultante.
 
 No presentar una estimación fiscal como declaración oficial.
+
+
+## Acciones, ETF, fondos y cripto: seguimiento real
+
+Un activo puede estar:
+- **watching**: el usuario quiere seguirlo pero declara no poseerlo;
+- **owned**: existe una posición real construida desde operaciones de compra/venta.
+
+Al registrar una posición inicial se guardan cantidad, precio de compra, fecha, comisiones, divisa y FX de compra. No se crea una posición ficticia cuando el usuario selecciona “no lo tengo”.
+
+Para cada activo poseído Financito expone:
+- cantidad;
+- precio medio de compra;
+- coste base;
+- último precio real guardado;
+- valor actual;
+- P&L no realizado y porcentaje;
+- P&L realizado por lotes FIFO;
+- dividendos registrados;
+- resultado total registrado;
+- proveedor, timestamp y frescura del precio.
+
+Precios:
+- acciones/ETF/fondos con ticker: Alpha Vantage cuando está configurado;
+- cripto: CoinGecko mediante el ID del activo;
+- los precios se persisten localmente con proveedor/fecha;
+- la UI permite actualizar un activo o todos los precios obsoletos;
+- si no existe precio real, se muestra n/d y no se sustituye por el coste de compra como “precio actual”.
