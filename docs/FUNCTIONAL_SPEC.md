@@ -818,3 +818,26 @@ Financito no ejecuta automáticamente contrataciones, cancelaciones, transferenc
 El usuario debe poder abrir Financito sin Terminal.
 
 Un launcher/supervisor local debe iniciar API, workers, modelo y navegador, verificar integridad y recuperar jobs interrumpidos.
+
+## 41. Fuente de verdad y propagación entre dominios
+
+Las condiciones financieras particulares extraídas de documentación deben existir una sola vez como evidencia trazable.
+
+Reglas funcionales:
+- Contratos, Hipoteca y Seguros se editan desde el documento origen.
+- Un campo no reconocido se puede completar manualmente dentro del propio documento; queda marcado como introducido y confirmado por el usuario.
+- Una corrección documental se propaga a todas las áreas compatibles sin exigir volver a escribirla.
+- Seguros cruza primas y coberturas documentadas con movimientos bancarios, ingresos, ahorro, requisitos de cobertura, duplicidades y productos vinculados.
+- Un veredicto de seguros distingue `consistent`, `partial`, `review_required` e `insufficient_data`; la IA local solo explica el resultado determinista.
+- Simular reutiliza los datos actuales de liquidez, cashflow, cartera, contratos e hipoteca y separa siempre hechos de shocks hipotéticos.
+- Los registros antiguos sin documento asociado deben mostrarse como legacy y guiar al usuario para vincularlos, no presentarse como evidencia canónica.
+
+## 42. IA local verificable
+
+Configuración debe distinguir:
+- Ollama accesible;
+- modelo configurado presente;
+- generación real funcional;
+- modelo de embeddings funcional.
+
+La aplicación debe mostrar un diagnóstico legible y nunca interpretar los HEAD del frontend como llamadas al modelo.
