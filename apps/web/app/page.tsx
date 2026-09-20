@@ -50,9 +50,10 @@ function isoDate(value:Date){
 }
 
 function dashboardRange(range:DashboardRange,customStart:string,customEnd:string){
-  if(range==='custom')return {start:customStart,end:customEnd};
+  if(range==='custom'&&customStart&&customEnd)return {start:customStart,end:customEnd};
   const end=new Date();
   const start=new Date(end);
+  if(range==='custom')start.setDate(1);
   if(range==='month')start.setDate(1);
   if(range==='30d')start.setDate(start.getDate()-29);
   if(range==='90d')start.setDate(start.getDate()-89);
@@ -77,7 +78,7 @@ export default function DashboardPage(){
   const dashboard=useQuery({
     queryKey:['dashboard',range,dates.start,dates.end],
     queryFn:()=>apiGet<Dashboard>('/api/v1/dashboard?start='+dates.start+'&end='+dates.end),
-    enabled:range!=='custom'||Boolean(dates.start&&dates.end),
+    enabled:true,
   });
   const wealth=useQuery({queryKey:['wealth'],queryFn:()=>apiGet<Wealth>('/api/v1/wealth'),retry:false});
 
