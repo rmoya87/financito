@@ -81,3 +81,14 @@ Los flujos críticos que anteriormente podían degradar en HTTP 405 tienen prueb
 ## Semántica de ingresos y transferencias
 
 Las regresiones contables prueban que una `Nómina` positiva cuenta como ingreso incluso si una versión anterior dejó un flag interno de transferencia obsoleto. También se comprueba que el arranque repara ese flag, que el detector de transferencias no roba una nómina por coincidencia de importe y que Dashboard/cierre de mes/Fiscalidad mantienen el mismo criterio.
+
+
+## Evidencia multipdocumento y reglas por concepto
+
+Las regresiones cubren:
+
+- propagación de una categoría al mismo concepto en el histórico y en una importación futura;
+- autoagrupación de un segundo documento con una póliza existente mediante número de póliza;
+- validación conjunta: valores coherentes se confirman y valores contradictorios permanecen `conflicting` sin verificación automática;
+- exclusión de seguros e hipoteca del endpoint de contratos generales;
+- aceptación de intervalos explícitos en el Dashboard.
