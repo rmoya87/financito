@@ -206,16 +206,16 @@ def insurance_switching_context(session: Session) -> list[dict]:
     out = []
     for policy in policies:
         contract = session.get(Contract, policy.contract_id) if policy.contract_id else None
-        source_doc_id = None
+        source_doc_ids = []
         if contract:
-            link = session.scalar(select(EntityLink).where(
+            source_doc_ids = list(session.scalars(select(EntityLink.from_id).where(
                 EntityLink.from_type == "document",
                 EntityLink.relation_type == "evidence_for",
                 EntityLink.to_type == "contract",
                 EntityLink.to_id == contract.id,
-            ))
-            source_doc_id = link.from_id if link else None
-        facts = _confirmed_facts(session, [source_doc_id] if source_doc_id else [])
+            )).all())
+        facts = _confirmed_facts(session, source_doc_ids)
+        source_doc_id = source_doc_ids[0] if source_doc_ids else None
         out.append({
             "policy_id": policy.id,
             "insurance_type": policy.insurance_type,
@@ -228,6 +228,8 @@ def insurance_switching_context(session: Session) -> list[dict]:
             "exit_penalty": None if contract is None or contract.early_exit_penalty is None else str(contract.early_exit_penalty),
             "evidence_status": None if contract is None else contract.evidence_status,
             "source_document_id": source_doc_id,
+            "source_document_ids": source_doc_ids,
+            "document_count": len(source_doc_ids),
             "confirmed_facts": facts,
         })
     return out
