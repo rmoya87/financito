@@ -211,6 +211,7 @@ def _analyze_document_background(document_id:str)->None:
 
 
 @app.post("/api/v1/documents/upload")
+@app.put("/api/v1/documents/upload",include_in_schema=False)
 async def upload_documents(
     background_tasks:BackgroundTasks,
     files:list[UploadFile]=File(...),
@@ -539,7 +540,8 @@ if settings.frontend_dir.exists():
             return Response(status_code=200) if head else FileResponse(candidate)
         html=candidate/"index.html" if path else settings.frontend_dir/"index.html"
         if html.exists():
-            return Response(status_code=200,media_type="text/html") if head else FileResponse(html)
+            headers={"Cache-Control":"no-store, max-age=0"}
+            return Response(status_code=200,media_type="text/html",headers=headers) if head else FileResponse(html,headers=headers)
         fallback=settings.frontend_dir/"404.html"
         if fallback.exists():
             return Response(status_code=404,media_type="text/html") if head else FileResponse(fallback,status_code=404)
