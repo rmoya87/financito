@@ -212,7 +212,12 @@ def scan_public_market(session: Session) -> dict:
                 Decimal(str(min_tin)) / Decimal("100"),
                 mortgage.remaining_months,
             )
-            monthly_delta = (mortgage.monthly_payment - candidate.monthly_payment).quantize(Decimal("0.01"))
+            monthly_delta = (
+                current_scenario.monthly_payment - candidate.monthly_payment
+            ).quantize(Decimal("0.01"))
+            saved_payment_delta = (
+                mortgage.monthly_payment - candidate.monthly_payment
+            ).quantize(Decimal("0.01"))
             interest_delta = (
                 current_scenario.total_interest - candidate.total_interest
             ).quantize(Decimal("0.01")) if current_scenario is not None else None
@@ -223,6 +228,7 @@ def scan_public_market(session: Session) -> dict:
             scenario = {
                 "estimated_payment": str(candidate.monthly_payment),
                 "monthly_payment_difference": str(monthly_delta),
+                "saved_payment_difference": str(saved_payment_delta),
                 "remaining_interest_difference": None if interest_delta is None else str(interest_delta),
                 "known_exit_penalty": None if known_penalty is None else str(known_penalty),
                 "break_even_months_known_penalty_only": None if break_even is None else str(break_even),
