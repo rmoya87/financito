@@ -550,3 +550,59 @@ Puede reutilizar security/position, pero las métricas específicas viven en cry
 - created_at
 
 No almacenar secretos ni payloads sensibles completos.
+
+
+## Evidencia contractual
+
+### contract_fact
+- id
+- contract_id
+- fact_type
+- value_json
+- unit
+- confidence
+- status
+- effective_from
+- effective_to
+- source_document_id
+- source_page
+- source_section
+- source_chunk_id
+- extraction_method
+- user_verified
+- supersedes_fact_id
+
+status:
+- confirmed
+- inferred
+- not_found
+- ambiguous
+- conflicting
+- superseded
+
+### contract_formula
+- id
+- contract_fact_id
+- formula_type
+- base_type
+- percentage
+- fixed_amount
+- floor_amount
+- cap_amount
+- applicability_start
+- applicability_end
+- parameters_json
+
+### calculation_trace
+- id
+- calculation_type
+- engine_version
+- input_name
+- input_value_json
+- input_source_type
+- input_source_ref
+- formula
+- result_json
+- created_at
+
+Los traces materiales deben permitir reconstruir el cálculo y abrir la evidencia de origen.
