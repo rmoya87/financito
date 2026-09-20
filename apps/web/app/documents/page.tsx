@@ -15,13 +15,14 @@ type AnalysisResponse={document_id:string;status:'ready'|'not_analyzed';analysis
 type UploadResponse={documents:{id:string;file_name:string;document_type:string;facts_created:number;chunks_created:number}[];ai_analysis_scheduled:boolean};
 type Fact={id:string;fact_type:string;key:string;value:{value:string;unit?:string;coverage_type?:string;limit_amount?:string|null;deductible?:string|null;conditions?:string;exclusions?:string;source?:string};confidence:string;status:string;source_page:number|null;source_section:string|null;user_verified:boolean};
 
-const MATERIAL_FACT_TYPES=new Set(['contract_term','mortgage_term','linked_product','coverage_fact']);
+const MATERIAL_FACT_TYPES=new Set(['contract_term','mortgage_term','linked_product','coverage_fact','investment_term']);
 
 export default function DocumentsPage(){
   const qc=useQueryClient();
   const [path,setPath]=useState('');
   const [selected,setSelected]=useState<string|null>(null);
   const [dragging,setDragging]=useState(false);
+  const [manualFact,setManualFact]=useState({fact_type:'contract_term',key:'',value:'',unit:'',coverage_type:'',limit_amount:'',deductible:'',conditions:'',exclusions:'',source_page:''});
   const fileInput=useRef<HTMLInputElement|null>(null);
 
   useEffect(()=>{
@@ -54,6 +55,15 @@ export default function DocumentsPage(){
     qc.invalidateQueries({queryKey:['dashboard']});
     qc.invalidateQueries({queryKey:['contracts']});
     qc.invalidateQueries({queryKey:['insurance']});
+    qc.invalidateQueries({queryKey:['coverage']});
+    qc.invalidateQueries({queryKey:['coverage-gaps']});
+    qc.invalidateQueries({queryKey:['coverage-overlaps']});
+    qc.invalidateQueries({queryKey:['mortgages']});
+    qc.invalidateQueries({queryKey:['wealth']});
+    qc.invalidateQueries({queryKey:['portfolios']});
+    qc.invalidateQueries({queryKey:['tracked-assets']});
+    qc.invalidateQueries({queryKey:['tax-profile']});
+    qc.invalidateQueries({queryKey:['decisions']});
     qc.invalidateQueries({queryKey:['document-insights']});
     qc.invalidateQueries({queryKey:['document-analysis',selected]});
   };
@@ -98,6 +108,27 @@ export default function DocumentsPage(){
   const update=useMutation({
     mutationFn:({id,status}:{id:string;status:string})=>apiMutate('/api/v1/facts/'+id,'PATCH',{status,user_verified:true}),
     onSuccess:invalidateEvidence,
+  });
+  const addManualFact=useMutation({
+    mutationFn:()=>{
+      if(!selected)throw new Error('Selecciona un documento');
+      return apiMutate('/api/v1/documents/'+selected+'/facts','POST',{
+        fact_type:manualFact.fact_type,
+        key:manualFact.key.trim(),
+        value:manualFact.value.trim(),
+        unit:manualFact.unit.trim()||null,
+        coverage_type:manualFact.coverage_type.trim()||null,
+        limit_amount:manualFact.limit_amount.trim()||null,
+        deductible:manualFact.deductible.trim()||null,
+        conditions:manualFact.conditions.trim()||null,
+        exclusions:manualFact.exclusions.trim()||null,
+        source_page:manualFact.source_page?Number(manualFact.source_page):null,
+      });
+    },
+    onSuccess:()=>{
+      setManualFact({...manualFact,key:'',value:'',unit:'',coverage_type:'',limit_amount:'',deductible:'',conditions:'',exclusions:'',source_page:''});
+      invalidateEvidence();
+    },
   });
 
   function submit(e:FormEvent){
@@ -263,6 +294,35 @@ export default function DocumentsPage(){
               <InsightGroup title="Información que falta" items={analysis.data.analysis.missing_information}/>
             </div>
           </div>:<div className="mt-3 text-sm text-[var(--muted)]">{analysis.data?.ai.available&&analysis.data.ai.configured_model?'El documento está indexado y el análisis automático todavía no ha terminado.':'El documento está indexado. Configura y arranca la IA local para obtener el análisis interpretativo.'}</div>}
+        </div>}
+
+        {selected&&<div className="mt-4 rounded-xl border border-[var(--border)] p-4">
+          <h3 className="font-semibold">Completar un dato que no se haya reconocido</h3>
+          <p className="mt-1 text-xs text-[var(--muted)]">El dato se guarda como evidencia confirmada dentro de este mismo documento. No crea una segunda fuente paralela: contratos, hipoteca, seguros, inversiones, decisiones y simulaciones reutilizan esta evidencia cuando corresponda.</p>
+          <form className="mt-3 grid gap-2 md:grid-cols-2" onSubmit={e=>{e.preventDefault();addManualFact.mutate()}}>
+            <select className="fin-input" aria-label="Tipo de dato documental" value={manualFact.fact_type} onChange={e=>setManualFact({...manualFact,fact_type:e.target.value})}>
+              <option value="contract_term">Dato de contrato / póliza</option>
+              <option value="mortgage_term">Dato de hipoteca</option>
+              <option value="coverage_fact">Cobertura de seguro</option>
+              <option value="linked_product">Producto vinculado</option>
+              <option value="investment_term">Dato de inversión</option>
+            </select>
+            <input className="fin-input" placeholder="Campo, ej. annual_cost o deductible" value={manualFact.key} onChange={e=>setManualFact({...manualFact,key:e.target.value})} required/>
+            {manualFact.fact_type==='coverage_fact'?<>
+              <input className="fin-input" placeholder="Cobertura, ej. daños por agua" value={manualFact.coverage_type} onChange={e=>setManualFact({...manualFact,coverage_type:e.target.value,value:e.target.value})} required/>
+              <input className="fin-input" placeholder="Límite (€), si consta" value={manualFact.limit_amount} onChange={e=>setManualFact({...manualFact,limit_amount:e.target.value})}/>
+              <input className="fin-input" placeholder="Franquicia (€), si consta" value={manualFact.deductible} onChange={e=>setManualFact({...manualFact,deductible:e.target.value})}/>
+              <input className="fin-input" placeholder="Condiciones" value={manualFact.conditions} onChange={e=>setManualFact({...manualFact,conditions:e.target.value})}/>
+              <input className="fin-input md:col-span-2" placeholder="Exclusiones" value={manualFact.exclusions} onChange={e=>setManualFact({...manualFact,exclusions:e.target.value})}/>
+            </>:<>
+              <input className="fin-input" placeholder="Valor" value={manualFact.value} onChange={e=>setManualFact({...manualFact,value:e.target.value})} required/>
+              <input className="fin-input" placeholder="Unidad opcional, ej. €, %, días" value={manualFact.unit} onChange={e=>setManualFact({...manualFact,unit:e.target.value})}/>
+            </>}
+            <input className="fin-input" type="number" min="1" placeholder="Página de origen (opcional)" value={manualFact.source_page} onChange={e=>setManualFact({...manualFact,source_page:e.target.value})}/>
+            <button className="fin-button" disabled={addManualFact.isPending}>{addManualFact.isPending?'Guardando…':'Guardar como dato confirmado'}</button>
+          </form>
+          {addManualFact.error&&<div className="mt-3"><ErrorState error={addManualFact.error}/></div>}
+          <div className="mt-2 text-[11px] text-[var(--muted)]">Claves habituales: provider_name, annual_cost, monthly_cost, renewal_date, cancellation_notice_days, early_exit_penalty, insurance_type, deductible, remaining_principal, nominal_rate, monthly_payment, remaining_months, interest_type, early_repayment_fee.</div>
         </div>}
 
         <div className="mt-4 space-y-3">
