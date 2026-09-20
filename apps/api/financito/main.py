@@ -6,7 +6,7 @@ from decimal import Decimal
 import json
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, Response, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import and_, func, select
@@ -29,8 +29,9 @@ from .routes_privacy import router as privacy_router
 from .routes_observability import router as observability_router
 from .services.vault_watcher import VaultWatcher
 from .services.categorization import ensure_categories,propagate_verified_merchant
-from .services.documents import index_document,reprocess_document,safe_path
+from .services.documents import index_document,reprocess_document,safe_path,store_uploaded_document
 from .services.evidence import review_summary,synchronize_all_document_evidence,synchronize_document_evidence
+from .services.document_ai import analyze_document_by_id,domain_insights,latest_analysis
 from .services.forecast import forecast
 from .services.month_end import month_end_projection
 from .services.imports import import_csv
@@ -178,6 +179,74 @@ def calculate_month_end_forecast(as_of:date|None=None,db:Session=Depends(get_db)
     return month_end_projection(db,as_of)
 
 
+def _analyze_document_background(document_id:str)->None:
+    with SessionLocal() as db:
+        try:
+            result=analyze_document_by_id(db,document_id)
+            db.add(AuditEvent(
+                event_type="document_ai_analyzed",
+                entity_type="document",
+                entity_id=document_id,
+                metadata_json=json.dumps({"status":result.get("status")}),
+            ))
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            try:
+                db.add(AuditEvent(
+                    event_type="document_ai_analysis_failed",
+                    entity_type="document",
+                    entity_id=document_id,
+                    metadata_json=json.dumps({"error":str(exc)[:500]}),
+                ))
+                db.commit()
+            except Exception:
+                db.rollback()
+
+
+@app.post("/api/v1/documents/upload")
+async def upload_documents(
+    background_tasks:BackgroundTasks,
+    files:list[UploadFile]=File(...),
+    document_type:str=Form("unknown"),
+    db:Session=Depends(get_db),
+):
+    if not files:
+        raise HTTPException(400,"No documents supplied")
+    uploaded=[]
+    for file in files[:20]:
+        content=await file.read()
+        try:
+            stored=store_uploaded_document(file.filename or "documento",content)
+            indexed=index_document(db,str(stored),document_type)
+            actual=Path(indexed.document.file_path).resolve()
+            if actual!=stored.resolve():
+                stored.unlink(missing_ok=True)
+        except ValueError as exc:
+            db.rollback()
+            raise HTTPException(400,f"{file.filename or 'documento'}: {exc}")
+        except Exception:
+            db.rollback()
+            raise
+        db.add(AuditEvent(
+            event_type="document_uploaded",
+            entity_type="document",
+            entity_id=indexed.document.id,
+            metadata_json=json.dumps({"file_name":indexed.document.file_name}),
+        ))
+        uploaded.append({
+            "id":indexed.document.id,
+            "file_name":indexed.document.file_name,
+            "document_type":indexed.document.document_type,
+            "facts_created":indexed.facts_created,
+            "chunks_created":indexed.chunks_created,
+        })
+    db.commit()
+    for item in uploaded:
+        background_tasks.add_task(_analyze_document_background,item["id"])
+    return {"documents":uploaded,"ai_analysis_scheduled":True}
+
+
 @app.post("/api/v1/documents/index")
 def index_doc(payload:DocumentIndexRequest,db:Session=Depends(get_db)):
     try: indexed=index_document(db,payload.path,payload.document_type)
@@ -198,6 +267,7 @@ def documents(db:Session=Depends(get_db)):
             "status":r.status,
             "page_count":r.page_count,
             "review":review_summary(db,r.id),
+            "ai_analysis":"ready" if latest_analysis(db,r.id) is not None else "not_analyzed",
         }
         for r in rows
     ]
@@ -207,6 +277,44 @@ def documents(db:Session=Depends(get_db)):
 def document_facts(document_id:str,db:Session=Depends(get_db)):
     rows=db.scalars(select(ExtractedFact).where(ExtractedFact.document_id==document_id)).all()
     return [{"id":r.id,"fact_type":r.fact_type,"key":r.key,"value":json.loads(r.value_json),"confidence":str(r.confidence),"status":r.status,"source_page":r.source_page,"source_section":r.source_section,"user_verified":r.user_verified} for r in rows]
+
+
+@app.get("/api/v1/documents/{document_id}/analysis")
+def document_analysis(document_id:str,db:Session=Depends(get_db)):
+    row=db.get(Document,document_id)
+    if not row: raise HTTPException(404,"Document not found")
+    analysis=latest_analysis(db,document_id)
+    return {
+        "document_id":document_id,
+        "status":"ready" if analysis is not None else "not_analyzed",
+        "analysis":analysis,
+        "ai":ai_status(),
+    }
+
+
+@app.post("/api/v1/documents/{document_id}/analyze")
+def analyze_document_now(document_id:str,db:Session=Depends(get_db)):
+    row=db.get(Document,document_id)
+    if not row: raise HTTPException(404,"Document not found")
+    try:
+        result=analyze_document_by_id(db,document_id)
+    except ValueError as exc:
+        raise HTTPException(404,str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(503,str(exc))
+    db.add(AuditEvent(
+        event_type="document_ai_analyzed",
+        entity_type="document",
+        entity_id=document_id,
+        metadata_json=json.dumps({"status":result.get("status")}),
+    ))
+    db.commit()
+    return result
+
+
+@app.get("/api/v1/document-insights")
+def document_insights(document_type:str|None=None,db:Session=Depends(get_db)):
+    return domain_insights(db,document_type)
 
 
 @app.post("/api/v1/documents/{document_id}/reprocess")
