@@ -213,3 +213,51 @@ class MortgageRatePathEngine:
             final_balance=money(balance),
             segments=tuple(segments),
         )
+
+
+@dataclass(frozen=True)
+class MortgageIndexedPathResult:
+    status:str
+    missing_revision_months:tuple[int,...]
+    applied_rate_steps:tuple[tuple[int,Decimal],...]
+    path:MortgageRatePathResult|None
+
+class MortgageIndexedRateEngine:
+    """Variable/mixed path from explicit contractual revision observations only."""
+    @staticmethod
+    def simulate(principal:Decimal,months:int,interest_type:str,revision_frequency_months:int,index_curve:list[tuple[int,Decimal]],spread:Decimal=Decimal("0"),fixed_period_months:int=0,fixed_annual_rate:Decimal|None=None,floor_rate:Decimal|None=None,cap_rate:Decimal|None=None)->MortgageIndexedPathResult:
+        kind=interest_type.strip().lower()
+        if kind not in {"variable","mixed"}:raise ValueError("interest_type must be variable or mixed")
+        if principal<=0 or months<=0 or revision_frequency_months<=0:raise ValueError("Invalid indexed mortgage inputs")
+        if floor_rate is not None and floor_rate<0:raise ValueError("floor_rate cannot be negative")
+        if cap_rate is not None and cap_rate<0:raise ValueError("cap_rate cannot be negative")
+        if floor_rate is not None and cap_rate is not None and floor_rate>cap_rate:raise ValueError("floor_rate cannot exceed cap_rate")
+        if kind=="mixed":
+            if fixed_period_months<=0 or fixed_period_months>=months:raise ValueError("mixed mortgage requires a fixed period inside the remaining term")
+            if fixed_annual_rate is None or fixed_annual_rate<0:raise ValueError("mixed mortgage requires fixed_annual_rate")
+            variable_start=fixed_period_months+1
+        else:
+            if fixed_period_months:raise ValueError("fixed_period_months only applies to mixed mortgages")
+            variable_start=1
+        curve={}
+        for month,index_rate in index_curve:
+            month=int(month);index_rate=Decimal(index_rate)
+            if month<1 or month>months:raise ValueError("Index curve month outside mortgage term")
+            if month in curve:raise ValueError("Duplicate index curve month")
+            curve[month]=index_rate
+        required=tuple(range(variable_start,months+1,revision_frequency_months))
+        missing=tuple(month for month in required if month not in curve)
+        if missing:return MortgageIndexedPathResult("needs_more_data",missing,(),None)
+        applied=[]
+        for month in required:
+            annual=curve[month]+spread
+            if floor_rate is not None:annual=max(annual,floor_rate)
+            if cap_rate is not None:annual=min(annual,cap_rate)
+            if annual<0:raise ValueError("Resulting annual rate cannot be negative")
+            applied.append((month,annual))
+        if kind=="mixed":
+            initial=fixed_annual_rate;steps=applied
+        else:
+            initial=applied[0][1];steps=applied[1:]
+        path=MortgageRatePathEngine.simulate(principal,months,initial,steps)
+        return MortgageIndexedPathResult("ready",(),tuple(applied),path)
