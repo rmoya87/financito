@@ -298,7 +298,7 @@ def _ensure_coverage_projection(
     contract: Contract | None,
     policy: InsurancePolicy | None,
 ) -> int:
-    if document.document_type != "insurance" or policy is None:
+    if document.document_type != "insurance" or (contract is None and policy is None):
         return 0
 
     rows = session.scalars(
@@ -311,10 +311,7 @@ def _ensure_coverage_projection(
     ).all()
 
     session.execute(
-        delete(CoverageFact).where(
-            CoverageFact.source_document_id == document.id,
-            CoverageFact.insurance_policy_id == policy.id,
-        )
+        delete(CoverageFact).where(CoverageFact.source_document_id == document.id)
     )
 
     created = 0
@@ -330,7 +327,7 @@ def _ensure_coverage_projection(
         session.add(
             CoverageFact(
                 contract_id=None if contract is None else contract.id,
-                insurance_policy_id=policy.id,
+                insurance_policy_id=None if policy is None else policy.id,
                 coverage_type=coverage_type[:100],
                 limit_amount=limit_amount,
                 deductible=deductible,
