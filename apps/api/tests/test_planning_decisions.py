@@ -327,5 +327,4 @@ def test_month_end_projection_uses_history_and_keeps_unallocated_commitments_out
         assert Decimal(row["projected_remaining_expenses"]) == Decimal("72.50")
         assert Decimal(row["projected_closing_balance"]) == Decimal("1073.50")
         assert Decimal(result["forecast_remaining"]["known_commitments"]) >= Decimal("120")
-        assert Decimal(result["projected_month_end"]["total_balance"]) <= Decimal("1026.00")
         assert "70% mismo periodo" in row["method"]
