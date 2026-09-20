@@ -66,7 +66,9 @@ def insurance_verdict(session:Session,use_ai:bool=True)->dict:
         EntityLink.relation_type=="evidence_for",
         EntityLink.to_type=="insurance_policy",
     )).all()
-    source_by_policy={link.to_id:link.from_id for link in source_links}
+    source_by_policy:dict[str,list[str]]={}
+    for link in source_links:
+        source_by_policy.setdefault(link.to_id,[]).append(link.from_id)
 
     overlaps=scan_coverage_overlaps(session)
     gaps,covered=_coverage_gaps(session,policies)
@@ -96,7 +98,8 @@ def insurance_verdict(session:Session,use_ai:bool=True)->dict:
     policy_rows=[];missing=[]
     for policy in policies_list:
         contract=contracts.get(policy.contract_id or "")
-        document_id=source_by_policy.get(policy.id)
+        document_ids=source_by_policy.get(policy.id,[])
+        document_id=document_ids[0] if document_ids else None
         document=documents.get(document_id or "")
         row_coverage=[f for f in coverage if f.insurance_policy_id==policy.id]
         if document_id is None:
@@ -118,6 +121,8 @@ def insurance_verdict(session:Session,use_ai:bool=True)->dict:
             "deductible":_d(policy.deductible),
             "source_document_id":document_id,
             "source_document_name":None if document is None else document.file_name,
+            "source_document_ids":document_ids,
+            "source_documents":[{"id":doc_id,"file_name":documents[doc_id].file_name} for doc_id in document_ids if doc_id in documents],
             "contract":None if contract is None else {
                 "provider_name":contract.provider_name,
                 "renewal_date":None if contract.renewal_date is None else str(contract.renewal_date),
@@ -134,7 +139,7 @@ def insurance_verdict(session:Session,use_ai:bool=True)->dict:
 
     # Insurance documents that cannot yet project to a policy are first-class missing data.
     insurance_docs=[d for d in documents.values() if d.document_type=="insurance"]
-    projected_doc_ids=set(source_by_policy.values())
+    projected_doc_ids={doc_id for ids in source_by_policy.values() for doc_id in ids}
     for document in insurance_docs:
         if document.id not in projected_doc_ids:
             missing.append({"field":"annual_cost","label":"Prima/coste de la póliza","policy_id":None,"document_id":document.id,"why":"Este documento no ha podido generar una póliza porque falta un coste confirmado. Complétalo en Documentos."})
