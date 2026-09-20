@@ -45,7 +45,7 @@ SOURCES = (
     {
         "id": "openbank_fixed",
         "provider": "Openbank",
-        "kind": "mortgage_subrogation",
+        "kind": "mortgage_public_benchmark",
         "url": "https://www.openbank.es/hipoteca-fija",
     },
     {
@@ -70,7 +70,25 @@ SOURCES = (
         "id": "axa_home",
         "provider": "AXA",
         "kind": "home_insurance",
-        "url": "https://www.axa.es/seguros-hogar",
+        "url": "https://www.axa.es/es",
+    },
+    {
+        "id": "mapfre_life_mortgage",
+        "provider": "MAPFRE",
+        "kind": "mortgage_life_insurance",
+        "url": "https://www.mapfre.es/particulares/seguros-de-vida/seguro-amortizacion-hipoteca/",
+    },
+    {
+        "id": "allianz_life_financial",
+        "provider": "Allianz",
+        "kind": "mortgage_life_insurance",
+        "url": "https://www.allianz.es/seguros-vida/seguro-vida-proteccion-financiera.html",
+    },
+    {
+        "id": "axa_life",
+        "provider": "AXA",
+        "kind": "life_insurance",
+        "url": "https://www.axa.es/es",
     },
 )
 
