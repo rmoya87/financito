@@ -69,3 +69,14 @@ def provider_status()->dict:
         "coingecko":{"demo_key":bool(get_secret("coingecko_demo_key"))},
         "sec":{"user_agent":bool(get_secret("sec_user_agent"))},
     }
+
+
+def clear_all_secrets()->list[str]:
+    cleared=[]
+    for name in _KEYS:
+        try:
+            set_secret(name,None)
+            cleared.append(name)
+        except RuntimeError:
+            continue
+    return cleared

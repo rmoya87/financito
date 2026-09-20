@@ -25,6 +25,7 @@ from .routes_analytics import router as analytics_router
 from .routes_transactions import router as transactions_router
 from .routes_domain import router as domain_router
 from .routes_config import router as config_router
+from .routes_privacy import router as privacy_router
 from .services.vault_watcher import VaultWatcher
 from .services.categorization import ensure_categories
 from .services.documents import index_document,reprocess_document,safe_path
@@ -54,6 +55,7 @@ app.include_router(analytics_router)
 app.include_router(transactions_router)
 app.include_router(domain_router)
 app.include_router(config_router)
+app.include_router(privacy_router)
 
 
 def get_db():
