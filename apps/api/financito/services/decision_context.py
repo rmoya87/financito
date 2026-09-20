@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -10,6 +10,7 @@ from ..models import Account, Contract, Mortgage, Portfolio
 from .investment_tracking import tracked_assets
 from .wealth import summary as wealth_summary
 from .evidence import structured_evidence_context
+from .financial_analytics import cash_flow
 from ..domain.portfolio import portfolio_summary
 
 
@@ -64,10 +65,33 @@ def live_decision_context(session: Session) -> dict:
         for row in session.scalars(select(Account)).all()
     ]
     liquidity = sum((row.current_balance for row in session.scalars(select(Account)).all()), Decimal("0"))
+    today=date.today()
+    month_flow=cash_flow(session,today.replace(day=1),today)
+    trailing_start=today-timedelta(days=89)
+    trailing_flow=cash_flow(session,trailing_start,today)
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "real_data_only": True,
         "liquidity": str(liquidity),
+        "cash_flow_current_month":{
+            "start":str(today.replace(day=1)),
+            "end":str(today),
+            "income":str(month_flow["income"]),
+            "expenses":str(month_flow["expenses"]),
+            "savings":str(month_flow["savings"]),
+            "savings_rate":None if month_flow["savings_rate"] is None else str(month_flow["savings_rate"]),
+        },
+        "cash_flow_last_90_days":{
+            "start":str(trailing_start),
+            "end":str(today),
+            "income":str(trailing_flow["income"]),
+            "expenses":str(trailing_flow["expenses"]),
+            "savings":str(trailing_flow["savings"]),
+            "savings_rate":None if trailing_flow["savings_rate"] is None else str(trailing_flow["savings_rate"]),
+            "average_monthly_income":str((trailing_flow["income"]/Decimal("3")).quantize(Decimal("0.01"))),
+            "average_monthly_expenses":str((trailing_flow["expenses"]/Decimal("3")).quantize(Decimal("0.01"))),
+            "average_monthly_savings":str((trailing_flow["savings"]/Decimal("3")).quantize(Decimal("0.01"))),
+        },
         "wealth": wealth_summary(session),
         "accounts": accounts,
         "mortgages": mortgages,
@@ -78,6 +102,7 @@ def live_decision_context(session: Session) -> dict:
         "rules": [
             "Los cálculos deterministas usan registros guardados en Financito; no valores de ejemplo.",
             "Los precios de mercado se identifican con proveedor y fecha. Si falta precio real, el valor se marca como no disponible.",
+            "Ingresos, gastos y ahorro proceden de movimientos reales, excluyendo transferencias internas y tratando reembolsos como reducción de gasto.",
             "La senda de tipos y las alternativas futuras son supuestos explícitos; el punto de partida hipotecario procede de la hipoteca guardada.",
             "La evidencia documental inferida no sustituye a un dato confirmado por el usuario.",
         ],
