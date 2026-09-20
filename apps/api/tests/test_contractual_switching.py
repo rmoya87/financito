@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from financito.db import SessionLocal
 from financito.models import Document, ExtractedFact, Mortgage
+from financito.models_analytics import EntityLink
 from financito.services.contractual_costs import (
     linked_product_rate_impacts,
     resolve_prepayment_penalty,
@@ -26,7 +27,7 @@ def _mortgage(db):
     db.add(row);db.flush();return row
 
 
-def _mortgage_doc(db, facts):
+def _mortgage_doc(db, mortgage, facts):
     suffix=uuid4().hex
     doc=Document(
         file_path=f"/tmp/{suffix}.pdf",
@@ -39,6 +40,16 @@ def _mortgage_doc(db, facts):
         extracted_text="test",
     )
     db.add(doc);db.flush()
+    db.add(EntityLink(
+        from_type="document",
+        from_id=doc.id,
+        relation_type="evidence_for",
+        to_type="mortgage",
+        to_id=mortgage.id,
+        confidence=Decimal("1"),
+        source_type="test",
+        source_ref=doc.id,
+    ))
     for key,value in facts.items():
         db.add(ExtractedFact(
             document_id=doc.id,
@@ -57,7 +68,7 @@ def _mortgage_doc(db, facts):
 def test_prepayment_percentage_uses_actual_extra_payment():
     with SessionLocal() as db:
         mortgage=_mortgage(db)
-        _mortgage_doc(db,{"early_repayment_fee_percent":"0.25"})
+        _mortgage_doc(db,mortgage,{"early_repayment_fee_percent":"0.25"})
         result=resolve_prepayment_penalty(db,mortgage,Decimal("12000"))
         assert result["status"]=="confirmed_formula"
         assert result["amount"]==Decimal("30.00")
@@ -68,7 +79,7 @@ def test_prepayment_percentage_uses_actual_extra_payment():
 def test_subrogation_percentage_uses_current_remaining_principal():
     with SessionLocal() as db:
         mortgage=_mortgage(db)
-        _mortgage_doc(db,{"subrogation_fee_percent":"0.50"})
+        _mortgage_doc(db,mortgage,{"subrogation_fee_percent":"0.50"})
         result=resolve_subrogation_penalty(db,mortgage)
         assert result["status"]=="confirmed_formula"
         assert result["amount"]==Decimal("500.00")
@@ -116,7 +127,7 @@ def test_extracts_and_prices_loss_of_home_insurance_bonus():
 
     with SessionLocal() as db:
         mortgage=_mortgage(db)
-        _mortgage_doc(db,{"linked_home_insurance_rate_penalty_pp":"0.10"})
+        _mortgage_doc(db,mortgage,{"linked_home_insurance_rate_penalty_pp":"0.10"})
         impacts=linked_product_rate_impacts(db,mortgage)
         home=next(x for x in impacts if x["product"]=="home_insurance")
         assert Decimal(home["monthly_payment_increase"])>Decimal("0")
