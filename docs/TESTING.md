@@ -92,3 +92,15 @@ Las regresiones cubren:
 - validación conjunta: valores coherentes se confirman y valores contradictorios permanecen `conflicting` sin verificación automática;
 - exclusión de seguros e hipoteca del endpoint de contratos generales;
 - aceptación de intervalos explícitos en el Dashboard.
+
+
+## Casa e hipoteca
+
+Las regresiones cubren:
+- perfil hipotecario ampliado y campos editables;
+- valor de vivienda, equity y LTV;
+- persistencia de TAE, índice, diferencial, revisión y comisiones;
+- comparación de cuota a mismo capital/plazo frente a un TIN público simulado sin depender de red;
+- cálculo del punto de equilibrio parcial solo cuando existe un coste de salida conocido.
+
+La comparación de mercado se prueba con fuentes simuladas en tests para que CI no dependa de sitios externos.
