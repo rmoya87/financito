@@ -13,6 +13,7 @@ from ..models_extended import DocumentChunk,MarketPrice,NewsItem,RepairIssue
 from ..models_analytics import BankingAccountLink,BankingConnection
 from .local_ai import status as ai_status
 from .secure_config import provider_status
+from .runtime_metrics import snapshot as runtime_metrics
 
 
 def _aware(value:datetime|None)->datetime|None:
@@ -77,6 +78,7 @@ def snapshot(session:Session)->dict:
         },
         "ai":ai_status(),
         "providers":provider_status(),
+        "request_metrics":runtime_metrics(),
         "provenance":{
             "banking":"Enable Banking -> normalized local Account/Transaction",
             "market":"Alpha Vantage observations persisted in market_price",
