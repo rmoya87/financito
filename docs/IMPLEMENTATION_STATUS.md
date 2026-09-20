@@ -3,104 +3,59 @@
 Fecha de corte: **2026-09-20**.  
 Schema actual: **v5**.
 
-Este documento describe únicamente comportamiento ejecutable en `main`. Los planes futuros viven en `ROADMAP.md`.
+Este documento describe comportamiento ejecutable. Los evolutivos viven en [ROADMAP.md](ROADMAP.md).
 
-## Implementado y verificable
+## Cierre de los puntos avanzados
 
-### Runtime, seguridad y privacidad
-- FastAPI solo en loopback, validación Host/Origin, sesión local HttpOnly y CSRF.
-- CSP y cabeceras defensivas.
-- SQLCipher en runtime estable; la clave se obtiene de entorno explícito o Keychain y se crea en Keychain si no existe.
-- Modo SQLite sin cifrar bloqueado salvo `FINANCITO_ALLOW_PLAINTEXT_SQLITE=1`.
-- secretos de providers mediante keyring; la API solo devuelve estado configurado/no configurado.
-- Vault con path canónico, rechazo de symlinks y límites de tamaño/páginas.
-- borrado de datos de Financito sin borrar silenciosamente los originales externos del Vault.
-- audit log local.
+### Fiscalidad versionada
+- motor independiente del LLM;
+- rulesets por jurisdicción/año;
+- ES 2025 y ES 2026 con escala del ahorro 19/21/23/27/30;
+- integración corriente de rendimientos del capital mobiliario y ganancias/pérdidas patrimoniales con límite cruzado del 25 % y arrastre documentado de 4 años;
+- fuentes BOE/AEAT y fecha de verificación;
+- Tax Center usa el ruleset automáticamente cuando existe y mantiene la tasa manual solo como simulación explícita;
+- no consume pérdidas históricas no registradas ni se presenta como declaración completa.
 
-### Movimientos y analítica
-- CSV y formatos bancarios estructurados: XLSX/XLSM, QIF, OFX, CAMT/XML y MT940/STA.
-- deduplicación, normalización, categorías, reglas, corrección manual auditable y review queue.
-- splits exactos, transferencias internas y reembolsos.
-- reembolsos netean gasto y no inflan ingresos en Dashboard, Analytics, Forecast/Stress y Chat.
-- recurrentes y anomalías.
-- presupuestos y compromisos.
-- análisis por categoría/comercio, fijo-variable, esencial-discrecional y series mensuales.
-- forecast con baseline comparable, accuracy histórica y Calendar.
-- stress testing y cash runway.
+### FEIN/FIAE e hipotecas
+- extracción hipotecaria por página/contexto y revisión humana;
+- capital, cuota, TIN/TAE, índice, diferencial, plazo, frecuencia, apertura, reembolso, tramo fijo, suelo/techo, subrogación, novación y vinculaciones;
+- fórmula estructurada de comisión de reembolso cuando aparece porcentaje + primeros N años;
+- senda libre de tipos y senda contractual indexada;
+- variable/mixta con diferencial, revisiones, tramo fijo, suelo y techo;
+- si falta el índice de una revisión contractual el cálculo queda en `needs_more_data`, sin interpolación ni predicción.
 
-### Banking
-- Enable Banking adapter de solo lectura.
-- listado de ASPSPs e inicio de autorización.
-- intercambio de código por sesión persistida.
-- mapeo provider-account -> cuenta local por `identification_hash`.
-- balances, transacciones paginadas y deduplicación por referencia estable.
-- sync explícita, revocación y estado.
-- Action Item cuando el consentimiento está a 14 días o menos de expirar.
-- no se exponen endpoints públicos de sesión/balances/transacciones crudos.
+### Comparación comercial
+- `CommercialComparisonProvider` define el contrato para adapters externos;
+- matriz de comparación exige procedencia, frescura, campos requeridos y divisa/categoría compatibles;
+- una condición desconocida nunca se interpreta como cero;
+- adapters en vivo solo se activan al elegir una fuente autorizada concreta.
 
-### Documentos y RAG
-- watcher de Vault.
-- PDF, TXT, CSV, JSON, DOCX, XLSX/XLSM, PNG/JPEG/HEIC/TIFF/BMP.
-- SHA-256, deduplicación, OCR, detección ES/EN y clasificación conservadora.
-- hechos contractuales con página y contexto; confirmación humana persistente.
-- FTS5/BM25 + embeddings locales opcionales + sqlite-vec/fallback cosine.
-- fusión Reciprocal Rank Fusion y reranking léxico.
-- búsqueda global y citas que abren documento/página.
-- reindexado y reconstrucción de derivados conservando evidencia verificada.
+### Playwright y accesibilidad
+- E2E forma parte de CI;
+- journeys: onboarding, navegación, importación, Vault/cita, banking mock, decisiones y backup/restore;
+- axe cubre WCAG 2.0/2.1/2.2 A+AA en rutas principales;
+- test de skip link/foco/aria-current y reflow a 320 px;
+- foco visible, contraste secundario AA, navegación accesible y reduced motion;
+- auditoría formal interna en [WCAG_AA_AUDIT.md](WCAG_AA_AUDIT.md).
 
-### Patrimonio, inversiones y mercado
-- activos y pasivos manuales, net worth y ownership.
-- portfolios, securities, trades y FIFO tax lots.
-- P&L realizado/no realizado.
-- Alpha Vantage: quote e histórico bajo demanda y caché local.
-- exposición por activo/clase y concentración HHI.
-- risk metrics desde históricos.
-- CoinGecko: precio y métricas de riesgo.
-- SEC EDGAR, ECB y GDELT adapters.
-- backtest MA y escenario amortizar-vs-invertir.
+### macOS
+- bundle `Financito.app` con launcher Swift y frontend preconstruido;
+- backend incluido en Resources; dependencias Python se provisionan localmente en el primer arranque;
+- firma Developer ID + hardened runtime + timestamp;
+- notarización por `notarytool`, stapling y Gatekeeper;
+- workflow manual de GitHub Actions con keychain temporal;
+- la ejecución firmada real depende exclusivamente de certificados/credenciales Apple, no de desarrollo pendiente.
 
-### Contratos, seguros, hipoteca y decisiones
-- contratos y Action Center de renovación/preaviso.
-- pólizas y hechos de cobertura.
-- duplicidades solo entre coberturas verificadas.
-- requisitos de cobertura definidos por usuario y detección de huecos contra esos requisitos.
-- motor hipotecario de cuota/intereses.
-- amortización extraordinaria: reducir cuota vs reducir plazo, con comisión explícita.
-- motor de switching con costes, penalizaciones, beneficios perdidos, tax impact y break-even.
-- beneficios y productos vinculados.
-- Decision Case, alternativas, estados y resultado esperado vs observado.
-- centros de coste con asignaciones porcentuales y agregación de contratos/pólizas/activos/deuda.
+## Núcleo v1
 
-### Operación
-- backup cifrado AES-256-GCM, clave derivada con scrypt, manifest SHA-256 y extracción TAR segura.
-- restore a staging, verificación y aplicación al siguiente arranque.
-- Repair Center.
-- Health Center con schema real, DB, Vault, frontend, IA y providers.
-- export JSON/CSV.
-- demo sintética.
-- CI backend + frontend.
+Se mantienen además como implementados: runtime local/seguridad/SQLCipher, movimientos/imports/categorización, analytics/forecast, Open Banking, Vault/OCR/RAG/chat, patrimonio/portfolio/FIFO/mercado/riesgo, contratos/seguros, Decision Cases, stress/cost centers, Action/Repair, backup/restore/export y privacidad.
 
-## Requiere configuración externa, no desarrollo adicional para activarse
-- Enable Banking: registro/credenciales y callback válidos.
-- Alpha Vantage: key gratuita.
-- SEC EDGAR: User-Agent.
-- Ollama y modelos locales.
-- disponibilidad real de cada banco dentro del proveedor PSD2.
+## Dependencias externas de activación
 
-## Parcial por diseño
-- extracción contractual: detecta hechos comunes, pero una FEIN/FIAE, póliza o anexo complejo puede requerir revisión/manualización.
-- fundamentals: extracción de conceptos SEC seleccionados, no un terminal financiero completo.
-- news: búsqueda/ingestión; no existe todavía un motor robusto de impacto/sentimiento.
-- portfolio fit/recommendation: scoring determinista disponible, sin asesoramiento personalizado automático.
-- modelo temporal: se conserva fecha/procedencia en fuentes principales, pero no existe aún reconstrucción universal “as-of” de todas las entidades.
-- accesibilidad: UI responsive y semántica básica, sin auditoría WCAG AA completa.
+- Enable Banking y disponibilidad bancaria PSD2;
+- Alpha Vantage/SEC/ECB/GDELT según credenciales o políticas de cada fuente;
+- Ollama/modelos locales;
+- Developer ID/notarización Apple;
+- fuente comercial concreta para cada adapter en vivo.
 
-## No se declara terminado
-- reglas fiscales legales versionadas por país/año y presentación fiscal.
-- importadores específicos de brokers con todos sus formatos.
-- comparadores comerciales de hipoteca, seguros, energía, telecom y depósitos.
-- curvas hipotecarias variables/mixtas completas y novación/subrogación contractual automatizada.
-- firma, notarización, auto-update y distribución final macOS.
-- E2E Playwright y auditoría accesibilidad automatizada completa.
-
-Un elemento de esta sección no se sustituirá con datos ficticios ni supuestos silenciosos.
+Ninguna dependencia externa se sustituye con datos ficticios ni supuestos silenciosos.
