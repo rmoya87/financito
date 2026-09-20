@@ -213,3 +213,19 @@ Reglas:
 Leer RECOVERY_AND_INTEGRITY.md y MODEL_EVALUATION.md.
 
 Todo derivado crítico debe ser reconstruible. Cambiar un modelo requiere evaluación comparativa.
+
+
+## 19. Temporalidad, lotes y acciones
+
+Leer:
+- TEMPORAL_MODEL.md
+- INVESTMENT_LOTS_AND_TAX.md
+- ACTION_CENTER.md
+- LOCAL_RUNTIME_AND_LAUNCHER.md
+
+Reglas:
+- no usar datos futuros para reproducir análisis históricos;
+- no colapsar vigencia/observación/evento en una sola fecha cuando sea material;
+- modelar lotes antes de cálculos de venta;
+- Action Center no ejecuta acciones financieras externas;
+- launcher no expone shell ni comandos arbitrarios.
