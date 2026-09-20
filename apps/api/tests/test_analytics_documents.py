@@ -242,7 +242,7 @@ def test_european_mortgage_amounts_are_normalized():
     assert by_key["remaining_months"]["value"]=="180"
 
 
-def test_confirmed_mortgage_document_updates_single_profile_and_links_source():
+def test_confirmed_mortgage_document_updates_linked_profile():
     suffix=uuid4().hex[:8]
     path=settings.vault_dir/f"hipoteca-sync-{suffix}.txt"
     path.write_text(
@@ -264,6 +264,12 @@ def test_confirmed_mortgage_document_updates_single_profile_and_links_source():
         db.add(mortgage);db.flush()
         indexed=index_document(db,str(path),"unknown")
         doc=indexed.document
+        db.add(EntityLink(
+            from_type="document",from_id=doc.id,relation_type="evidence_for",
+            to_type="mortgage",to_id=mortgage.id,confidence=Decimal("1"),
+            source_type="test",source_ref=doc.id,
+        ))
+        db.flush()
         facts=db.scalars(select(ExtractedFact).where(
             ExtractedFact.document_id==doc.id,
             ExtractedFact.key.in_(["remaining_principal","nominal_rate","monthly_payment","remaining_months","interest_type"]),
