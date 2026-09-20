@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from contextlib import asynccontextmanager
 from decimal import Decimal
 import json
 
@@ -17,6 +18,8 @@ from .domain.engines import CashFlowEngine, MortgageEngine, OptimizationEngine
 from .models import Account, ActionItem, AuditEvent, Budget, CategorizationAudit, Category, Commitment, Document, ExtractedFact, Transaction
 from .schemas import AccountCreate, AccountOut, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentIndexRequest, FactUpdate, ForecastRequest, MortgageScenarioRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
 from .security import LocalSecurityMiddleware, create_session\nfrom .routes_extended import router as extended_router
+from .routes_analytics import router as analytics_router
+from .services.vault_watcher import VaultWatcher
 from .services.categorization import ensure_categories
 from .services.documents import index_document
 from .services.forecast import forecast
@@ -24,8 +27,23 @@ from .services.imports import import_csv
 from .services.local_ai import status as ai_status
 
 
-app = FastAPI(title="Financito Local API", version="0.1.0", docs_url="/api/docs", openapi_url="/api/openapi.json")
-app.add_middleware(LocalSecurityMiddleware)\napp.include_router(extended_router)
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    if settings.host not in {"127.0.0.1", "localhost", "::1"}:
+        raise RuntimeError("Financito may only bind to loopback")
+    migrate()
+    with SessionLocal() as db:
+        ensure_categories(db); db.commit()
+    watcher=VaultWatcher(); watcher.start()
+    try:
+        yield
+    finally:
+        watcher.stop()
+
+app = FastAPI(title="Financito Local API", version="0.3.0", docs_url="/api/docs", openapi_url="/api/openapi.json", lifespan=lifespan)
+app.add_middleware(LocalSecurityMiddleware)
+app.include_router(extended_router)
+app.include_router(analytics_router)
 
 
 def get_db():
@@ -36,18 +54,6 @@ def get_db():
         db.close()
 
 
-@app.on_event("startup")
-def startup() -> None:
-    if settings.host not in {"127.0.0.1", "localhost", "::1"}:
-        raise RuntimeError("Financito may only bind to loopback")
-    if not settings.allow_plaintext_sqlite:
-        raise RuntimeError("Encrypted database backend is required for stable use. Set FINANCITO_ALLOW_PLAINTEXT_SQLITE=1 only for development/tests.")
-    migrate()
-    with SessionLocal() as db:
-        ensure_categories(db)
-        db.commit()
-
-
 @app.get("/api/v1/session")
 def session(response: Response):
     return create_session(response)
@@ -56,7 +62,7 @@ def session(response: Response):
 @app.get("/api/v1/health")
 def health(db: Session = Depends(get_db)):
     db.execute(select(func.count()).select_from(Account)).scalar_one()
-    return {"status":"ok","local_only":True,"database":"ok","vault":str(settings.vault_dir),"vault_exists":settings.vault_dir.exists(),"frontend_built":settings.frontend_dir.exists(),"ai":ai_status()}
+    return {"status":"ok","local_only":True,"database":"ok","database_encrypted":not settings.allow_plaintext_sqlite,"schema_version":3,"vault":str(settings.vault_dir),"vault_exists":settings.vault_dir.exists(),"frontend_built":settings.frontend_dir.exists(),"ai":ai_status()}
 
 
 @app.get("/api/v1/categories")
@@ -153,7 +159,7 @@ def index_doc(payload:DocumentIndexRequest,db:Session=Depends(get_db)):
     except FileNotFoundError: raise HTTPException(404,"Document not found")
     except ValueError as exc: raise HTTPException(400,str(exc))
     db.add(AuditEvent(event_type="document_indexed",entity_type="document",entity_id=indexed.document.id)); db.commit()
-    return {"id":indexed.document.id,"file_name":indexed.document.file_name,"facts_created":indexed.facts_created}
+    return {"id":indexed.document.id,"file_name":indexed.document.file_name,"facts_created":indexed.facts_created,"chunks_created":indexed.chunks_created}
 
 
 @app.get("/api/v1/documents")
