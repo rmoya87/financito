@@ -6,11 +6,12 @@ from fastapi import APIRouter,Depends,File,HTTPException,UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .db import SessionLocal
-from .models import Account,Contract,FinancialGoal,Portfolio,Security
-from .models_extended import Asset,BackupRecord,CoverageFact,InsurancePolicy,Liability,RepairIssue,Trade
+from .models import Account,Contract,FinancialGoal,Mortgage,Portfolio,Security
+from .models_extended import Asset,BackupRecord,CoverageFact,InsurancePolicy,Liability,RepairIssue,Trade,TrackedAsset
 from .models_analytics import EntityLink
-from .schemas_extended import AssetCreate,BackupCreate,BackupRestore,ChatRequest,ContractCreate,CoverageCompareRequest,CoverageCreate,CorporateActionCreate,GoalCreate,GoalProgressUpdate,InsuranceCreate,LiabilityCreate,PortfolioCreate,RagSearchRequest,SecurityCreate,StressRequest,TaxEstimateRequest,TradeCreate
+from .schemas_extended import AssetCreate,BackupCreate,BackupRestore,ChatRequest,ContractCreate,CoverageCompareRequest,CoverageCreate,CorporateActionCreate,GoalCreate,GoalProgressUpdate,InsuranceCreate,LiabilityCreate,MortgageProfileCreate,MortgageProfileUpdate,PortfolioCreate,RagSearchRequest,SecurityCreate,StoredMortgagePrepaymentRequest,StoredMortgageRatePathRequest,StoredMortgageScenarioRequest,StressRequest,TaxEstimateRequest,TrackedAssetCreate,TradeCreate
 from .domain.portfolio import apply_trade,portfolio_summary
+from .domain.engines import MortgageEngine,MortgagePrepaymentEngine,MortgageRatePathEngine
 from .domain.stress import run_stress
 from .services.backup import create_backup,stage_restore
 from .services.chat import answer
@@ -22,6 +23,8 @@ from .services.tax import estimate
 from .services.wealth import summary as wealth_summary
 from .services.financial_analytics import cash_flow
 from .services.snapshots import record_snapshot
+from .services.decision_context import live_decision_context,mortgage_row
+from .services.investment_tracking import save_tracked_asset,tracked_assets
 from .services.broker_import import import_broker_csv
 from .services.corporate_actions import add_action,list_actions
 from .providers.market import AlphaVantageProvider
@@ -40,6 +43,141 @@ def _document_sources(db:Session,to_type:str)->dict[str,str]:
         EntityLink.to_type==to_type,
     )).all()
     return {link.to_id:link.from_id for link in links}
+
+@router.get("/decision-lab/context")
+def decision_lab_context(db:Session=Depends(dbdep)):
+    return live_decision_context(db)
+
+@router.get("/mortgages")
+def mortgages(db:Session=Depends(dbdep)):
+    return [mortgage_row(r) for r in db.scalars(select(Mortgage).order_by(Mortgage.updated_at.desc())).all()]
+
+@router.post("/mortgages")
+def add_mortgage(p:MortgageProfileCreate,db:Session=Depends(dbdep)):
+    r=Mortgage(**p.model_dump())
+    db.add(r);db.flush()
+    record_snapshot(db,"mortgage",r.id,{
+        "remaining_principal":str(r.remaining_principal),
+        "nominal_rate":str(r.nominal_rate),
+        "monthly_payment":str(r.monthly_payment),
+        "remaining_months":r.remaining_months,
+        "early_repayment_fee":None if r.early_repayment_fee is None else str(r.early_repayment_fee),
+        "currency":r.currency,
+    },source="mortgage_created")
+    db.commit();return mortgage_row(r)
+
+@router.patch("/mortgages/{mortgage_id}")
+def update_mortgage(mortgage_id:str,p:MortgageProfileUpdate,db:Session=Depends(dbdep)):
+    r=db.get(Mortgage,mortgage_id)
+    if not r:raise HTTPException(404,"Mortgage not found")
+    for key,value in p.model_dump().items():setattr(r,key,value)
+    db.flush()
+    record_snapshot(db,"mortgage",r.id,{
+        "remaining_principal":str(r.remaining_principal),
+        "nominal_rate":str(r.nominal_rate),
+        "monthly_payment":str(r.monthly_payment),
+        "remaining_months":r.remaining_months,
+        "early_repayment_fee":None if r.early_repayment_fee is None else str(r.early_repayment_fee),
+        "currency":r.currency,
+    },source="mortgage_updated")
+    db.commit();return mortgage_row(r)
+
+@router.post("/decision-lab/mortgage/current")
+def mortgage_current(p:StoredMortgageScenarioRequest,db:Session=Depends(dbdep)):
+    r=db.get(Mortgage,p.mortgage_id)
+    if not r:raise HTTPException(404,"Mortgage not found")
+    result=MortgageEngine.amortization(r.remaining_principal,r.nominal_rate,r.remaining_months)
+    return {
+        "mortgage":mortgage_row(r),
+        "calculated_monthly_payment":str(result.monthly_payment),
+        "saved_monthly_payment":str(r.monthly_payment),
+        "monthly_payment_difference":str(result.monthly_payment-r.monthly_payment),
+        "total_payments":str(result.total_payments),
+        "total_interest":str(result.total_interest),
+        "source":"saved_mortgage",
+    }
+
+@router.post("/decision-lab/mortgage/prepayment")
+def mortgage_prepayment_real(p:StoredMortgagePrepaymentRequest,db:Session=Depends(dbdep)):
+    r=db.get(Mortgage,p.mortgage_id)
+    if not r:raise HTTPException(404,"Mortgage not found")
+    if r.early_repayment_fee is None:
+        raise HTTPException(409,"Falta la comisión total de amortización anticipada de la hipoteca guardada")
+    result=MortgagePrepaymentEngine.compare(
+        r.remaining_principal,r.nominal_rate,r.remaining_months,p.extra_payment,r.early_repayment_fee
+    )
+    return {
+        "mortgage":mortgage_row(r),
+        **{k:(str(v) if not isinstance(v,int) else v) for k,v in result.__dict__.items()},
+        "source":"saved_mortgage",
+        "assumption":{"extra_payment":str(p.extra_payment)},
+    }
+
+@router.post("/decision-lab/mortgage/rate-path")
+def mortgage_rate_path_real(p:StoredMortgageRatePathRequest,db:Session=Depends(dbdep)):
+    r=db.get(Mortgage,p.mortgage_id)
+    if not r:raise HTTPException(404,"Mortgage not found")
+    steps=[]
+    for raw in p.rate_steps:
+        try:
+            month=int(raw["month"]);rate=Decimal(str(raw["annual_rate"]))
+        except Exception:
+            raise HTTPException(400,"Invalid rate step")
+        steps.append((month,rate))
+    result=MortgageRatePathEngine.simulate(r.remaining_principal,r.remaining_months,r.nominal_rate,steps)
+    return {
+        "mortgage":mortgage_row(r),
+        "total_payments":str(result.total_payments),
+        "total_interest":str(result.total_interest),
+        "min_monthly_payment":str(result.min_monthly_payment),
+        "max_monthly_payment":str(result.max_monthly_payment),
+        "final_balance":str(result.final_balance),
+        "segments":[{"start_month":s.start_month,"annual_rate":str(s.annual_rate),"monthly_payment":str(s.monthly_payment),"end_balance":str(s.end_balance)} for s in result.segments],
+        "source":"saved_mortgage",
+        "notice":"La situación inicial procede de la hipoteca guardada. Los cambios de tipo son supuestos introducidos por el usuario, no una predicción.",
+    }
+
+@router.get("/tracked-assets")
+def tracked_assets_route(db:Session=Depends(dbdep)):
+    return tracked_assets(db)
+
+@router.post("/tracked-assets")
+def tracked_asset_add(p:TrackedAssetCreate,db:Session=Depends(dbdep)):
+    try:
+        result=save_tracked_asset(
+            db,
+            asset_class=p.asset_class,
+            name=p.name,
+            identifier=p.identifier,
+            owned=p.owned,
+            portfolio_id=p.portfolio_id,
+            quantity=p.quantity,
+            purchase_price=p.purchase_price,
+            purchase_date=p.purchase_date,
+            fees=p.fees,
+            currency=p.currency,
+            provider_asset_id=p.provider_asset_id,
+            notes=p.notes,
+        )
+        db.commit();return result
+    except ValueError as exc:
+        db.rollback();raise HTTPException(409,str(exc))
+
+@router.post("/tracked-assets/{security_id}/refresh")
+def tracked_asset_refresh(security_id:str,include_history:bool=False,db:Session=Depends(dbdep)):
+    from .services.market_data import refresh_security,refresh_history
+    if not db.get(Security,security_id):raise HTTPException(404,"Security not found")
+    try:
+        quote=refresh_security(db,security_id)
+        history_result=refresh_history(db,security_id) if include_history else None
+        db.commit()
+        security=db.get(Security,security_id)
+        from .services.investment_tracking import security_summary
+        return {"quote":quote,"history":history_result,"asset":security_summary(db,security)}
+    except ValueError as exc:
+        db.rollback();raise HTTPException(400,str(exc))
+    except Exception as exc:
+        db.rollback();raise HTTPException(503,str(exc))
 
 @router.get("/wealth")
 def wealth(db:Session=Depends(dbdep)):return wealth_summary(db)
