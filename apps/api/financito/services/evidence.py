@@ -9,7 +9,7 @@ import re
 from sqlalchemy import delete,select
 from sqlalchemy.orm import Session
 
-from ..models import ActionItem, Contract, Document, ExtractedFact
+from ..models import ActionItem, Contract, Document, ExtractedFact, Mortgage
 from ..models_analytics import EntityLink
 from ..models_extended import CoverageFact,InsurancePolicy
 from .document_ai import latest_analysis
@@ -114,7 +114,14 @@ def _confirmed_values(session: Session, document_id: str) -> dict[str, dict]:
 
 def _decimal(value: object) -> Decimal | None:
     try:
-        return Decimal(str(value).replace(",", "."))
+        raw=str(value).strip().replace(" ","")
+        if "," in raw and "." in raw:
+            raw=raw.replace(".","").replace(",",".") if raw.rfind(",")>raw.rfind(".") else raw.replace(",","")
+        elif "," in raw:
+            raw=raw.replace(",",".")
+        elif raw.count(".")>1:
+            raw=raw.replace(".","")
+        return Decimal(raw)
     except (InvalidOperation, ValueError, TypeError):
         return None
 
@@ -208,7 +215,7 @@ def _ensure_contract_projection(
             )
         )
 
-    contract.provider_name = _label(document)
+    contract.provider_name = str(values.get("provider_name",{}).get("value") or contract.provider_name or _label(document))[:180]
     contract.contract_type = document.document_type
 
     if "cancellation_notice_days" in values:
@@ -233,6 +240,109 @@ def _ensure_contract_projection(
     )
     session.flush()
     return contract
+
+
+def _interest_type(value: object) -> str | None:
+    raw=str(value or "").strip().lower()
+    if "variable" in raw:return "variable"
+    if "mixt" in raw:return "mixed"
+    if "fijo" in raw or "fixed" in raw:return "fixed"
+    return None
+
+
+def _ensure_mortgage_projection(
+    session: Session,
+    document: Document,
+    values: dict[str, dict],
+) -> Mortgage | None:
+    if document.document_type!="mortgage":
+        return None
+
+    link=_entity_link(session,document.id,"mortgage")
+    mortgage=session.get(Mortgage,link.to_id) if link else None
+    if mortgage is None:
+        mortgages=session.scalars(select(Mortgage).order_by(Mortgage.updated_at.desc())).all()
+        provider=str(values.get("provider_name",{}).get("value") or "").strip()
+        if len(mortgages)==1:
+            candidate=mortgages[0]
+            if provider and provider.lower() not in candidate.lender.lower() and candidate.lender.lower() not in provider.lower():
+                return None
+            mortgage=candidate
+        elif not mortgages:
+            required=("provider_name","remaining_principal","nominal_rate","monthly_payment","remaining_months","interest_type")
+            if not all(values.get(key,{}).get("value") not in {None,""} for key in required):
+                return None
+            principal=_decimal(values["remaining_principal"]["value"])
+            nominal_pct=_decimal(values["nominal_rate"]["value"])
+            payment=_decimal(values["monthly_payment"]["value"])
+            months=_integer(values["remaining_months"]["value"])
+            kind=_interest_type(values["interest_type"]["value"])
+            if None in {principal,nominal_pct,payment,months,kind}:
+                return None
+            mortgage=Mortgage(
+                lender=provider[:180],
+                remaining_principal=principal,
+                currency="EUR",
+                interest_type=kind,
+                nominal_rate=nominal_pct/Decimal("100"),
+                monthly_payment=payment,
+                remaining_months=months,
+                early_repayment_fee=None,
+            )
+            session.add(mortgage);session.flush()
+        else:
+            return None
+
+        session.add(EntityLink(
+            from_type="document",
+            from_id=document.id,
+            relation_type="evidence_for",
+            to_type="mortgage",
+            to_id=mortgage.id,
+            confidence=Decimal("1"),
+            source_type="document_projection",
+            source_ref=document.id,
+        ))
+
+    changed=False
+    provider=str(values.get("provider_name",{}).get("value") or "").strip()
+    if provider and mortgage.lender!=provider[:180]:
+        mortgage.lender=provider[:180];changed=True
+    if "remaining_principal" in values:
+        principal=_decimal(values["remaining_principal"].get("value"))
+        if principal is not None and mortgage.remaining_principal!=principal:
+            mortgage.remaining_principal=principal;changed=True
+    if "nominal_rate" in values:
+        pct=_decimal(values["nominal_rate"].get("value"))
+        rate=None if pct is None else pct/Decimal("100")
+        if rate is not None and mortgage.nominal_rate!=rate:
+            mortgage.nominal_rate=rate;changed=True
+    if "monthly_payment" in values:
+        payment=_decimal(values["monthly_payment"].get("value"))
+        if payment is not None and mortgage.monthly_payment!=payment:
+            mortgage.monthly_payment=payment;changed=True
+    if "remaining_months" in values:
+        months=_integer(values["remaining_months"].get("value"))
+        if months is not None and months>0 and mortgage.remaining_months!=months:
+            mortgage.remaining_months=months;changed=True
+    if "interest_type" in values:
+        kind=_interest_type(values["interest_type"].get("value"))
+        if kind and mortgage.interest_type!=kind:
+            mortgage.interest_type=kind;changed=True
+
+    session.flush()
+    if changed:
+        from .snapshots import record_snapshot
+        record_snapshot(session,"mortgage",mortgage.id,{
+            "remaining_principal":str(mortgage.remaining_principal),
+            "nominal_rate":str(mortgage.nominal_rate),
+            "monthly_payment":str(mortgage.monthly_payment),
+            "remaining_months":mortgage.remaining_months,
+            "early_repayment_fee":None if mortgage.early_repayment_fee is None else str(mortgage.early_repayment_fee),
+            "currency":mortgage.currency,
+            "source_document_id":document.id,
+        },source="document_evidence")
+    return mortgage
 
 
 def _ensure_insurance_projection(
@@ -262,7 +372,7 @@ def _ensure_insurance_projection(
     if policy is None:
         policy = InsurancePolicy(
             contract_id=contract.id,
-            insurance_type=_insurance_type(document.file_name),
+            insurance_type=str(values.get("insurance_type",{}).get("value") or _insurance_type(document.file_name))[:60],
             annual_premium=premium,
             deductible=None,
             currency="EUR",
@@ -284,6 +394,8 @@ def _ensure_insurance_projection(
         )
 
     policy.contract_id = contract.id
+    if values.get("insurance_type",{}).get("value"):
+        policy.insurance_type=str(values["insurance_type"]["value"])[:60]
     if premium is not None:
         policy.annual_premium = premium
     if "deductible" in values:
@@ -348,12 +460,20 @@ def synchronize_document_evidence(session: Session, document: Document) -> dict:
     summary = sync_review_action(session, document)
     values = _confirmed_values(session, document.id)
     contract = _ensure_contract_projection(session, document, values, summary)
+    mortgage = _ensure_mortgage_projection(session, document, values)
     policy = _ensure_insurance_projection(session, document, contract, values)
     coverage_count = _ensure_coverage_projection(session, document, contract, policy)
+    if contract is not None:
+        from .contracts import refresh_contract_actions
+        refresh_contract_actions(session)
+    if coverage_count:
+        from .contracts import scan_coverage_overlaps
+        scan_coverage_overlaps(session)
     session.flush()
     return {
         **summary,
         "contract_id": None if contract is None else contract.id,
+        "mortgage_id": None if mortgage is None else mortgage.id,
         "insurance_policy_id": None if policy is None else policy.id,
         "coverage_count": coverage_count,
     }
