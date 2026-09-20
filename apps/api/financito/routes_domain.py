@@ -15,6 +15,7 @@ from .providers.crypto import CoinGeckoDemoProvider
 from .providers.fundamentals import SecFundamentalsProvider
 from .providers.macro import EcbMacroProvider
 from .providers.news import GdeltNewsProvider
+from .services.market_data import history as market_history,portfolio_exposure,refresh_history,refresh_security,security_risk
 
 router=APIRouter(prefix="/api/v1")
 
@@ -126,3 +127,38 @@ def ingest_news(q:str,db:Session=Depends(dbdep)):
             dt=datetime.now(timezone.utc)
         db.add(NewsItem(canonical_url=url,source=item.get("source") or "GDELT",headline=item.get("title") or "",published_at=dt,summary=None,reliability=Decimal("0.5")));inserted+=1
     db.commit();return {"inserted":inserted,"discovered":len(items)}
+
+
+@router.get("/market/security/{security_id}/history")
+def security_history(security_id:str,db:Session=Depends(dbdep)):
+    return {"security_id":security_id,"rows":market_history(db,security_id)}
+
+@router.post("/market/security/{security_id}/refresh")
+def security_refresh(security_id:str,include_history:bool=True,db:Session=Depends(dbdep)):
+    try:
+        quote=refresh_security(db,security_id)
+        history_result=refresh_history(db,security_id) if include_history else None
+        db.commit();return {"quote":quote,"history":history_result}
+    except ValueError as e:
+        db.rollback();raise HTTPException(400,str(e))
+    except Exception as e:
+        db.rollback();raise HTTPException(503,str(e))
+
+@router.get("/market/security/{security_id}/risk")
+def market_security_risk(security_id:str,db:Session=Depends(dbdep)):
+    return security_risk(db,security_id)
+
+@router.get("/portfolios/{portfolio_id}/exposure")
+def market_portfolio_exposure(portfolio_id:str,db:Session=Depends(dbdep)):
+    try:return portfolio_exposure(db,portfolio_id)
+    except ValueError as e:raise HTTPException(404,str(e))
+
+@router.get("/crypto/metrics/{coin_id}")
+def crypto_metrics(coin_id:str,vs_currency:str="eur",days:int=90):
+    if days<2 or days>3650:raise HTTPException(400,"days must be 2..3650")
+    try:
+        provider=CoinGeckoDemoProvider()
+        chart=provider.market_chart(coin_id,vs_currency,days)
+        prices=[float(x[1]) for x in chart.get("prices",[]) if len(x)>1]
+        return {"coin_id":coin_id,"vs_currency":vs_currency,"days":days,"metrics":risk_metrics(prices,periods_per_year=365),"observations":len(prices),"provider":"CoinGecko"}
+    except Exception as e:raise HTTPException(503,str(e))
