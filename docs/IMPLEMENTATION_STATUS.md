@@ -51,7 +51,7 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 - SHA-256, deduplicación, OCR, detección ES/EN y clasificación conservadora.
 - hechos contractuales con página y contexto; confirmación humana persistente; los facts confirmados se proyectan automáticamente a Contratos y, cuando existe prima confirmada, a Pólizas, manteniendo enlace al documento fuente.
 - análisis interpretativo con LLM local: resumen, ventajas, penalizaciones, obligaciones, riesgos, exclusiones/límites, vinculaciones, oportunidades, puntos de negociación, requisitos para comparar ofertas, impactos cruzados y datos faltantes; visible en Documentos, Seguros, Hipoteca/Laboratorio, Contratos, Cuentas, Inversiones y Fiscalidad.
-- propuestas de hechos materiales y coberturas por IA local con whitelist + página obligatoria; permanecen inferidas hasta confirmación. Las coberturas confirmadas se proyectan a CoverageFact y alimentan huecos/duplicidades. Hechos hipotecarios confirmados pueden alimentar el perfil hipotecario cuando el enlace al préstamo es inequívoco.
+- propuestas de hechos materiales y coberturas por IA local con whitelist + página obligatoria; permanecen inferidas hasta confirmación. Las coberturas confirmadas se proyectan a CoverageFact y alimentan huecos/duplicidades. Hechos hipotecarios confirmados pueden alimentar el perfil hipotecario únicamente cuando el usuario ha asociado explícitamente el documento a ese préstamo; las ofertas/referencias quedan aisladas del estado actual.
 - FTS5/BM25 + embeddings locales opcionales + sqlite-vec/fallback cosine.
 - fusión Reciprocal Rank Fusion y reranking léxico.
 - búsqueda global y citas que abren documento/página; el chat local recibe además un contexto estructurado con el estado confirmado/inferido de la evidencia.
@@ -70,6 +70,8 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 - backtest MA y escenario amortizar-vs-invertir.
 
 ### Contratos, seguros, hipoteca y decisiones
+- fuente de verdad documental compartida: los campos que no se reconozcan se completan como hechos confirmados dentro del documento, evitando fichas paralelas.
+- veredicto transversal de seguros: cruza pólizas/coberturas documentadas con pagos reales, ingresos/ahorro, huecos, duplicidades y productos vinculados; la IA local solo explica el análisis.
 - contratos y Action Center de renovación/preaviso.
 - pólizas y hechos de cobertura.
 - duplicidades solo entre coberturas verificadas.
@@ -82,6 +84,8 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 - centros de coste con asignaciones porcentuales y agregación de contratos/pólizas/activos/deuda.
 
 ### Operación
+- Configuración de IA local con prueba de generación real de Ollama, diagnóstico de modelo/tag y compatibilidad con Qwen mediante `think=false` con fallback.
+- las rutas estáticas de la WebApp responden HEAD correctamente para prefetch/health checks, evitando falsos 405.
 - backup cifrado AES-256-GCM, clave derivada con scrypt, manifest SHA-256 y extracción TAR segura.
 - restore a staging, verificación y aplicación al siguiente arranque.
 - Repair Center.
