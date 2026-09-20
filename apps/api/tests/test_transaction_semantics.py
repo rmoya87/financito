@@ -14,6 +14,7 @@ from financito.services.transaction_ops import (
     apply_category_semantics,
     apply_rules_to_unverified,
     detect_internal_transfers,
+    synchronize_transaction_semantics,
 )
 
 
@@ -91,3 +92,53 @@ def test_rule_targeting_internal_transfer_uses_special_accounting_semantics():
         assert tx.is_internal_transfer is True
         flow=cash_flow(db,date(2040,1,3),date(2040,1,3))
         assert flow["expenses"]==Decimal("0.00")
+
+
+def test_positive_salary_counts_as_income_even_if_legacy_transfer_flag_is_stale():
+    with SessionLocal() as db:
+        account=_account(db)
+        import_csv(db,account.id,_csv("04/01/2040","NOMINA EMPRESA","2500,00","EMPRESA"),"salary.csv")
+        categories=ensure_categories(db)
+        tx=db.scalar(select(Transaction).where(Transaction.account_id==account.id,Transaction.booking_date==date(2040,1,4)))
+        tx.category_id=categories["salary"].id
+        tx.categorization_method="learned_merchant"
+        tx.is_internal_transfer=True  # simula dato antiguo incoherente
+        db.flush()
+
+        flow=cash_flow(db,date(2040,1,4),date(2040,1,4))
+        assert flow["income"]==Decimal("2500.00")
+        assert flow["expenses"]==Decimal("0.00")
+        assert flow["savings"]==Decimal("2500.00")
+
+
+def test_semantics_repair_clears_stale_transfer_flag_from_salary():
+    with SessionLocal() as db:
+        account=_account(db)
+        import_csv(db,account.id,_csv("05/01/2040","NOMINA EMPRESA","2200,00","EMPRESA"),"salary-repair.csv")
+        categories=ensure_categories(db)
+        tx=db.scalar(select(Transaction).where(Transaction.account_id==account.id,Transaction.booking_date==date(2040,1,5)))
+        tx.category_id=categories["salary"].id
+        tx.is_internal_transfer=True
+        db.flush()
+
+        assert synchronize_transaction_semantics(db)>=1
+        assert tx.is_internal_transfer is False
+
+
+def test_transfer_detector_does_not_reclassify_salary_pair():
+    with SessionLocal() as db:
+        salary_account=_account(db);other_account=_account(db)
+        import_csv(db,salary_account.id,_csv("06/01/2040","NOMINA EMPRESA","2000,00","EMPRESA"),"salary-protected.csv")
+        import_csv(db,other_account.id,_csv("06/01/2040","PAGO EXTRAORDINARIO","-2000,00","OTRO"),"expense-same-amount.csv")
+        categories=ensure_categories(db)
+        salary=db.scalar(select(Transaction).where(Transaction.account_id==salary_account.id))
+        salary.category_id=categories["salary"].id
+        salary.categorization_method="deterministic_classifier"
+        salary.is_internal_transfer=False
+        db.flush()
+
+        assert detect_internal_transfers(db)==0
+        assert salary.category_id==categories["salary"].id
+        assert salary.is_internal_transfer is False
+        flow=cash_flow(db,date(2040,1,6),date(2040,1,6))
+        assert flow["income"]==Decimal("2000.00")
