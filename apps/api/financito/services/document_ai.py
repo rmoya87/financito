@@ -19,13 +19,13 @@ MAX_CHUNKS = 18
 
 CONTRACT_FACT_KEYS = {
     "cancellation_notice_days","early_exit_penalty","annual_cost","monthly_cost","deductible",
-    "permanence_end_date","renewal_date",
+    "permanence_end_date","renewal_date","provider_name","insurance_type",
 }
 MORTGAGE_FACT_KEYS = {
     "nominal_rate","apr_rate","reference_index","interest_type","differential_rate",
     "mortgage_term_years","rate_review_months","opening_fee_percent",
     "early_repayment_fee_percent","subrogation_fee_percent","cancellation_fee_percent",
-    "remaining_principal","monthly_payment",
+    "remaining_principal","monthly_payment","remaining_months",
 }
 LINKED_FACT_KEYS = {
     "linked_salary","linked_home_insurance","linked_life_insurance","linked_card","linked_pension_plan",
@@ -331,6 +331,8 @@ def _normalize(result: dict, document: Document) -> dict:
         "exclusions_or_limits": _clean_list(result.get("exclusions_or_limits")),
         "linked_products": _clean_list(result.get("linked_products")),
         "optimization_opportunities": _clean_list(result.get("optimization_opportunities")),
+        "negotiation_points": _clean_list(result.get("negotiation_points")),
+        "comparison_requirements": _clean_list(result.get("comparison_requirements")),
         "cross_area_impacts": _clean_list(result.get("cross_area_impacts")),
         "missing_information": _clean_list(result.get("missing_information")),
         "proposed_material_facts": _clean_material_facts(result.get("proposed_material_facts")),
@@ -401,6 +403,8 @@ REGLAS OBLIGATORIAS:
 - Cita páginas solo cuando el contexto incluya una página concreta.
 - Distingue ventajas comerciales de derechos contractuales.
 - Señala impactos cruzados: por ejemplo, quitar un seguro puede encarecer una hipoteca.
+- En negotiation_points incluye cláusulas o condiciones concretas que convenga usar al renegociar o pedir ofertas.
+- En comparison_requirements indica qué condiciones deben igualarse para comparar alternativas de forma equivalente (coberturas, franquicias, bonificaciones, plazo, comisiones, etc.).
 - No decidas por el usuario. Explica oportunidades y riesgos de forma neutral.
 - Los hechos con status=confirmed y user_verified=true son confirmados. Los demás son indicios.
 - En proposed_material_facts incluye SOLO condiciones numéricas/textuales explícitas de estas claves: {', '.join(sorted(ALLOWED_MATERIAL_FACT_KEYS))}.
@@ -424,6 +428,8 @@ SCHEMA JSON:
   "exclusions_or_limits": [{{"title":"","detail":"","pages":[1],"impact":""}}],
   "linked_products": [{{"title":"","detail":"","pages":[1],"impact":""}}],
   "optimization_opportunities": [{{"title":"","detail":"","pages":[1],"impact":""}}],
+  "negotiation_points": [{{"title":"","detail":"","pages":[1],"impact":""}}],
+  "comparison_requirements": [{{"title":"","detail":"","pages":[1],"impact":""}}],
   "cross_area_impacts": [{{"title":"","detail":"","pages":[1],"impact":""}}],
   "missing_information": [{{"title":"","detail":"","pages":[],"impact":""}}],
   "proposed_material_facts": [{{"key":"cancellation_notice_days","value":"30","unit":"days","page":1,"confidence":0.75}}],
