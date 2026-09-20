@@ -43,10 +43,10 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 - watcher de Vault.
 - PDF, TXT, CSV, JSON, DOCX, XLSX/XLSM, PNG/JPEG/HEIC/TIFF/BMP.
 - SHA-256, deduplicación, OCR, detección ES/EN y clasificación conservadora.
-- hechos contractuales con página y contexto; confirmación humana persistente.
+- hechos contractuales con página y contexto; confirmación humana persistente; los facts confirmados se proyectan automáticamente a Contratos y, cuando existe prima confirmada, a Pólizas, manteniendo enlace al documento fuente.
 - FTS5/BM25 + embeddings locales opcionales + sqlite-vec/fallback cosine.
 - fusión Reciprocal Rank Fusion y reranking léxico.
-- búsqueda global y citas que abren documento/página.
+- búsqueda global y citas que abren documento/página; el chat local recibe además un contexto estructurado con el estado confirmado/inferido de la evidencia.
 - reindexado y reconstrucción de derivados conservando evidencia verificada.
 
 ### Patrimonio, inversiones y mercado
