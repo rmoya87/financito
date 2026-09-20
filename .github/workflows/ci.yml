@@ -31,4 +31,43 @@ jobs:
         with: { node-version: '24' }
       - run: npm install --no-audit --no-fund
       - run: npm run typecheck
+      - run: npm test
       - run: npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with: { python-version: '3.13' }
+      - uses: actions/setup-node@v7
+        with: { node-version: '24' }
+      - run: pip install -e 'apps/api[dev]'
+      - run: npm install --no-audit --no-fund
+        working-directory: apps/web
+      - run: npm run build
+        working-directory: apps/web
+      - run: npx playwright install --with-deps chromium
+        working-directory: apps/web
+      - name: Start local Financito
+        run: |
+          mkdir -p /tmp/financito-e2e/vault
+          PYTHONPATH=apps/api \
+          FINANCITO_ALLOW_PLAINTEXT_SQLITE=1 \
+          FINANCITO_DATA_DIR=/tmp/financito-e2e \
+          FINANCITO_VAULT_DIR=/tmp/financito-e2e/vault \
+          FINANCITO_FRONTEND_DIR=$GITHUB_WORKSPACE/apps/web/out \
+          python -m uvicorn financito.main:app --host 127.0.0.1 --port 8765 > /tmp/financito-e2e.log 2>&1 &
+          echo $! > /tmp/financito-e2e.pid
+          for i in {1..40}; do
+            if curl -fsS http://127.0.0.1:8765/api/v1/session >/dev/null; then exit 0; fi
+            sleep .5
+          done
+          cat /tmp/financito-e2e.log
+          exit 1
+      - run: npm run test:e2e
+        working-directory: apps/web
+        env:
+          FINANCITO_E2E_URL: http://127.0.0.1:8765
+      - if: failure()
+        run: cat /tmp/financito-e2e.log || true
