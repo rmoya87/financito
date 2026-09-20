@@ -735,17 +735,13 @@ def _ensure_insurance_projection(
         )
         session.add(policy)
         session.flush()
-        session.add(
-            EntityLink(
-                from_type="document",
-                from_id=document.id,
-                relation_type="evidence_for",
-                to_type="insurance_policy",
-                to_id=policy.id,
-                confidence=Decimal("1"),
-                source_type="document_projection",
-                source_ref=document.id,
-            )
+        _add_evidence_link(
+            session,
+            document.id,
+            "insurance_policy",
+            policy.id,
+            confidence=Decimal("1"),
+            source_type="document_projection",
         )
         if contract is not None:
             for grouped_document_id in _linked_document_ids(session, "contract", contract.id):
