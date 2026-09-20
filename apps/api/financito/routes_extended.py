@@ -17,6 +17,7 @@ from .services.backup import create_backup,stage_restore
 from .services.chat import answer
 from .services.contracts import compare_coverages,refresh_contract_actions,scan_coverage_overlaps
 from .services.import_formats import import_statement
+from .services.insurance_analysis import insurance_verdict
 from .services.rag import index_document_chunks,search
 from .services.repair import repair,scan
 from .services.tax import estimate,get_profile,profile_dict,upsert_profile
@@ -334,6 +335,14 @@ async def broker_import(portfolio_id:str,file:UploadFile=File(...),db:Session=De
     except ValueError as exc:
         db.rollback()
         raise HTTPException(400,str(exc))
+
+@router.get("/insurance/verdict")
+def insurance_verdict_view(db:Session=Depends(dbdep)):
+    result=insurance_verdict(db,use_ai=False);db.commit();return result
+
+@router.post("/insurance/verdict/analyze")
+def insurance_verdict_with_ai(db:Session=Depends(dbdep)):
+    result=insurance_verdict(db,use_ai=True);db.commit();return result
 
 @router.post("/insurance")
 def add_insurance(p:InsuranceCreate,db:Session=Depends(dbdep)):r=InsurancePolicy(**p.model_dump(),insured_object_json="{}");db.add(r);db.commit();return {"id":r.id}
