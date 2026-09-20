@@ -146,3 +146,12 @@ Un elemento de esta sección no se sustituirá con datos ficticios ni supuestos 
 - Los seguros de hogar/vida relacionados se muestran junto a la hipoteca para evaluar el coste efectivo de vinculaciones.
 - La comparación de mercado consulta referencias públicas bajo demanda, mantiene capital y plazo pendientes para hacer comparable la cuota y muestra diferencia mensual e intereses restantes. Si existe un coste de salida confirmado, calcula un punto de equilibrio parcial.
 - Banco de España aparece como fuente oficial de referencia; las páginas comerciales se tratan como señales públicas, nunca como oferta personalizada. El ahorro neto definitivo requiere incorporar FEIN/oferta, seguros vinculados y todos los costes de cambio.
+
+
+### Casa: vivienda e hipoteca
+- Patrimonio incorpora una sección **Casa** entre el resumen y el resto del patrimonio, con valor actual de vivienda, capital hipotecario pendiente, equity y LTV.
+- La ficha hipotecaria permite completar y corregir capital/cuota/plazo/TIN y datos ampliados: capital y plazo iniciales, fechas, TAE, índice de referencia, diferencial, periodicidad/próxima revisión y comisiones de apertura, amortización, subrogación o salida.
+- Cuando un dato ampliado falta pero existe evidencia documental confirmada, Casa puede utilizarlo informativamente sin sobrescribir silenciosamente el perfil manual.
+- Hogar/vida vinculados se muestran junto a la hipoteca para analizar su coste conjunto y posibles bonificaciones.
+- La comparación de mercado se ejecuta bajo demanda: mantiene capital y plazo para hacer comparables las cuotas, muestra diferencia estimada de intereses y, cuando existe una penalización de salida confirmada, un punto de equilibrio parcial.
+- Las referencias comerciales se presentan como señales para solicitar novación/subrogación; no se consideran una oferta personalizada. El ahorro neto definitivo requiere incorporar FEIN/oferta, seguros/vinculaciones y todos los costes de cambio.
