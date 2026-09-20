@@ -179,3 +179,16 @@ Toda funcionalidad base debe tener una ruta de coste cero. Si un proveedor gratu
 - activar fallback;
 - documentar el cambio;
 - no contratar ni exigir pago automáticamente.
+
+
+## 16. Evidencia contractual
+
+Leer docs/CONTRACT_EVIDENCE.md antes de implementar contratos, seguros, hipotecas, préstamos, tarjetas o servicios.
+
+Reglas:
+- contrato particular vigente > información genérica;
+- no encontrado != cero;
+- no inventar penalizaciones/comisiones;
+- facts materiales deben conservar documento/página;
+- fórmulas contractuales se modelan, no se resumen solo como texto;
+- un dato crítico ambiguo o ausente debe producir needs_more_data.
