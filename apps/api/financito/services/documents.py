@@ -90,6 +90,20 @@ def detect_language(text:str)->tuple[str,float]:
 
 def classify_document(text:str,file_name:str)->tuple[str,float]:
     sample=(file_name+" "+text[:100000]).lower()
+    strong_signals=[
+        ("mortgage",("préstamo hipotecario","prestamo hipotecario","hipoteca","fein","fiae","fia e")),
+        ("insurance",("condiciones particulares de la póliza","condiciones particulares de la poliza","póliza de seguro","poliza de seguro")),
+        ("bank_statement",("extracto bancario","saldo contable","fecha valor")),
+        ("investment_statement",("cartera de valores","valor liquidativo","participaciones","isin")),
+        ("tax",("agencia tributaria","modelo 100","declaración de la renta","declaracion de la renta")),
+        ("energy",("punto de suministro","potencia contratada","término de energía","termino de energia")),
+        ("telecom",("fibra","línea móvil","linea movil","datos móviles","datos moviles")),
+        ("loan",("préstamo personal","prestamo personal")),
+    ]
+    for kind,signals in strong_signals:
+        hits=sum(1 for signal in signals if signal in sample)
+        if hits:
+            return kind,min(.98,.82+.04*min(hits,4))
     groups=[
         ("mortgage",("fein","fia e","fiae","hipoteca","préstamo hipotecario","prestamo hipotecario","euribor","amortización anticipada")),
         ("insurance",("póliza","poliza","asegurado","cobertura","siniestro","franquicia","prima anual")),
