@@ -24,6 +24,7 @@ type TrackedAsset={
   price_fetched_at:string|null;price_delayed:boolean|null;price_age_minutes:number|null;price_stale:boolean;simulation:Simulation|null
 };
 type SimHistory={security_id:string;simulation:null|{started_at:string;invested_amount:string;entry_price:string;quantity:string;currency:string};rows:{timestamp:string;price:string;value:string;pnl:string;return:string;provider:string}[]};
+type RefreshAll={refreshed:{security_id:string;quote:unknown}[];failed:{security_id:string;error:string}[];assets:TrackedAsset[]};
 type Research={
   query:string;ingest:{inserted:number;discovered:number};
   brief:{summary:string;facts:{headline:string;source:string;published_at:string;url:string;linked_assets:string[];event_types:string[];impact_levels:string[]}[];portfolio_impacts:{asset?:string;observation?:string;possible_effects?:string|any[];evidence_headlines?:string[]}[];risks:string[];watch:string[];method:string;ai_available:boolean;ai_warning?:string}
@@ -71,7 +72,7 @@ export default function MarketsPage(){
     onSuccess:()=>{qc.invalidateQueries({queryKey:['tracked-assets']});qc.invalidateQueries({queryKey:['portfolios']});qc.invalidateQueries({queryKey:['simulation-history']})},
   });
   const refreshAll=useMutation({
-    mutationFn:()=>apiMutate('/api/v1/tracked-assets/refresh-all','POST'),
+    mutationFn:()=>apiMutate<RefreshAll>('/api/v1/tracked-assets/refresh-all','POST'),
     onSuccess:()=>{qc.invalidateQueries({queryKey:['tracked-assets']});qc.invalidateQueries({queryKey:['portfolios']});qc.invalidateQueries({queryKey:['simulation-history']})},
   });
   const startSimulation=useMutation({
@@ -121,6 +122,10 @@ export default function MarketsPage(){
         <button className="fin-button md:col-span-4" disabled={saveTracked.isPending}>{saveTracked.isPending?'Guardando…':'Guardar activo'}</button>
       </form>
       {(saveTracked.error||refreshTracked.error||refreshAll.error||startSimulation.error||removeTracked.error)&&<div className="mt-3"><ErrorState error={(saveTracked.error||refreshTracked.error||refreshAll.error||startSimulation.error||removeTracked.error)!}/></div>}
+      {refreshAll.data&&<div className="mt-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm">
+        <strong>Actualización terminada:</strong> {refreshAll.data.refreshed.length} activo(s) actualizados.
+        {refreshAll.data.failed.length>0&&<div className="mt-1 text-xs text-[var(--muted)]">{refreshAll.data.failed.length} no se pudieron actualizar por la fuente externa: {refreshAll.data.failed.map(x=>x.error).join(' · ')}</div>}
+      </div>}
 
       <div className="mt-5 grid gap-3 lg:grid-cols-2">
         {tracked.data?.length?tracked.data.map(a=><div key={a.security_id} className="rounded-xl bg-[var(--surface-2)] p-4 text-sm">
