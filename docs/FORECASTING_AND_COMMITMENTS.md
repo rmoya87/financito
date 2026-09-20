@@ -300,3 +300,35 @@ Toda previsión debe mostrar:
 - drivers;
 - known vs estimated;
 - posibilidad de excluir extraordinarios.
+
+
+## Previsión automática de cierre de mes
+
+La vista de Análisis calcula automáticamente una previsión al último día del mes usando exclusivamente datos locales.
+
+Para cada cuenta:
+1. parte del saldo actual guardado;
+2. estima los movimientos restantes con un 70 % del mismo tramo del año anterior y un 30 % del ritmo de los últimos 60 días cuando ambas fuentes existen;
+3. si solo existe una fuente histórica, usa únicamente esa;
+4. si no existe histórico suficiente, no inventa movimientos;
+5. calcula saldo estimado al cierre = saldo actual + ingresos restantes estimados - gastos restantes estimados.
+
+Los compromisos conocidos hasta final de mes actúan como **suelo del gasto restante total**. No se suman ciegamente al histórico para evitar doble conteo. Como el modelo actual de Commitment no identifica una cuenta bancaria de cargo, tampoco se distribuyen artificialmente entre cuentas.
+
+La pantalla muestra grandes indicadores de:
+- gasto estimado al cierre;
+- ahorro estimado al cierre;
+- saldo total estimado;
+- precisión histórica del gasto.
+
+### Precisión histórica
+
+Se ejecuta un backtest sobre hasta seis meses cerrados. Para cada mes se simula qué habría pronosticado el modelo en el mismo día relativo del mes y se compara con el resultado real.
+
+Se muestran:
+- número de meses evaluados;
+- WAPE del gasto;
+- precisión derivada `max(0, 1 - WAPE)`;
+- MAE del ahorro.
+
+Si no hay histórico suficiente, la precisión se muestra como no disponible en lugar de inventar una confianza.
