@@ -26,7 +26,7 @@ OFFICIAL_SOURCES = (
         "id": "bde_mfi_rates",
         "provider": "Banco de España",
         "kind": "official_market_statistics",
-        "url": "https://datos.bde.es/datos/es/datasets/000/007.html",
+        "url": "https://www.bde.es/webbe/es/estadisticas/temas/tipos-interes.html",
         "description": "Tipos de interés mensuales aplicados por las entidades a nuevas operaciones de vivienda.",
     },
 )
