@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from financito.db import SessionLocal
 from financito.main import app
-from financito.models import Contract, Document, ExtractedFact
+from financito.models import Contract, Document, ExtractedFact, Mortgage
 from financito.models_analytics import EntityLink
 from financito.models_extended import InsurancePolicy
 from financito.services.evidence import (
@@ -241,3 +241,73 @@ def test_late_policy_projection_reconciles_previously_unlinked_sibling():
             EntityLink.to_id==policy.id,
         ))
         assert link is not None
+
+
+def test_policy_number_groups_document_even_when_classifier_says_contract():
+    with SessionLocal() as db:
+        contract,policy=_policy_group(db)
+        source=_document(db,"poliza.pdf")
+        annex=_document(db,"nota-mediador.pdf")
+        annex.document_type="contract"
+        for document in (source,annex):
+            _fact(db,document.id,"policy_number","POL-CLASSIFIER-999")
+        db.add(EntityLink(
+            from_type="document",from_id=source.id,relation_type="evidence_for",
+            to_type="insurance_policy",to_id=policy.id,confidence=Decimal("1"),
+            source_type="document_projection",source_ref=source.id,
+        ))
+        db.add(EntityLink(
+            from_type="document",from_id=source.id,relation_type="evidence_for",
+            to_type="contract",to_id=contract.id,confidence=Decimal("1"),
+            source_type="document_projection",source_ref=source.id,
+        ))
+        db.flush()
+
+        result=auto_link_document_entity(db,annex)
+        assert result is not None
+        assert result["entity_type"]=="insurance_policy"
+        assert annex.document_type=="insurance"
+        assert _entity_link_for_test(db,annex.id,"insurance_policy")==policy.id
+
+
+def _entity_link_for_test(db,document_id,to_type):
+    link=db.scalar(select(EntityLink).where(
+        EntityLink.from_type=="document",
+        EntityLink.from_id==document_id,
+        EntityLink.relation_type=="evidence_for",
+        EntityLink.to_type==to_type,
+    ))
+    return None if link is None else link.to_id
+
+
+def test_contract_number_groups_mortgage_annex_to_same_mortgage():
+    with SessionLocal() as db:
+        mortgage=Mortgage(
+            lender=f"Banco {uuid4().hex[:6]}",
+            remaining_principal=Decimal("100000"),
+            currency="EUR",
+            interest_type="fixed",
+            nominal_rate=Decimal("0.03"),
+            monthly_payment=Decimal("700"),
+            remaining_months=180,
+        )
+        db.add(mortgage);db.flush()
+        source=_document(db,"escritura-hipoteca.pdf")
+        source.document_type="mortgage"
+        annex=_document(db,"anexo-condiciones.pdf")
+        annex.document_type="contract"
+        for document in (source,annex):
+            _fact(db,document.id,"contract_number","HIP-2026-12345")
+        db.add(EntityLink(
+            from_type="document",from_id=source.id,relation_type="evidence_for",
+            to_type="mortgage",to_id=mortgage.id,confidence=Decimal("1"),
+            source_type="user",source_ref=source.id,
+        ))
+        db.flush()
+
+        result=auto_link_document_entity(db,annex)
+        assert result is not None
+        assert result["entity_type"]=="mortgage"
+        assert result["entity_id"]==mortgage.id
+        assert annex.document_type=="mortgage"
+        assert _entity_link_for_test(db,annex.id,"mortgage")==mortgage.id
