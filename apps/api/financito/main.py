@@ -15,10 +15,10 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .db import SessionLocal
 from .migrations import migrate,MIGRATION_VERSION
-from .domain.engines import MortgageEngine, MortgagePrepaymentEngine, MortgageRatePathEngine, OptimizationEngine
+from .domain.engines import MortgageEngine, MortgagePrepaymentEngine, MortgageRatePathEngine, MortgageIndexedRateEngine, OptimizationEngine
 from .services.financial_analytics import cash_flow,category_spending
 from .models import Account, ActionItem, AuditEvent, Budget, CategorizationAudit, Category, Commitment, Document, ExtractedFact, Transaction
-from .schemas import AccountCreate, AccountOut, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentIndexRequest, FactUpdate, ForecastRequest, MortgageScenarioRequest, MortgagePrepaymentRequest, MortgageRatePathRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
+from .schemas import AccountCreate, AccountOut, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentIndexRequest, FactUpdate, ForecastRequest, MortgageScenarioRequest, MortgagePrepaymentRequest, MortgageRatePathRequest, MortgageIndexedPathRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
 from .security import LocalSecurityMiddleware, create_session
 from .routes_extended import router as extended_router
 from .routes_analytics import router as analytics_router
@@ -259,6 +259,23 @@ def mortgage_rate_path(payload:MortgageRatePathRequest):
         "segments":[{"start_month":s.start_month,"annual_rate":str(s.annual_rate),"monthly_payment":str(s.monthly_payment),"end_balance":str(s.end_balance)} for s in result.segments],
         "notice":"Escenario determinista basado exclusivamente en la senda de tipos introducida; no es una predicción.",
     }
+
+
+@app.post("/api/v1/mortgage/indexed-path")
+def mortgage_indexed_path(payload:MortgageIndexedPathRequest):
+    try:
+        result=MortgageIndexedRateEngine.simulate(
+            payload.principal,payload.months,payload.interest_type,payload.revision_frequency_months,
+            [(p.month,p.index_rate) for p in payload.index_curve],payload.spread,payload.fixed_period_months,
+            payload.fixed_annual_rate,payload.floor_rate,payload.cap_rate,
+        )
+    except ValueError as exc:
+        raise HTTPException(400,str(exc))
+    response={"status":result.status,"missing_revision_months":list(result.missing_revision_months),"applied_rate_steps":[{"month":m,"annual_rate":str(r)} for m,r in result.applied_rate_steps],"notice":"Solo usa la curva de índice introducida. No interpola, extrapola ni predice revisiones futuras."}
+    if result.path is not None:
+        p=result.path
+        response.update({"total_payments":str(p.total_payments),"total_interest":str(p.total_interest),"min_monthly_payment":str(p.min_monthly_payment),"max_monthly_payment":str(p.max_monthly_payment),"final_balance":str(p.final_balance),"segments":[{"start_month":s.start_month,"annual_rate":str(s.annual_rate),"monthly_payment":str(s.monthly_payment),"end_balance":str(s.end_balance)} for s in p.segments]})
+    return response
 
 
 @app.post("/api/v1/mortgage/prepayment")
