@@ -9,6 +9,7 @@ from .services.banking import close_connection,complete_authorization,list_conne
 from .services.secure_config import provider_status,set_secret
 from .services.preferences import read_preferences,update_preferences
 from .services.local_ai import status as ai_status
+from .providers.enable_banking import EnableBankingProvider
 
 router=APIRouter(prefix="/api/v1")
 
@@ -40,6 +41,20 @@ def update_provider_config(p:ProviderSecretsIn):
         except RuntimeError as exc:raise HTTPException(503,str(exc))
         changed.append(name)
     return {"updated":changed,"status":provider_status()}
+
+@router.get("/banking/aspsps")
+def banking_aspsps(country:str="ES"):
+    try:
+        return EnableBankingProvider().aspsps(country)
+    except Exception as exc:
+        raise HTTPException(503,str(exc))
+
+@router.post("/banking/auth")
+def banking_auth(bank_name:str,country:str,redirect_url:str,state:str,valid_until:str,psu_type:str="personal"):
+    try:
+        return EnableBankingProvider().start_authorization(bank_name,country,redirect_url,state,valid_until,psu_type)
+    except Exception as exc:
+        raise HTTPException(503,str(exc))
 
 @router.get("/banking/connections")
 def banking_connections(db:Session=Depends(dbdep)):
