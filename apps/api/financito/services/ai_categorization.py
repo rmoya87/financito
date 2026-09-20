@@ -1,7 +1,7 @@
 from __future__ import annotations
 import math
 from decimal import Decimal
-from sqlalchemy import select
+from sqlalchemy import or_,select
 from sqlalchemy.orm import Session
 from ..models import CategorizationAudit,Category,Transaction
 from . import local_ai
@@ -114,13 +114,17 @@ def _apply_llm(session:Session,targets:list[Transaction],categories:dict[str,Cat
 
 def improve_categorization(session:Session,limit:int=3000,llm_limit:int=80)->dict:
     categories=ensure_categories(session)
-    rows=session.scalars(select(Transaction).where(Transaction.user_verified.is_(False),Transaction.categorization_confidence<Decimal("0.70")).order_by(Transaction.booking_date.desc(),Transaction.created_at.desc()).limit(max(1,min(limit,10000)))).all()
-    learned=0;still=[]
+    rows=session.scalars(select(Transaction).where(
+        Transaction.user_verified.is_(False),
+        or_(Transaction.categorization_confidence<Decimal("0.70"),Transaction.categorization_method=="deterministic_classifier"),
+    ).order_by(Transaction.booking_date.desc(),Transaction.created_at.desc()).limit(max(1,min(limit,10000)))).all()
+    learned=0;reevaluated=0;still=[]
     for tx in rows:
-        before=tx.categorization_method;categorize_transaction(session,tx)
+        before=tx.categorization_method;previous_category=tx.category_id;categorize_transaction(session,tx)
         if tx.categorization_method=="learned_merchant" and before!="learned_merchant":learned+=1
+        if tx.category_id!=previous_category:reevaluated+=1
         if tx.categorization_confidence<Decimal("0.70"):still.append(tx)
     ai=local_ai.status();emb=llm=0;emb_err=llm_err=None
     if still and ai.get("available") and ai.get("embedding_ready"):emb,still,emb_err=_apply_embedding(session,still,categories)
     if still and ai.get("available") and ai.get("chat_ready"):llm,still,llm_err=_apply_llm(session,still,categories,llm_limit)
-    return {"considered":len(rows),"learned_merchant":learned,"embedding":emb,"llm":llm,"unresolved":len(still),"ai":{"available":bool(ai.get("available")),"chat_model":ai.get("configured_model"),"chat_ready":bool(ai.get("chat_ready")),"embedding_model":ai.get("embedding_model"),"embedding_ready":bool(ai.get("embedding_ready"))},"warnings":[x for x in [None if ai.get("available") else "Ollama no está disponible.",None if ai.get("embedding_ready") else "El modelo de embeddings configurado no está instalado/disponible.",None if ai.get("chat_ready") else "El modelo de chat configurado no está instalado/disponible.",f"Embeddings: {emb_err}" if emb_err else None,f"LLM: {llm_err}" if llm_err else None] if x]}
+    return {"considered":len(rows),"reevaluated":reevaluated,"learned_merchant":learned,"embedding":emb,"llm":llm,"unresolved":len(still),"ai":{"available":bool(ai.get("available")),"chat_model":ai.get("configured_model"),"chat_ready":bool(ai.get("chat_ready")),"embedding_model":ai.get("embedding_model"),"embedding_ready":bool(ai.get("embedding_ready"))},"warnings":[x for x in [None if ai.get("available") else "Ollama no está disponible.",None if ai.get("embedding_ready") else "El modelo de embeddings configurado no está instalado/disponible.",None if ai.get("chat_ready") else "El modelo de chat configurado no está instalado/disponible.",f"Embeddings: {emb_err}" if emb_err else None,f"LLM: {llm_err}" if llm_err else None] if x]}
