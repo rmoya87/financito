@@ -1,0 +1,336 @@
+from __future__ import annotations
+
+from decimal import Decimal, InvalidOperation
+import json
+import re
+
+from sqlalchemy import delete, select
+from sqlalchemy.orm import Session
+
+from ..models import ActionItem, Document, ExtractedFact
+from ..models_extended import DocumentChunk
+from .local_ai import generate_json, status as ai_status
+
+
+ANALYSIS_FACT_TYPE = "ai_insight"
+ANALYSIS_KEY = "document_analysis"
+MAX_CONTEXT_CHARS = 48000
+MAX_CHUNKS = 18
+
+TYPE_FOCUS = {
+    "insurance": (
+        "Analiza especialmente coberturas, límites, franquicias, exclusiones, carencias, renovaciones, "
+        "preavisos, penalizaciones, prima, servicios incluidos, ventajas reales, obligaciones y posibles "
+        "solapamientos o carencias. Detecta si está vinculado a una hipoteca y el efecto de cancelarlo."
+    ),
+    "mortgage": (
+        "Analiza especialmente TIN/TAE, tipo fijo/variable/mixto, índice y diferencial, capital/plazo, "
+        "comisiones, amortización anticipada, subrogación, novación, productos vinculados, bonificaciones, "
+        "coste de perder cada bonificación, obligaciones y cláusulas que afecten a cambiar de entidad."
+    ),
+    "loan": (
+        "Analiza especialmente TIN/TAE, plazo, cuota, amortización anticipada, cancelación, comisiones, "
+        "garantías, seguros vinculados y cualquier coste de refinanciación."
+    ),
+    "energy": (
+        "Analiza especialmente precio fijo/variable, potencia, permanencia, penalización, revisión de precio, "
+        "servicios adicionales y condiciones de cancelación."
+    ),
+    "telecom": (
+        "Analiza especialmente permanencia, penalización, precio promocional y posterior, servicios incluidos, "
+        "financiación de dispositivos y condiciones de cancelación."
+    ),
+    "contract": (
+        "Analiza costes, renovaciones, preavisos, penalizaciones, permanencias, obligaciones, ventajas y "
+        "condiciones que afecten a una decisión de mantener, renegociar o cambiar."
+    ),
+}
+
+
+def _payload(row: ExtractedFact) -> dict:
+    try:
+        value = json.loads(row.value_json)
+        return value if isinstance(value, dict) else {"value": value}
+    except Exception:
+        return {"value": row.value_json}
+
+
+def latest_analysis(session: Session, document_id: str) -> dict | None:
+    row = session.scalar(
+        select(ExtractedFact)
+        .where(
+            ExtractedFact.document_id == document_id,
+            ExtractedFact.fact_type == ANALYSIS_FACT_TYPE,
+            ExtractedFact.key == ANALYSIS_KEY,
+        )
+        .order_by(ExtractedFact.updated_at.desc())
+    )
+    if row is None:
+        return None
+    payload = _payload(row)
+    return {
+        "id": row.id,
+        "status": row.status,
+        "confidence": str(row.confidence),
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        **payload,
+    }
+
+
+def _relevant_chunks(session: Session, document: Document) -> list[DocumentChunk]:
+    chunks = session.scalars(
+        select(DocumentChunk)
+        .where(DocumentChunk.document_id == document.id)
+        .order_by(DocumentChunk.chunk_index)
+    ).all()
+    if len(chunks) <= MAX_CHUNKS:
+        return chunks
+
+    focus_terms = {
+        "insurance": ["cobertura","exclus","franqu","prima","cancel","renov","preaviso","carencia","capital","límite","limite","hipoteca"],
+        "mortgage": ["tin","tae","amort","subrog","comisi","bonific","seguro","nómina","nomina","euribor","diferencial","novaci","cancel"],
+        "loan": ["tin","tae","amort","cancel","comisi","seguro","cuota","vencimiento"],
+        "energy": ["precio","kwh","potencia","permanencia","penal","cancel","revisi"],
+        "telecom": ["permanencia","penal","cancel","precio","promoci","renov","terminal"],
+    }.get(document.document_type, ["penal","cancel","renov","precio","coste","comisi","oblig","ventaja"])
+
+    scored = []
+    for chunk in chunks:
+        lowered = chunk.text.lower()
+        score = sum(lowered.count(term) for term in focus_terms)
+        scored.append((score, chunk.chunk_index, chunk))
+    selected = sorted(scored, key=lambda item: (-item[0], item[1]))[:MAX_CHUNKS]
+    return [item[2] for item in sorted(selected, key=lambda item: item[1])]
+
+
+def _structured_facts(session: Session, document_id: str) -> list[dict]:
+    rows = session.scalars(
+        select(ExtractedFact)
+        .where(
+            ExtractedFact.document_id == document_id,
+            ExtractedFact.fact_type != ANALYSIS_FACT_TYPE,
+        )
+        .order_by(ExtractedFact.source_page, ExtractedFact.created_at)
+    ).all()
+    out = []
+    for row in rows[:180]:
+        payload = _payload(row)
+        out.append({
+            "key": row.key,
+            "fact_type": row.fact_type,
+            "value": payload.get("value"),
+            "unit": payload.get("unit"),
+            "status": row.status,
+            "user_verified": row.user_verified,
+            "confidence": str(row.confidence),
+            "page": row.source_page,
+        })
+    return out
+
+
+def _context(session: Session, document: Document) -> str:
+    parts = []
+    total = 0
+    for chunk in _relevant_chunks(session, document):
+        prefix = f"[PÁGINA {chunk.page_start or '?'}]\n"
+        text = prefix + chunk.text.strip()
+        remaining = MAX_CONTEXT_CHARS - total
+        if remaining <= 0:
+            break
+        text = text[:remaining]
+        parts.append(text)
+        total += len(text)
+    if not parts and document.extracted_text:
+        parts.append(document.extracted_text[:MAX_CONTEXT_CHARS])
+    return "\n\n---\n\n".join(parts)
+
+
+def _clean_list(value) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    out = []
+    for item in value[:16]:
+        if isinstance(item, str):
+            out.append({"title": item[:180], "detail": "", "pages": []})
+            continue
+        if not isinstance(item, dict):
+            continue
+        pages = item.get("pages")
+        if not isinstance(pages, list):
+            pages = []
+        normalized_pages = []
+        for page in pages[:8]:
+            try:
+                normalized_pages.append(int(page))
+            except Exception:
+                pass
+        out.append({
+            "title": str(item.get("title") or item.get("name") or "")[:180],
+            "detail": str(item.get("detail") or item.get("description") or "")[:1200],
+            "pages": normalized_pages,
+            "impact": str(item.get("impact") or "")[:300],
+        })
+    return [x for x in out if x["title"] or x["detail"]]
+
+
+def _normalize(result: dict, document: Document) -> dict:
+    if not isinstance(result, dict):
+        raise RuntimeError("La IA local no devolvió un objeto JSON")
+    try:
+        confidence = Decimal(str(result.get("confidence", "0.55")))
+    except (InvalidOperation, ValueError):
+        confidence = Decimal("0.55")
+    confidence = max(Decimal("0"), min(Decimal("1"), confidence))
+    return {
+        "document_type": document.document_type,
+        "summary": str(result.get("summary") or "")[:3000],
+        "advantages": _clean_list(result.get("advantages")),
+        "penalties": _clean_list(result.get("penalties")),
+        "obligations": _clean_list(result.get("obligations")),
+        "risks": _clean_list(result.get("risks")),
+        "exclusions_or_limits": _clean_list(result.get("exclusions_or_limits")),
+        "linked_products": _clean_list(result.get("linked_products")),
+        "optimization_opportunities": _clean_list(result.get("optimization_opportunities")),
+        "cross_area_impacts": _clean_list(result.get("cross_area_impacts")),
+        "missing_information": _clean_list(result.get("missing_information")),
+        "confidence": str(confidence),
+        "model_role": (
+            "Interpretación local. No sustituye hechos contractuales confirmados ni se usa por sí sola "
+            "para cálculos deterministas."
+        ),
+    }
+
+
+def _upsert_action(session: Session, document: Document, analysis: dict) -> None:
+    opportunities = analysis.get("optimization_opportunities") or []
+    risks = analysis.get("risks") or []
+    existing = session.scalar(
+        select(ActionItem).where(
+            ActionItem.action_type == "review_document_ai_insights",
+            ActionItem.related_entity_type == "document",
+            ActionItem.related_entity_id == document.id,
+            ActionItem.status.in_(["pending", "in_progress"]),
+        )
+    )
+    if not opportunities and not risks:
+        if existing is not None:
+            existing.status = "done"
+        return
+    title = f"Revisar conclusiones de {document.file_name}"
+    notes = analysis.get("summary") or "La IA local ha detectado elementos que pueden afectar a decisiones financieras."
+    if existing is None:
+        session.add(ActionItem(
+            action_type="review_document_ai_insights",
+            title=title,
+            priority="medium",
+            related_entity_type="document",
+            related_entity_id=document.id,
+            source_type="document_ai",
+            source_ref=document.id,
+            notes=notes[:2000],
+        ))
+    else:
+        existing.title = title
+        existing.notes = notes[:2000]
+
+
+def analyze_document(session: Session, document: Document) -> dict:
+    ai = ai_status()
+    if not (ai.get("available") and ai.get("configured_model") and ai.get("chat_ready", True)):
+        return {
+            "status": "ai_unavailable",
+            "analysis": None,
+            "message": "Configura y arranca un modelo local de Ollama para generar el análisis interpretativo.",
+        }
+
+    context = _context(session, document)
+    facts = _structured_facts(session, document.id)
+    focus = TYPE_FOCUS.get(document.document_type, TYPE_FOCUS["contract"])
+    prompt = f"""
+Analiza un documento financiero personal en español. Documento: {document.file_name}
+Tipo detectado: {document.document_type}
+
+{focus}
+
+REGLAS OBLIGATORIAS:
+- Usa exclusivamente el texto y los hechos suministrados.
+- No inventes importes, porcentajes, fechas, coberturas, normativa ni condiciones.
+- Si una conclusión depende de algo no visible, colócala en missing_information.
+- Cita páginas solo cuando el contexto incluya una página concreta.
+- Distingue ventajas comerciales de derechos contractuales.
+- Señala impactos cruzados: por ejemplo, quitar un seguro puede encarecer una hipoteca.
+- No decidas por el usuario. Explica oportunidades y riesgos de forma neutral.
+- Los hechos con status=confirmed y user_verified=true son confirmados. Los demás son indicios.
+- Devuelve SOLO JSON válido.
+
+HECHOS ESTRUCTURADOS:
+{json.dumps(facts, ensure_ascii=False)}
+
+TEXTO RELEVANTE:
+{context}
+
+SCHEMA JSON:
+{{
+  "summary": "resumen ejecutivo",
+  "advantages": [{{"title":"","detail":"","pages":[1],"impact":""}}],
+  "penalties": [{{"title":"","detail":"","pages":[1],"impact":""}}],
+  "obligations": [{{"title":"","detail":"","pages":[1],"impact":""}}],
+  "risks": [{{"title":"","detail":"","pages":[1],"impact":""}}],
+  "exclusions_or_limits": [{{"title":"","detail":"","pages":[1],"impact":""}}],
+  "linked_products": [{{"title":"","detail":"","pages":[1],"impact":""}}],
+  "optimization_opportunities": [{{"title":"","detail":"","pages":[1],"impact":""}}],
+  "cross_area_impacts": [{{"title":"","detail":"","pages":[1],"impact":""}}],
+  "missing_information": [{{"title":"","detail":"","pages":[],"impact":""}}],
+  "confidence": 0.0
+}}
+"""
+    result = _normalize(generate_json(prompt, timeout=180), document)
+    confidence = Decimal(result["confidence"])
+
+    session.execute(
+        delete(ExtractedFact).where(
+            ExtractedFact.document_id == document.id,
+            ExtractedFact.fact_type == ANALYSIS_FACT_TYPE,
+            ExtractedFact.key == ANALYSIS_KEY,
+        )
+    )
+    row = ExtractedFact(
+        document_id=document.id,
+        fact_type=ANALYSIS_FACT_TYPE,
+        key=ANALYSIS_KEY,
+        value_json=json.dumps(result, ensure_ascii=False),
+        confidence=confidence,
+        status="inferred",
+        source_page=None,
+        source_section="Análisis interpretativo generado por IA local",
+        user_verified=False,
+    )
+    session.add(row)
+    _upsert_action(session, document, result)
+    session.flush()
+    return {"status": "ready", "analysis": result, "message": None}
+
+
+def analyze_document_by_id(session: Session, document_id: str) -> dict:
+    document = session.get(Document, document_id)
+    if document is None:
+        raise ValueError("Document not found")
+    return analyze_document(session, document)
+
+
+def domain_insights(session: Session, document_type: str | None = None) -> list[dict]:
+    stmt = select(Document).order_by(Document.updated_at.desc())
+    if document_type:
+        stmt = stmt.where(Document.document_type == document_type)
+    out = []
+    for document in session.scalars(stmt).all():
+        analysis = latest_analysis(session, document.id)
+        if analysis is None:
+            continue
+        out.append({
+            "document_id": document.id,
+            "file_name": document.file_name,
+            "document_type": document.document_type,
+            "analysis": analysis,
+        })
+    return out
