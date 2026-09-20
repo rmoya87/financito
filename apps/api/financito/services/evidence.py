@@ -748,7 +748,29 @@ def _ensure_coverage_projection(
     return created
 
 
-def synchronize_document_evidence(session: Session, document: Document) -> dict:
+def _reconcile_identity_siblings(session: Session, document: Document) -> int:
+    identities=_identity_values(session,document.id)
+    key="policy_number" if document.document_type=="insurance" else "contract_number"
+    value=identities.get(key)
+    if not value:
+        return 0
+    changed=0
+    for sibling in session.scalars(select(Document).where(Document.id!=document.id)).all():
+        if sibling.document_type!=document.document_type:
+            continue
+        if _identity_values(session,sibling.id).get(key)!=value:
+            continue
+        before=_entity_link(session,sibling.id,"insurance_policy" if document.document_type=="insurance" else "contract")
+        result=auto_link_document_entity(session,sibling)
+        if result is not None and before is None:
+            synchronize_document_evidence(session,sibling,reconcile_group=False)
+            changed+=1
+    return changed
+
+
+def synchronize_document_evidence(
+    session: Session, document: Document, reconcile_group: bool = True
+) -> dict:
     auto_link_document_entity(session, document)
     summary = sync_review_action(session, document)
     values = _confirmed_values(session, document.id)
@@ -762,6 +784,9 @@ def synchronize_document_evidence(session: Session, document: Document) -> dict:
     if coverage_count:
         from .contracts import scan_coverage_overlaps
         scan_coverage_overlaps(session)
+    grouped_documents=0
+    if reconcile_group and (policy is not None or contract is not None):
+        grouped_documents=_reconcile_identity_siblings(session,document)
     session.flush()
     return {
         **summary,
@@ -769,6 +794,7 @@ def synchronize_document_evidence(session: Session, document: Document) -> dict:
         "mortgage_id": None if mortgage is None else mortgage.id,
         "insurance_policy_id": None if policy is None else policy.id,
         "coverage_count": coverage_count,
+        "grouped_documents": grouped_documents,
     }
 
 
