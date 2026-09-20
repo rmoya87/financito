@@ -84,6 +84,8 @@ Orden de autoridad:
 
 La IA nunca debe sobrescribir silenciosamente una categoría confirmada por el usuario.
 
+Cuando evoluciona la taxonomía, la acción **Mejorar categorización con IA local** vuelve a evaluar también clasificaciones automáticas deterministas no verificadas. Esto permite que históricos anteriormente clasificados, por ejemplo, como Transporte u Otros pasen a Vehículo, Deporte u Ocio cuando las nuevas reglas aportan una categoría más precisa. Las correcciones manuales siguen protegidas.
+
 ## Merchant normalization
 
 Separar:
