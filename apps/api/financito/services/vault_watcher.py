@@ -3,14 +3,13 @@ import threading,time
 from pathlib import Path
 from ..config import settings
 from ..db import SessionLocal
-from .documents import index_document
-SUPPORTED={".pdf",".png",".jpg",".jpeg",".heic",".tiff",".bmp",".docx",".xlsx",".xlsm",".csv",".txt",".json"}
+from .documents import SUPPORTED_SUFFIXES,index_document
 class VaultWatcher:
     def __init__(self,interval:float=10):self.interval=interval;self.stop_event=threading.Event();self.thread=None;self.seen={}
     def scan_once(self):
         if not settings.vault_dir.exists():return
         for path in settings.vault_dir.rglob("*"):
-            if not path.is_file() or path.suffix.lower() not in SUPPORTED:continue
+            if not path.is_file() or path.suffix.lower() not in SUPPORTED_SUFFIXES:continue
             try:stamp=(path.stat().st_mtime_ns,path.stat().st_size)
             except OSError:continue
             if self.seen.get(str(path))==stamp:continue
