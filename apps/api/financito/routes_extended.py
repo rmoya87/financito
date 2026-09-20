@@ -164,6 +164,22 @@ def tracked_asset_add(p:TrackedAssetCreate,db:Session=Depends(dbdep)):
     except ValueError as exc:
         db.rollback();raise HTTPException(409,str(exc))
 
+@router.post("/tracked-assets/refresh-all")
+def tracked_assets_refresh_all(db:Session=Depends(dbdep)):
+    from .services.market_data import refresh_security
+    rows=tracked_assets(db)
+    refreshed=[];failed=[]
+    for item in rows:
+        if not item.get("price_stale"):
+            continue
+        try:
+            quote=refresh_security(db,item["security_id"])
+            refreshed.append({"security_id":item["security_id"],"quote":quote})
+        except Exception as exc:
+            failed.append({"security_id":item["security_id"],"error":str(exc)})
+    db.commit()
+    return {"refreshed":refreshed,"failed":failed,"assets":tracked_assets(db)}
+
 @router.post("/tracked-assets/{security_id}/refresh")
 def tracked_asset_refresh(security_id:str,include_history:bool=False,db:Session=Depends(dbdep)):
     from .services.market_data import refresh_security,refresh_history
