@@ -15,10 +15,10 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .db import SessionLocal
 from .migrations import migrate,MIGRATION_VERSION
-from .domain.engines import MortgageEngine, MortgagePrepaymentEngine, OptimizationEngine
+from .domain.engines import MortgageEngine, MortgagePrepaymentEngine, MortgageRatePathEngine, OptimizationEngine
 from .services.financial_analytics import cash_flow,category_spending
 from .models import Account, ActionItem, AuditEvent, Budget, CategorizationAudit, Category, Commitment, Document, ExtractedFact, Transaction
-from .schemas import AccountCreate, AccountOut, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentIndexRequest, FactUpdate, ForecastRequest, MortgageScenarioRequest, MortgagePrepaymentRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
+from .schemas import AccountCreate, AccountOut, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentIndexRequest, FactUpdate, ForecastRequest, MortgageScenarioRequest, MortgagePrepaymentRequest, MortgageRatePathRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
 from .security import LocalSecurityMiddleware, create_session
 from .routes_extended import router as extended_router
 from .routes_analytics import router as analytics_router
@@ -237,6 +237,28 @@ def update_action(action_id:str,payload:ActionUpdate,db:Session=Depends(get_db))
 def mortgage_scenario(payload:MortgageScenarioRequest):
     result=MortgageEngine.amortization(payload.principal,payload.annual_rate,payload.months)
     return {"monthly_payment":str(result.monthly_payment),"total_payments":str(result.total_payments),"total_interest":str(result.total_interest)}
+
+
+@app.post("/api/v1/mortgage/rate-path")
+def mortgage_rate_path(payload:MortgageRatePathRequest):
+    try:
+        result=MortgageRatePathEngine.simulate(
+            payload.principal,
+            payload.months,
+            payload.initial_annual_rate,
+            [(step.month,step.annual_rate) for step in payload.rate_steps],
+        )
+    except ValueError as exc:
+        raise HTTPException(400,str(exc))
+    return {
+        "total_payments":str(result.total_payments),
+        "total_interest":str(result.total_interest),
+        "min_monthly_payment":str(result.min_monthly_payment),
+        "max_monthly_payment":str(result.max_monthly_payment),
+        "final_balance":str(result.final_balance),
+        "segments":[{"start_month":s.start_month,"annual_rate":str(s.annual_rate),"monthly_payment":str(s.monthly_payment),"end_balance":str(s.end_balance)} for s in result.segments],
+        "notice":"Escenario determinista basado exclusivamente en la senda de tipos introducida; no es una predicción.",
+    }
 
 
 @app.post("/api/v1/mortgage/prepayment")
