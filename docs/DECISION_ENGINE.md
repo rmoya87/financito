@@ -223,3 +223,26 @@ El DecisionCase debe exponer:
 Un dato contractual crítico desconocido bloquea estados concluyentes.
 
 Ver CONTRACT_EVIDENCE.md.
+
+
+## Contexto real y snapshot de decisión
+
+El Laboratorio y los Decision Cases no usan importes de ejemplo como punto de partida.
+
+La fuente de verdad actual es:
+- hipotecas guardadas: capital pendiente, TIN actual, cuota real, meses restantes y comisión conocida;
+- contratos y evidencia confirmada;
+- saldos/liquidez;
+- patrimonio y deuda;
+- carteras, posiciones, coste de compra y últimos precios de mercado guardados;
+- acciones/ETF/fondos/cripto seguidos o poseídos;
+- evidencia documental con su estado confirmed/inferred/ambiguous.
+
+Al crear un DecisionCase se conserva un snapshot del contexto real para auditabilidad. Al abrirlo se devuelve además `live_current_state`, calculado con los datos actuales, para detectar cambios desde la creación.
+
+Regla:
+- el snapshot histórico no se reescribe;
+- la vista actual sí se recalcula desde la base local;
+- las variables futuras introducidas por el usuario se identifican como supuestos;
+- un precio de mercado conserva proveedor y fecha y puede marcarse como desactualizado;
+- un dato ausente permanece desconocido.
