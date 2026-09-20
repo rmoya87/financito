@@ -22,7 +22,8 @@ class InsuranceCreate(BaseModel):
 class CoverageCreate(BaseModel):
     coverage_type:str; contract_id:str|None=None; insurance_policy_id:str|None=None; limit_amount:Decimal|None=None; deductible:Decimal|None=None; effective_from:date|None=None; effective_to:date|None=None; confidence:Decimal=Decimal("1"); user_verified:bool=True
 class GoalProgressUpdate(BaseModel):
-    current_amount:Decimal
+    current_amount:Decimal=Field(ge=0)
+    planned_monthly_contribution:Decimal|None=Field(default=None,ge=0)
 class StressRequest(BaseModel):
     income_reduction_pct:Decimal=Decimal("0"); extraordinary_expense:Decimal=Decimal("0"); portfolio_drop_pct:Decimal=Decimal("0"); months:int=Field(default=6,ge=1,le=60)
 class RagSearchRequest(BaseModel):
