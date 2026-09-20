@@ -10,7 +10,7 @@ import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
 type ReviewSummary={total:number;pending:number;confirmed:number;ambiguous:number;reviewed:number};
 type Doc={id:string;file_name:string;document_type:string;status:string;page_count:number;review:ReviewSummary;ai_analysis:'ready'|'not_analyzed'};
 type InsightItem={title:string;detail:string;pages:number[];impact?:string};
-type AIAnalysis={id?:string;status?:string;confidence:string;summary:string;advantages:InsightItem[];penalties:InsightItem[];obligations:InsightItem[];risks:InsightItem[];exclusions_or_limits:InsightItem[];linked_products:InsightItem[];optimization_opportunities:InsightItem[];cross_area_impacts:InsightItem[];missing_information:InsightItem[];model_role:string};
+type AIAnalysis={id?:string;status?:string;confidence:string;summary:string;advantages:InsightItem[];penalties:InsightItem[];obligations:InsightItem[];risks:InsightItem[];exclusions_or_limits:InsightItem[];linked_products:InsightItem[];optimization_opportunities:InsightItem[];negotiation_points:InsightItem[];comparison_requirements:InsightItem[];cross_area_impacts:InsightItem[];missing_information:InsightItem[];model_role:string};
 type AnalysisResponse={document_id:string;status:'ready'|'not_analyzed';analysis:AIAnalysis|null;ai:{available:boolean;configured_model:string|null;chat_ready?:boolean}};
 type UploadResponse={documents:{id:string;file_name:string;document_type:string;facts_created:number;chunks_created:number}[];ai_analysis_scheduled:boolean};
 type Fact={id:string;fact_type:string;key:string;value:{value:string;unit?:string;coverage_type?:string;limit_amount?:string|null;deductible?:string|null;conditions?:string;exclusions?:string;source?:string};confidence:string;status:string;source_page:number|null;source_section:string|null;user_verified:boolean};
@@ -257,6 +257,8 @@ export default function DocumentsPage(){
               <InsightGroup title="Exclusiones o límites" items={analysis.data.analysis.exclusions_or_limits}/>
               <InsightGroup title="Productos vinculados" items={analysis.data.analysis.linked_products}/>
               <InsightGroup title="Oportunidades de optimización" items={analysis.data.analysis.optimization_opportunities}/>
+              <InsightGroup title="Puntos para negociar" items={analysis.data.analysis.negotiation_points}/>
+              <InsightGroup title="Qué exigir para comparar ofertas" items={analysis.data.analysis.comparison_requirements}/>
               <InsightGroup title="Impactos en otras áreas" items={analysis.data.analysis.cross_area_impacts}/>
               <InsightGroup title="Información que falta" items={analysis.data.analysis.missing_information}/>
             </div>
