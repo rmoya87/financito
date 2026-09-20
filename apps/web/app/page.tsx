@@ -40,7 +40,7 @@ function actionDestination(action:Dashboard['actions'][number]){
 
 const priorityLabel:Record<string,string>={high:'Alta',medium:'Media',low:'Baja'};
 
-type DashboardRange='month'|'30d'|'90d'|'year'|'12m';
+type DashboardRange='month'|'30d'|'90d'|'year'|'12m'|'all';
 
 function isoDate(value:Date){
   const y=value.getFullYear();
@@ -57,6 +57,7 @@ function dashboardRange(range:DashboardRange){
   if(range==='90d')start.setDate(start.getDate()-89);
   if(range==='year'){start.setMonth(0);start.setDate(1)}
   if(range==='12m')start.setFullYear(start.getFullYear()-1);
+  if(range==='all')return {start:'1900-01-01',end:isoDate(end)};
   return {start:isoDate(start),end:isoDate(end)};
 }
 
@@ -92,6 +93,7 @@ export default function DashboardPage(){
           <option value="90d">Últimos 90 días</option>
           <option value="year">Este año</option>
           <option value="12m">Últimos 12 meses</option>
+          <option value="all">Todo el histórico</option>
         </select>
       </label>}
     />
