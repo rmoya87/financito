@@ -260,7 +260,6 @@ def _replace_ai_proposals(session:Session,document:Document,analysis:dict)->None
             ExtractedFact.document_id==document.id,
             ExtractedFact.key==key,
             ExtractedFact.source_page==page,
-            ExtractedFact.source_section.not_like("IA local:%"),
         ))
         if existing:
             continue
@@ -283,7 +282,15 @@ def _replace_ai_proposals(session:Session,document:Document,analysis:dict)->None
         ))
     for index,coverage in enumerate(analysis.get("coverage_facts") or []):
         page=coverage["page"]
-        slug=re.sub(r"[^a-z0-9]+","_",coverage["coverage_type"].lower()).strip("_")[:45] or "coverage"
+        coverage_name=coverage["coverage_type"].strip()
+        existing_coverages=session.scalars(select(ExtractedFact).where(
+            ExtractedFact.document_id==document.id,
+            ExtractedFact.fact_type=="coverage_fact",
+            ExtractedFact.source_page==page,
+        )).all()
+        if any(str(_payload(row).get("coverage_type") or _payload(row).get("value") or "").strip().lower()==coverage_name.lower() for row in existing_coverages):
+            continue
+        slug=re.sub(r"[^a-z0-9]+","_",coverage_name.lower()).strip("_")[:45] or "coverage"
         session.add(ExtractedFact(
             document_id=document.id,
             fact_type="coverage_fact",
