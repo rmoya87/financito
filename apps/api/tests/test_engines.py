@@ -1,6 +1,6 @@
 from datetime import date
 from decimal import Decimal
-from financito.domain.engines import CashFlowEngine, MortgageEngine, OptimizationEngine, comparable_period_last_year
+from financito.domain.engines import CashFlowEngine, MortgageEngine, MortgageRatePathEngine, OptimizationEngine, comparable_period_last_year
 
 def test_cashflow_excludes_internal_transfers():
     result=CashFlowEngine.calculate([(Decimal("3000"),False),(Decimal("-1000"),False),(Decimal("-500"),True)])
@@ -14,3 +14,13 @@ def test_mortgage_zero_rate():
 
 def test_comparable_leap_day():
     start,end=comparable_period_last_year(date(2028,2,29),date(2028,3,31)); assert start==date(2027,2,28) and end==date(2027,3,31)
+
+
+def test_variable_rate_path_recalculates_payment_without_predicting():
+    flat=MortgageRatePathEngine.simulate(Decimal("200000"),240,Decimal("0.02"),[])
+    rising=MortgageRatePathEngine.simulate(Decimal("200000"),240,Decimal("0.02"),[(13,Decimal("0.04")),(25,Decimal("0.05"))])
+    assert flat.final_balance==Decimal("0.00")
+    assert rising.final_balance==Decimal("0.00")
+    assert rising.max_monthly_payment>flat.max_monthly_payment
+    assert rising.total_interest>flat.total_interest
+    assert [s.start_month for s in rising.segments]==[1,13,25]
