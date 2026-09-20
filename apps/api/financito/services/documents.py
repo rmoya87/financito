@@ -250,6 +250,14 @@ def extract_contract_facts(text:str,source_page:int|None=None)->list[dict]:
             value=re.sub(r"\s+"," ",match.group(1)).strip()
             facts.append({"fact_type":"mortgage_term","key":key,"value":value,"unit":unit,"confidence":confidence,"source_page":source_page,"source_section":_context(text,match.start(),match.end())})
 
+    date_patterns=[
+        ("next_review_date",r"(?:pr[oó]xima\s+revisi[oó]n|fecha\s+de\s+revisi[oó]n)\D{0,35}(\d{1,2}[\/-]\d{1,2}[\/-]\d{4})","date",.80),
+    ]
+    for key,pattern,unit,confidence in date_patterns:
+        for match in re.finditer(pattern,lowered,re.I):
+            value=match.group(1).replace("-","/")
+            facts.append({"fact_type":"mortgage_term","key":key,"value":value,"unit":unit,"confidence":confidence,"source_page":source_page,"source_section":_context(text,match.start(),match.end())})
+
     mortgage_number_patterns=[
         ("differential_rate",r"(?:diferencial(?:\s+(?:del|de))?|m[aá]s\s+diferencial(?:\s+(?:del|de))?)\D{0,30}(\d+[\.,]?\d*)\s*%","percent",.80),
         ("mortgage_term_years",r"(?:plazo(?:\s+(?:de|total\s+de))?)\D{0,25}(\d{1,3})\s*a[nñ]os","years",.82),
