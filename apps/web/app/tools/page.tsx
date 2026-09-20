@@ -11,7 +11,18 @@ import {ErrorState} from '@/components/ui/states';
 type Mortgage={monthly_payment:string;total_payments:string;total_interest:string};
 type Prepay={original_monthly_payment:string;original_total_interest:string;reduced_payment:string;reduced_payment_total_interest:string;reduced_term_months:number;reduced_term_total_interest:string;prepayment_fee:string;interest_saved_reduce_payment:string;interest_saved_reduce_term:string};
 type RatePath={total_payments:string;total_interest:string;min_monthly_payment:string;max_monthly_payment:string;final_balance:string;notice:string;segments:{start_month:number;annual_rate:string;monthly_payment:string;end_balance:string}[]};
+type IndexedPath={status:string;missing_revision_months:number[];applied_rate_steps:{month:number;annual_rate:string}[];notice:string;total_payments?:string;total_interest?:string;min_monthly_payment?:string;max_monthly_payment?:string;final_balance?:string;segments?:{start_month:number;annual_rate:string;monthly_payment:string;end_balance:string}[]};
 type Opt={status:string;net_annual_benefit:string|null;break_even_months:string|null};
+
+function parseIndexCurve(raw:string){
+  if(!raw.trim())return [];
+  return raw.split(',').map((piece)=>{
+    const [month,rate]=piece.trim().split(':');
+    const m=Number(month);const r=Number((rate||'').replace(',','.'));
+    if(!Number.isFinite(m)||!Number.isInteger(m)||m<1||!Number.isFinite(r))throw new Error('Usa mes:índice_decimal, por ejemplo 13:0.02,25:0.025');
+    return {month:m,index_rate:String(r)};
+  });
+}
 
 function parseRatePath(raw:string){
   if(!raw.trim())return [];
@@ -32,12 +43,27 @@ export default function ToolsPage(){
   const [fee,setFee]=useState('0');
   const [pathSpec,setPathSpec]=useState('13:0.035,25:0.04');
   const [pathError,setPathError]=useState('');
+  const [indexedType,setIndexedType]=useState<'variable'|'mixed'>('mixed');
+  const [indexedMonths,setIndexedMonths]=useState('36');
+  const [revisionMonths,setRevisionMonths]=useState('12');
+  const [spread,setSpread]=useState('0.01');
+  const [fixedPeriod,setFixedPeriod]=useState('12');
+  const [fixedRate,setFixedRate]=useState('0.018');
+  const [floorRate,setFloorRate]=useState('');
+  const [capRate,setCapRate]=useState('');
+  const [indexSpec,setIndexSpec]=useState('13:0.02,25:0.025');
+  const [indexError,setIndexError]=useState('');
   const mortgage=useMutation({mutationFn:()=>apiMutate<Mortgage>('/api/v1/mortgage/scenario','POST',{principal,annual_rate:rate,months:Number(months)})});
   const prepay=useMutation({mutationFn:()=>apiMutate<Prepay>('/api/v1/mortgage/prepayment','POST',{principal,annual_rate:rate,months:Number(months),extra_payment:extra,prepayment_fee:fee})});
   const ratePath=useMutation({mutationFn:()=>{
     const rate_steps=parseRatePath(pathSpec);
     return apiMutate<RatePath>('/api/v1/mortgage/rate-path','POST',{principal,months:Number(months),initial_annual_rate:rate,rate_steps});
   }});
+  const indexedPath=useMutation({mutationFn:()=>apiMutate<IndexedPath>('/api/v1/mortgage/indexed-path','POST',{
+    principal,months:Number(indexedMonths),interest_type:indexedType,revision_frequency_months:Number(revisionMonths),
+    index_curve:parseIndexCurve(indexSpec),spread,fixed_period_months:indexedType==='mixed'?Number(fixedPeriod):0,
+    fixed_annual_rate:indexedType==='mixed'?fixedRate:null,floor_rate:floorRate===''?null:floorRate,cap_rate:capRate===''?null:capRate,
+  })});
   const [gross,setGross]=useState('600');
   const [switching,setSwitching]=useState('100');
   const [penalty,setPenalty]=useState('');
@@ -77,6 +103,26 @@ export default function ToolsPage(){
         {pathError&&<div className="mt-3 text-sm">{pathError}</div>}
         {ratePath.error&&<div className="mt-3"><ErrorState error={ratePath.error}/></div>}
         {ratePath.data&&<div className="mt-4"><div className="grid gap-3 sm:grid-cols-4 text-sm"><div><span className="text-[var(--muted)]">Intereses</span><div className="font-bold"><Money value={ratePath.data.total_interest}/></div></div><div><span className="text-[var(--muted)]">Cuota mínima</span><div className="font-bold"><Money value={ratePath.data.min_monthly_payment}/></div></div><div><span className="text-[var(--muted)]">Cuota máxima</span><div className="font-bold"><Money value={ratePath.data.max_monthly_payment}/></div></div><div><span className="text-[var(--muted)]">Saldo final</span><div className="font-bold"><Money value={ratePath.data.final_balance}/></div></div></div><div className="mt-4 overflow-auto"><table className="w-full min-w-[560px] text-sm"><thead><tr className="text-left text-xs uppercase text-[var(--muted)]"><th className="p-2">Desde mes</th><th className="p-2">TIN</th><th className="p-2">Cuota</th><th className="p-2">Saldo al cambio</th></tr></thead><tbody>{ratePath.data.segments.map((s,i)=><tr key={i} className="border-t border-[var(--border)]"><td className="p-2">{s.start_month}</td><td className="p-2">{(Number(s.annual_rate)*100).toFixed(3)}%</td><td className="p-2"><Money value={s.monthly_payment}/></td><td className="p-2"><Money value={s.end_balance}/></td></tr>)}</tbody></table></div><p className="mt-3 text-xs text-[var(--muted)]">{ratePath.data.notice}</p></div>}
+      </Card>
+      <Card className="xl:col-span-2">
+        <h2 className="font-bold">Hipoteca variable o mixta por índice</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">Introduce el índice en cada mes contractual de revisión. No se interpolan ni predicen valores ausentes.</p>
+        <form className="mt-4 grid gap-3 md:grid-cols-3" onSubmit={(e:FormEvent)=>{e.preventDefault();try{parseIndexCurve(indexSpec);setIndexError('');indexedPath.mutate()}catch(err){setIndexError(err instanceof Error?err.message:String(err))}}}>
+          <label className="text-sm">Tipo<select className="fin-input mt-1" value={indexedType} onChange={e=>setIndexedType(e.target.value as 'variable'|'mixed')}><option value="variable">Variable</option><option value="mixed">Mixta</option></select></label>
+          <label className="text-sm">Meses restantes<input className="fin-input mt-1" value={indexedMonths} onChange={e=>setIndexedMonths(e.target.value)}/></label>
+          <label className="text-sm">Revisión cada N meses<input className="fin-input mt-1" value={revisionMonths} onChange={e=>setRevisionMonths(e.target.value)}/></label>
+          <label className="text-sm">Diferencial decimal<input className="fin-input mt-1" value={spread} onChange={e=>setSpread(e.target.value)}/></label>
+          {indexedType==='mixed'&&<><label className="text-sm">Tramo fijo (meses)<input className="fin-input mt-1" value={fixedPeriod} onChange={e=>setFixedPeriod(e.target.value)}/></label><label className="text-sm">TIN tramo fijo<input className="fin-input mt-1" value={fixedRate} onChange={e=>setFixedRate(e.target.value)}/></label></>}
+          <label className="text-sm">Suelo (opcional)<input className="fin-input mt-1" value={floorRate} onChange={e=>setFloorRate(e.target.value)}/></label>
+          <label className="text-sm">Techo (opcional)<input className="fin-input mt-1" value={capRate} onChange={e=>setCapRate(e.target.value)}/></label>
+          <label className="text-sm md:col-span-3">Curva de índice<input className="fin-input mt-1" value={indexSpec} onChange={e=>setIndexSpec(e.target.value)} placeholder="13:0.02,25:0.025"/></label>
+          <button className="fin-button md:col-span-3">Calcular revisiones</button>
+        </form>
+        {indexError&&<div className="mt-3 text-sm">{indexError}</div>}
+        {indexedPath.error&&<div className="mt-3"><ErrorState error={indexedPath.error}/></div>}
+        {indexedPath.data?.status==='needs_more_data'&&<div className="mt-4 rounded-xl bg-[var(--surface-2)] p-4 text-sm">Faltan índices para los meses de revisión: {indexedPath.data.missing_revision_months.join(', ')}.</div>}
+        {indexedPath.data?.status==='ready'&&<div className="mt-4 grid gap-3 sm:grid-cols-4 text-sm"><div><span className="text-[var(--muted)]">Intereses</span><div className="font-bold"><Money value={indexedPath.data.total_interest||'0'}/></div></div><div><span className="text-[var(--muted)]">Cuota mínima</span><div className="font-bold"><Money value={indexedPath.data.min_monthly_payment||'0'}/></div></div><div><span className="text-[var(--muted)]">Cuota máxima</span><div className="font-bold"><Money value={indexedPath.data.max_monthly_payment||'0'}/></div></div><div><span className="text-[var(--muted)]">Saldo final</span><div className="font-bold"><Money value={indexedPath.data.final_balance||'0'}/></div></div></div>}
+        {indexedPath.data&&<p className="mt-3 text-xs text-[var(--muted)]">{indexedPath.data.notice}</p>}
       </Card>
       <Card className="xl:col-span-2">
         <h2 className="font-bold">Cambio de producto</h2>
