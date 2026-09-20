@@ -112,6 +112,18 @@ def _context(text:str,start:int,end:int)->str:
     left=max(0,start-80);right=min(len(text),end+120)
     return re.sub(r"\s+"," ",text[left:right]).strip()[:255]
 
+def _normalize_number(raw:str)->str:
+    value=str(raw).strip().replace(" ","")
+    if "," in value and "." in value:
+        if value.rfind(",")>value.rfind("."):
+            return value.replace(".","").replace(",",".")
+        return value.replace(",","")
+    if "," in value:
+        return value.replace(",",".")
+    if value.count(".")>1:
+        return value.replace(".","")
+    return value
+
 def extract_contract_facts(text:str,source_page:int|None=None)->list[dict]:
     facts=[]
     patterns=[
@@ -124,11 +136,12 @@ def extract_contract_facts(text:str,source_page:int|None=None)->list[dict]:
         ("apr_rate",r"(?:\bTAE\b)\D{0,60}(\d+[\.,]?\d*)\s*%","percent",.78),
         ("remaining_principal",r"(?:capital\s+pendiente|saldo\s+pendiente|principal\s+pendiente)\D{0,80}(\d{1,3}(?:[\.\s]\d{3})*(?:,\d{1,2})?|\d+(?:[\.,]\d+)?)\s*(?:€|euros?)","EUR",.84),
         ("monthly_payment",r"(?:cuota\s+(?:mensual|actual)|mensualidad)\D{0,80}(\d{1,3}(?:[\.\s]\d{3})*(?:,\d{1,2})?|\d+(?:[\.,]\d+)?)\s*(?:€|euros?)","EUR",.82),
+        ("remaining_months",r"(?:plazo\s+pendiente|meses\s+pendientes|quedan)\D{0,60}(\d{1,4})\s*meses","months",.84),
     ]
     lowered=text.lower()
     for key,pattern,unit,confidence in patterns:
         for match in re.finditer(pattern,lowered,re.I):
-            raw=match.group(1).replace(",",".")
+            raw=_normalize_number(match.group(1))
             facts.append({"fact_type":"contract_term","key":key,"value":raw,"unit":unit,"confidence":confidence,"source_page":source_page,"source_section":_context(text,match.start(),match.end())})
     semantic_patterns=[
         ("reference_index",r"\b(eur[ií]bor(?:\s+a\s+\d+\s+meses?)?|irph)\b","text",.82),
@@ -150,7 +163,7 @@ def extract_contract_facts(text:str,source_page:int|None=None)->list[dict]:
     ]
     for key,pattern,unit,confidence in mortgage_number_patterns:
         for match in re.finditer(pattern,lowered,re.I):
-            raw=match.group(1).replace(",",".")
+            raw=_normalize_number(match.group(1))
             facts.append({"fact_type":"mortgage_term","key":key,"value":raw,"unit":unit,"confidence":confidence,"source_page":source_page,"source_section":_context(text,match.start(),match.end())})
     linked_patterns=[
         ("linked_salary",r"(?:domiciliaci[oó]n de n[oó]mina|n[oó]mina domiciliada)"),
