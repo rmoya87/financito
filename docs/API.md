@@ -140,8 +140,12 @@ No existen rutas públicas para leer directamente la sesión PSD2, balances prov
 
 ## Hipoteca y optimización
 - `POST /mortgage/scenario`
+- `POST /mortgage/rate-path`
+- `POST /mortgage/indexed-path`
 - `POST /mortgage/prepayment`
 - `POST /optimization/calculate`
+
+`/mortgage/indexed-path` modela variable/mixta con revisiones explícitas de índice, diferencial, tramo fijo y suelo/techo. Si falta el índice de una revisión contractual devuelve `needs_more_data`; no interpola ni predice.
 
 La penalización desconocida en optimización se representa como `null` y produce `needs_more_data`.
 
@@ -171,8 +175,14 @@ La penalización desconocida en optimización se representa como `null` y produc
 
 ## Fiscalidad
 - `POST /tax/estimate`
+- `POST /tax/savings/calculate`
 
-Es una estimación parametrizada, no un motor normativo legal por jurisdicción/año.
+`/tax/estimate` usa normativa versionada cuando existe para la jurisdicción/ejercicio y conserva la tasa explícita como simulación alternativa. `/tax/savings/calculate` integra los saldos corrientes de la base del ahorro mediante el ruleset correspondiente y devuelve versión, fuentes y alcance.
+
+## Comparadores comerciales
+- `POST /comparisons/evaluate`
+
+Normaliza ofertas suministradas por adapters/fuentes autorizadas y valida procedencia, frescura, campos materiales, categoría y divisa antes de considerarlas comparables.
 
 ## Compatibilidad
 Los nombres y payloads de OpenAPI son la referencia última. Si este documento y `/api/openapi.json` difieren, debe corregirse la documentación en el mismo cambio.
