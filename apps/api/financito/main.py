@@ -30,7 +30,7 @@ from .routes_privacy import router as privacy_router
 from .routes_observability import router as observability_router
 from .services.vault_watcher import VaultWatcher
 from .services.categorization import ensure_categories,propagate_verified_merchant
-from .services.transaction_ops import apply_category_semantics,detect_internal_transfers,detect_refunds,pair_internal_transfer_counterpart,synchronize_transaction_semantics
+from .services.transaction_ops import apply_category_semantics,detect_internal_transfers,detect_refunds,pair_internal_transfer_counterpart,set_category_for_same_concept,synchronize_transaction_semantics
 from .services.documents import index_document,reprocess_document,safe_path,store_uploaded_document
 from .services.evidence import review_summary,synchronize_all_document_evidence,synchronize_document_evidence
 from .services.document_ai import analyze_document_by_id,domain_insights,latest_analysis
@@ -133,25 +133,20 @@ def update_category(transaction_id:str,payload:TransactionCategoryUpdate,db:Sess
     tx=db.get(Transaction,transaction_id)
     if not tx: raise HTTPException(404,"Transaction not found")
     if not db.get(Category,payload.category_id): raise HTTPException(404,"Category not found")
-    previous=tx.category_id; tx.category_id=payload.category_id; tx.categorization_method="manual"; tx.categorization_confidence=Decimal("1"); tx.user_verified=True
-    key=apply_category_semantics(db,tx)
-    if key=="internal_transfer":
-        pair_internal_transfer_counterpart(db,tx)
-    db.add(CategorizationAudit(transaction_id=tx.id,previous_category_id=previous,new_category_id=payload.category_id,method="manual",confidence=Decimal("1"),changed_by="user"))
-    propagate_verified_merchant(db,tx)
+    set_category_for_same_concept(db,tx,payload.category_id)
     db.commit(); db.refresh(tx); return tx
 
 
 @app.get("/api/v1/dashboard")
-def dashboard(db:Session=Depends(get_db)):
-    today=date.today(); start=today.replace(day=1)
-    txs=db.scalars(select(Transaction).where(and_(Transaction.booking_date>=start,Transaction.booking_date<=today))).all()
-    flow_data=cash_flow(db,start,today)
+def dashboard(start:date|None=None,end:date|None=None,db:Session=Depends(get_db)):
+    today=date.today(); end=end or today; start=start or end.replace(day=1)
+    if end<start: raise HTTPException(400,"La fecha final debe ser igual o posterior a la inicial.")
+    flow_data=cash_flow(db,start,end)
     balances=sum((a.current_balance for a in db.scalars(select(Account)).all()),Decimal("0"))
     upcoming=db.scalars(select(Commitment).where(and_(Commitment.due_date>=today,Commitment.due_date<=today+timedelta(days=45),Commitment.status=="active")).order_by(Commitment.due_date)).all()
     actions=db.scalars(select(ActionItem).where(ActionItem.status.in_(["pending","in_progress"])).order_by(ActionItem.due_date.asc().nullslast()).limit(10)).all()
-    category_rows=category_spending(db,start,today)
-    return {"period":{"start":start,"end":today},"liquidity":str(balances),"income":str(flow_data["income"]),"expenses":str(flow_data["expenses"]),"savings":str(flow_data["savings"]),"savings_rate":str(flow_data["savings_rate"]) if flow_data["savings_rate"] is not None else None,"spending_by_category":[{"category":r["category"],"system_key":r["system_key"],"amount":str(r["amount"])} for r in category_rows],"upcoming_commitments":[{"id":c.id,"title":c.title,"amount":str(c.amount),"due_date":c.due_date} for c in upcoming],"actions":[{"id":a.id,"title":a.title,"action_type":a.action_type,"priority":a.priority,"due_date":a.due_date,"status":a.status,"notes":a.notes,"related_entity_type":a.related_entity_type,"related_entity_id":a.related_entity_id} for a in actions]}
+    category_rows=category_spending(db,start,end)
+    return {"period":{"start":start,"end":end},"liquidity":str(balances),"income":str(flow_data["income"]),"expenses":str(flow_data["expenses"]),"savings":str(flow_data["savings"]),"savings_rate":str(flow_data["savings_rate"]) if flow_data["savings_rate"] is not None else None,"spending_by_category":[{"category":r["category"],"system_key":r["system_key"],"amount":str(r["amount"])} for r in category_rows],"upcoming_commitments":[{"id":c.id,"title":c.title,"amount":str(c.amount),"due_date":c.due_date} for c in upcoming],"actions":[{"id":a.id,"title":a.title,"action_type":a.action_type,"priority":a.priority,"due_date":a.due_date,"status":a.status,"notes":a.notes,"related_entity_type":a.related_entity_type,"related_entity_id":a.related_entity_id} for a in actions]}
 
 
 @app.post("/api/v1/budgets")
