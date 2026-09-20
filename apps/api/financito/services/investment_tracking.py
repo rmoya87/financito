@@ -64,11 +64,9 @@ def security_summary(session: Session, security: Security) -> dict:
     average_cost = Decimal("0") if quantity <= 0 else total_basis / quantity
 
     latest = _latest_market_price(session, security.id)
+    # A trade price is historical purchase/sale data, not a current quote.
+    # Only a persisted market-provider observation may be labelled "current".
     current_price = latest.close if latest else None
-    if current_price is None:
-        priced_positions = [row.current_price for row in positions if row.current_price is not None]
-        if priced_positions:
-            current_price = priced_positions[-1]
 
     current_value = None if current_price is None else quantity * current_price
     unrealized = None if current_value is None else current_value - total_basis
