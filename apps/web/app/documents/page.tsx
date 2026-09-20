@@ -148,6 +148,7 @@ export default function DocumentsPage(){
           ref={fileInput}
           className="sr-only"
           type="file"
+          aria-label="Seleccionar documentos financieros"
           multiple
           accept=".pdf,.png,.jpg,.jpeg,.heic,.tiff,.bmp,.docx,.xlsx,.xlsm,.csv,.txt,.json"
           onChange={e=>{if(e.target.files)addFiles(e.target.files);e.currentTarget.value=''}}
