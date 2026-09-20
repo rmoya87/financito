@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
+from io import BytesIO
+import zipfile
 import json
 import mimetypes
 import re
@@ -31,13 +33,49 @@ class IndexedDocument:
     facts_created:int
     chunks_created:int
 
-def store_uploaded_document(filename:str,content:bytes)->Path:
+def _validate_upload_bytes(filename:str,content:bytes,content_type:str|None=None)->None:
+    suffix=Path(filename or "").suffix.lower()
+    if not content:
+        raise ValueError("El archivo está vacío")
+    if suffix==".pdf":
+        if not content.lstrip().startswith(b"%PDF-"):
+            raise ValueError("El contenido no es un PDF válido")
+        try:PdfReader(BytesIO(content))
+        except Exception as exc:raise ValueError("El PDF está dañado o no se puede leer") from exc
+        return
+    if suffix in {".png",".jpg",".jpeg",".heic",".tiff",".bmp"}:
+        try:
+            image=Image.open(BytesIO(content));image.verify()
+        except Exception as exc:
+            raise ValueError("La imagen está dañada o su contenido no coincide con un formato admitido") from exc
+        return
+    if suffix in {".docx",".xlsx",".xlsm"}:
+        try:
+            with zipfile.ZipFile(BytesIO(content)) as archive:
+                names=set(archive.namelist())
+                if "[Content_Types].xml" not in names:
+                    raise ValueError("El archivo Office no contiene una estructura OOXML válida")
+        except (zipfile.BadZipFile,ValueError) as exc:
+            raise ValueError("El archivo Office está dañado o no coincide con su extensión") from exc
+        return
+    if suffix in {".txt",".csv",".json"}:
+        try:text=content.decode("utf-8")
+        except UnicodeDecodeError:
+            try:text=content.decode("latin-1")
+            except UnicodeDecodeError as exc:raise ValueError("El archivo de texto no se puede decodificar") from exc
+        if suffix==".json":
+            try:json.loads(text)
+            except json.JSONDecodeError as exc:raise ValueError("El archivo JSON no es válido") from exc
+        return
+
+def store_uploaded_document(filename:str,content:bytes,content_type:str|None=None)->Path:
     if len(content)>MAX_DOCUMENT_BYTES:
-        raise ValueError("File too large")
+        raise ValueError("El archivo supera el límite local de 50 MB")
     original=Path(filename or "documento").name
     suffix=Path(original).suffix.lower()
     if suffix not in SUPPORTED_SUFFIXES:
-        raise ValueError(f"Unsupported document type: {suffix or 'sin extensión'}")
+        raise ValueError(f"Tipo de documento no admitido: {suffix or 'sin extensión'}")
+    _validate_upload_bytes(original,content,content_type)
     stem=re.sub(r"[^A-Za-z0-9._ -]+","_",Path(original).stem).strip(" ._") or "documento"
     upload_dir=settings.vault_dir/"uploads"
     upload_dir.mkdir(parents=True,exist_ok=True)
@@ -59,12 +97,42 @@ def safe_path(path:Path)->Path:
     if resolved.stat().st_size>MAX_DOCUMENT_BYTES:raise ValueError("Document exceeds the 50 MB local ingestion limit")
     return resolved
 
+def _ocr_image(image:Image.Image)->str:
+    # Prefer Spanish+English but keep a local fallback for installations that
+    # only ship Tesseract's default language data.
+    try:return pytesseract.image_to_string(image,lang="spa+eng")
+    except Exception:
+        try:return pytesseract.image_to_string(image)
+        except Exception as exc:raise RuntimeError("OCR local no disponible. Instala Tesseract o usa un documento con texto seleccionable.") from exc
+
 def extract_content(path:Path)->tuple[str,int,list[str]|None]:
     suffix=path.suffix.lower()
     if suffix==".pdf":
         reader=PdfReader(str(path))
-        if len(reader.pages)>MAX_PDF_PAGES:raise ValueError("PDF exceeds the 500 page ingestion limit")
-        pages=[(page.extract_text() or "") for page in reader.pages]
+        if len(reader.pages)>MAX_PDF_PAGES:raise ValueError("El PDF supera el límite de 500 páginas")
+        pages=[]
+        for page in reader.pages:
+            text_value=page.extract_text() or ""
+            # Scanned PDFs often contain a page image but almost no text layer.
+            # Reuse embedded page images so OCR stays fully local and does not
+            # require a cloud service or an extra PDF renderer.
+            if len(text_value.strip())<24:
+                ocr_parts=[]
+                try:
+                    for image_file in list(page.images)[:8]:
+                        try:
+                            image=getattr(image_file,"image",None) or Image.open(BytesIO(image_file.data))
+                            ocr=_ocr_image(image)
+                            if ocr.strip():ocr_parts.append(ocr)
+                        except RuntimeError:
+                            raise
+                        except Exception:
+                            continue
+                except RuntimeError:
+                    if not text_value.strip():raise
+                if ocr_parts:
+                    text_value=(text_value+"\n"+"\n".join(ocr_parts)).strip()
+            pages.append(text_value)
         return "\n\n".join(pages),len(pages),pages
     if suffix in {".txt",".csv",".json"}:return path.read_text(encoding="utf-8",errors="replace"),1,None
     if suffix==".docx":
@@ -77,7 +145,7 @@ def extract_content(path:Path)->tuple[str,int,list[str]|None]:
         return "\n".join(lines),1,None
     if suffix in {".png",".jpg",".jpeg",".heic",".tiff",".bmp"}:
         image=Image.open(path);image.verify();image=Image.open(path)
-        return pytesseract.image_to_string(image,lang="spa+eng"),1,None
+        return _ocr_image(image),1,None
     raise ValueError(f"Unsupported document type: {suffix}")
 
 def detect_language(text:str)->tuple[str,float]:
