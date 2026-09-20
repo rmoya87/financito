@@ -415,3 +415,32 @@ Los porcentajes documentales se convierten a la escala interna decimal antes de 
 - engines: solo consumen datos estructurados confirmados o inputs explícitos.
 
 La IA nunca sobrescribe silenciosamente datos financieros confirmados.
+
+## Edición manual sin segunda fuente
+
+Cuando la extracción no reconoce un dato material, el usuario puede añadirlo desde el detalle del documento.
+
+El fact resultante:
+- pertenece al mismo `document_id`;
+- queda `status=confirmed`;
+- queda `user_verified=true`;
+- registra `source_section=Introducido por el usuario`;
+- conserva página si el usuario la conoce;
+- pasa por el mismo pipeline de proyección que los facts extraídos.
+
+Esto aplica a términos contractuales, hipoteca, coberturas, productos vinculados y términos de inversión. Una edición manual no debe crear una ficha de contrato/póliza/hipoteca separada.
+
+## Veredicto de seguros
+
+El análisis de seguros debe cruzar:
+- prima anual y franquicia confirmadas;
+- coberturas y límites;
+- renovación/preaviso/penalización;
+- pagos reales categorizados como seguro;
+- ingresos y ahorro observados;
+- requisitos de cobertura definidos por el usuario;
+- duplicidades potenciales;
+- productos vinculados a hipoteca u otros contratos;
+- campos documentales pendientes.
+
+La IA local puede resumir prioridades y formular preguntas, pero no decide suficiencia de cobertura ni recomienda cancelar/cambiar una póliza sin equivalencia demostrada.
