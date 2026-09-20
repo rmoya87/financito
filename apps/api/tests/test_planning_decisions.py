@@ -267,3 +267,65 @@ def test_decision_lab_uses_saved_mortgage_and_live_context():
         assert detail.status_code == 200
         assert any(x["id"] == mortgage_id for x in detail.json()["live_current_state"]["mortgages"])
         assert detail.json()["current_state"]["captured_from"] == "live_financito_data"
+
+
+
+def test_month_end_projection_uses_history_and_keeps_unallocated_commitments_out_of_account_balances():
+    from datetime import date
+    from decimal import Decimal
+    from financito.db import SessionLocal
+    from financito.models import Account, Commitment, Transaction
+    from financito.services.month_end import month_end_projection
+
+    suffix = uuid4().hex[:8]
+    with SessionLocal() as db:
+        account = Account(
+            name=f"Cuenta cierre {suffix}",
+            institution_name="Banco test",
+            current_balance=Decimal("1000"),
+            currency="EUR",
+        )
+        db.add(account)
+        db.flush()
+
+        def tx(day, amount, description):
+            return Transaction(
+                account_id=account.id,
+                booking_date=day,
+                amount=Decimal(amount),
+                base_amount=Decimal(amount),
+                currency="EUR",
+                base_currency="EUR",
+                description_raw=description,
+                description_normalized=description.lower(),
+                duplicate_fingerprint=f"{suffix}-{description}-{day.isoformat()}",
+            )
+
+        db.add_all([
+            tx(date(2025, 9, 22), "200", "income-last-year"),
+            tx(date(2025, 9, 25), "-100", "expense-last-year"),
+            tx(date(2026, 9, 1), "120", "income-current"),
+            tx(date(2026, 9, 10), "-50", "expense-current"),
+        ])
+        db.add(Commitment(
+            commitment_type="manual",
+            title=f"Seguro {suffix}",
+            amount=Decimal("120"),
+            currency="EUR",
+            due_date=date(2026, 9, 27),
+            confidence=Decimal("1"),
+            mandatory=True,
+            cancellable=False,
+            status="active",
+        ))
+        db.commit()
+
+        result = month_end_projection(db, date(2026, 9, 20))
+        row = next(x for x in result["accounts"] if x["id"] == account.id)
+
+        assert Decimal(row["projected_remaining_income"]) == Decimal("146.00")
+        assert Decimal(row["projected_remaining_expenses"]) == Decimal("72.50")
+        assert Decimal(row["projected_closing_balance"]) == Decimal("1073.50")
+        assert Decimal(result["forecast_remaining"]["known_commitments"]) >= Decimal("120")
+        assert Decimal(result["projected_month_end"]["total_balance"]) <= Decimal("1026.00")
+        assert "70% mismo periodo" in row["method"]
