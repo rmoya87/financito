@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from financito.db import SessionLocal
 from financito.main import app
 from financito.models import Account,Transaction
-from financito.models_extended import Asset
+from financito.models_extended import Asset,Liability
 from financito.services.temporal import wealth_as_of
 
 
@@ -27,13 +27,15 @@ def test_as_of_reconstructs_account_and_marks_unknown_components():
         db.add(account);db.flush()
         db.add(_tx(account.id,today,"100",f"later-{suffix}"))
         db.add(Asset(asset_type="property",name=f"Future valuation {suffix}",currency="EUR",current_value=Decimal("5000"),valuation_date=today,valuation_source="manual",ownership_percentage=Decimal("100")))
-        db.flush()
+        liability=Liability(liability_type="loan",name=f"Historical unknown {suffix}",outstanding_amount=Decimal("3000"),currency="EUR",ownership_percentage=Decimal("100"))
+        db.add(liability);db.flush()
         result=wealth_as_of(db,past)
         row=next(x for x in result["accounts"] if x["id"]==account.id)
         assert Decimal(row["balance"])==Decimal("900.00")
         assert row["method"]=="current_balance_minus_later_transactions"
         assert any(x["name"]==f"Future valuation {suffix}" for x in result["unknown"]["assets"])
         assert result["unknown"]["historical_debt"] is True
+        assert any(x["id"]==liability.id for x in result["unknown"]["debt"])
         assert result["status"]=="partial"
 
 
