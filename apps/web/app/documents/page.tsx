@@ -79,6 +79,14 @@ export default function DocumentsPage(){
       qc.invalidateQueries({queryKey:['actions']});
     },
   });
+  const analyzeAll=useMutation({
+    mutationFn:()=>apiMutate<{scheduled:number}>('/api/v1/documents/analyze-all','POST'),
+    onSuccess:()=>{
+      qc.invalidateQueries({queryKey:['documents']});
+      qc.invalidateQueries({queryKey:['document-analysis',selected]});
+      qc.invalidateQueries({queryKey:['document-insights']});
+    },
+  });
   const index=useMutation({
     mutationFn:()=>apiMutate('/api/v1/documents/index','POST',{path,document_type:'unknown'}),
     onSuccess:()=>{setPath('');invalidateEvidence()},
@@ -177,10 +185,11 @@ export default function DocumentsPage(){
 
     <div className="mt-4 grid gap-4 xl:grid-cols-2">
       <Card>
-        <h2 className="font-bold">Biblioteca</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">
-          Los documentos aparecen aquí al copiarlos al Vault; no necesitas indexarlos manualmente.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div><h2 className="font-bold">Biblioteca</h2><p className="mt-1 text-sm text-[var(--muted)]">Los documentos aparecen aquí al copiarlos al Vault; no necesitas indexarlos manualmente.</p></div>
+          <button className="fin-button secondary py-1.5 text-xs" onClick={()=>analyzeAll.mutate()} disabled={analyzeAll.isPending||!docs.data?.length}>{analyzeAll.isPending?'Programando…':'Analizar todos con IA'}</button>
+        </div>
+        {analyzeAll.data&&<div className="mt-2 text-xs text-[var(--muted)]">{analyzeAll.data.scheduled} documento(s) programados para análisis local.</div>}
         <div className="mt-4 space-y-2">
           {docs.isLoading?<Loading/>:docs.error?<ErrorState error={docs.error}/>:docs.data?.length?
             docs.data.map(d=><button
