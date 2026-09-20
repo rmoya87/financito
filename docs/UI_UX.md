@@ -303,3 +303,16 @@ No duplicar componentes por feature si el patrón ya existe.
 ## Seguridad UI
 
 La WebApp no contiene secretos ni llama directamente a providers que requieran credenciales. No almacena datos financieros persistentes en browser storage. Assets y fuentes son locales.
+
+
+## Documentos como entrada de datos
+
+La carpeta física del Vault no debe ser requisito de uso.
+
+Reglas de UX:
+- Inicio debe ofrecer acceso visible a **Añadir documentos**;
+- Seguros, Hipoteca/Laboratorio, Contratos, Cuentas, Inversiones y Fiscalidad deben enlazar a Documentos cuando la evidencia pueda mejorar la sección;
+- la pantalla Documentos debe admitir selector nativo y drag & drop;
+- después de subir, mostrar procesamiento, hechos pendientes y análisis local;
+- toda conclusión material debe permitir volver a la evidencia/página;
+- la aplicación explica claramente qué parte es dato confirmado y qué parte es interpretación de IA.
