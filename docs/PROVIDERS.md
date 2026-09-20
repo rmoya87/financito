@@ -70,3 +70,22 @@ Cada dato persistido conserva, cuando aplica:
 - delayed.
 
 Un dato externo no se presenta como dato en tiempo real si el proveedor lo marca retrasado.
+
+
+## Conexión bancaria personal restringida
+
+Para uso personal sin desplegar un agregador propio, Financito soporta Enable Banking en modo Production restringido:
+1. crear una aplicación Production en el Control Panel;
+2. registrar las redirect URLs autorizadas;
+3. generar/guardar la clave RSA privada;
+4. activar el modo restringido enlazando las propias cuentas;
+5. guardar App ID y clave privada en el Keychain desde Configuración;
+6. autorizar cada cuenta desde **Banca conectada**.
+
+La sincronización actualiza saldo disponible/contable expuesto por el ASPSP y movimientos contabilizados. Estos saldos alimentan la liquidez acumulada del Decision Lab. El acceso PSD2 a cuentas de pago no implica que el banco exponga el capital hipotecario pendiente: ese dato sigue procediendo del perfil hipotecario y de documentación contractual.
+
+## Investigación pública de hipotecas y seguros
+
+El provider de investigación de mercado se ejecuta bajo demanda. Consulta una lista acotada de páginas oficiales de entidades y extrae únicamente señales explícitas (TIN/TAE visibles, subrogación, comisiones, vinculaciones, promociones).
+
+El resultado es descubrimiento de candidatos. No sustituye una FEIN, estudio de riesgo, tarificación de seguro ni oferta vinculante.
