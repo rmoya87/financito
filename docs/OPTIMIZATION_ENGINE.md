@@ -220,3 +220,30 @@ Prioridad: condiciones particulares y modificaciones vigentes sobre tarifas/web 
 Si falta un dato material, el estado pasa a needs_more_data y no se presenta el ahorro neto como conclusión firme.
 
 Ver CONTRACT_EVIDENCE.md.
+
+
+## Hipótesis combinadas de hipoteca y seguros
+
+El Laboratorio debe contemplar como mínimo:
+1. mantener hipoteca y seguros actuales;
+2. negociar/novar la hipoteca actual;
+3. cambiar solo la hipoteca y conservar seguros si es contractualmente posible;
+4. conservar hipoteca y cambiar seguros;
+5. cambiar hipoteca y seguros a la nueva entidad;
+6. cambiar hipoteca y contratar seguros externos;
+7. amortizar parcialmente y mantener;
+8. amortizar parcialmente antes de una subrogación.
+
+Cada hipótesis parte de saldo, capital, ingresos, gastos y contratos reales.
+
+## Investigación de mercado bajo demanda
+
+El Laboratorio puede consultar páginas oficiales públicas de bancos y aseguradoras para descubrir alternativas actuales.
+
+Reglas:
+- solo fuentes públicas/oficiales configuradas;
+- conservar proveedor, URL y fecha de consulta;
+- TIN/TAE/promociones públicas son **benchmarks**, no condiciones personales;
+- nunca usar una oferta pública como si fuera una FEIN o presupuesto individual;
+- para calcular beneficio neto se requiere una oferta personalizada y los costes contractuales actuales confirmados;
+- una mejora aparente de TIN debe incorporar seguros, productos vinculados, costes de salida, costes de entrada y cualquier pérdida de bonificación.
