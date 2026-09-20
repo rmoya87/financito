@@ -85,7 +85,7 @@ test('Vault indexa evidencia y conserva cita navegable',async({page})=>{
   await page.getByRole('button',{name:'Indexar archivo'}).click();
   await expect(page.getByText('e2e-policy.txt')).toBeVisible();
   await page.getByRole('button',{name:/e2e-policy\.txt/}).click();
-  await expect(page.getByText('annual_cost')).toBeVisible();
+  await expect(page.getByText('annual_cost',{exact:true})).toBeVisible();
   const evidence=page.getByRole('link',{name:/Abrir evidencia/}).first();
   await expect(evidence).toHaveAttribute('href',/\/api\/v1\/documents\/.+\/file#page=1/);
 });
