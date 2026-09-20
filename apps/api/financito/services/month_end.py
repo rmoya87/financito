@@ -8,7 +8,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import Account, Commitment, Transaction
+from ..models import Account, Category, Commitment, Transaction
 from ..models_analytics import EntityLink
 from .financial_analytics import cash_flow
 
@@ -51,14 +51,22 @@ def _account_flow(session: Session, account_id: str, start: date, end: date) -> 
             Transaction.account_id == account_id,
             Transaction.booking_date >= start,
             Transaction.booking_date <= end,
-            Transaction.is_internal_transfer.is_(False),
         )
     ).all()
+    internal_category_id=session.scalar(select(Category.id).where(Category.system_key=="internal_transfer"))
+    refund_category_id=session.scalar(select(Category.id).where(Category.system_key=="refunds"))
+    rows=[
+        row for row in rows
+        if not (
+            (internal_category_id is not None and row.category_id==internal_category_id)
+            or (row.category_id is None and row.is_internal_transfer)
+        )
+    ]
     refunds = _refund_ids(session, [row.id for row in rows])
     income = Decimal("0")
     expenses = Decimal("0")
     for row in rows:
-        if row.id in refunds and row.amount > 0:
+        if row.amount > 0 and (row.id in refunds or (refund_category_id is not None and row.category_id==refund_category_id)):
             expenses -= row.amount
         elif row.amount >= 0:
             income += row.amount
