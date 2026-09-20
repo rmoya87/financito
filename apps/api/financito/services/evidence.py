@@ -255,10 +255,13 @@ def _ensure_mortgage_projection(
     document: Document,
     values: dict[str, dict],
 ) -> Mortgage | None:
-    if document.document_type!="mortgage":
+    link=_entity_link(session,document.id,"mortgage")
+    # An explicit evidence link is stronger than an automatic document classifier.
+    # This prevents an already-associated mortgage document from losing its
+    # projection if a reclassification later labels the file too generically.
+    if document.document_type!="mortgage" and link is None:
         return None
 
-    link=_entity_link(session,document.id,"mortgage")
     mortgage=session.get(Mortgage,link.to_id) if link else None
     if mortgage is None:
         mortgages=session.scalars(select(Mortgage).order_by(Mortgage.updated_at.desc())).all()
