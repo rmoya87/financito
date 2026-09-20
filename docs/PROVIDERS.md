@@ -1,5 +1,7 @@
 # Providers e integraciones
 
+**Política obligatoria:** ninguna funcionalidad base puede exigir un proveedor de pago. Ver [FREE_CONNECTORS.md](FREE_CONNECTORS.md).
+
 ## Patrón
 
 Toda dependencia externa implementa una interfaz estable. El dominio no conoce SDKs concretos.
@@ -102,3 +104,16 @@ Aplicar:
 ## Licencias
 
 Antes de producción, documentar términos de uso y permisos de redistribución de cada fuente. No asumir que una API gratuita permite almacenar o mostrar cualquier dato.
+
+
+## Política de coste
+
+Todo adapter debe declarar:
+- free_available;
+- requires_paid_plan;
+- requires_key;
+- official_source;
+- fallback_provider;
+- manual_fallback.
+
+Un provider de pago puede estudiarse en el futuro, pero nunca convertirse en requisito para funcionalidad base sin cambiar explícitamente la política del producto.
