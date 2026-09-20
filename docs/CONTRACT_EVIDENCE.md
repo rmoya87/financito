@@ -277,3 +277,25 @@ Una decisión de alto impacto no puede marcarse como favorable si depende materi
 - OCR de baja confianza sin confirmar.
 
 En esos casos el estado es needs_more_data.
+
+
+## Resolución de costes de salida para decisiones
+
+El Decision Lab resuelve los costes de salida desde hechos **confirmados por el usuario** antes de comparar una alternativa.
+
+Para hipoteca:
+- `early_repayment_fee_percent` se aplica al importe concreto de amortización extraordinaria;
+- `subrogation_fee_percent` se aplica al capital pendiente actual;
+- `cancellation_fee_percent` puede utilizarse cuando la documentación confirme que es la cláusula aplicable;
+- un importe fijo confirmado puede utilizarse como fallback;
+- si no existe evidencia suficiente, el resultado es `needs_more_data`; nunca se presupone 0 €.
+
+Para seguros:
+- prima anual;
+- fecha de renovación;
+- preaviso;
+- coste/penalización de salida cuando exista;
+- franquicia y coberturas verificadas;
+- documento fuente.
+
+El endpoint de preparación de cambio devuelve los datos faltantes antes de permitir considerar cerrada una comparación.
