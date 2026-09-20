@@ -23,6 +23,7 @@ register_heif_opener()
 Image.MAX_IMAGE_PIXELS=50_000_000
 MAX_DOCUMENT_BYTES=50*1024*1024
 MAX_PDF_PAGES=500
+SUPPORTED_SUFFIXES={".pdf",".png",".jpg",".jpeg",".heic",".tiff",".bmp",".docx",".xlsx",".xlsm",".csv",".txt",".json"}
 
 @dataclass(frozen=True)
 class IndexedDocument:
@@ -31,7 +32,7 @@ class IndexedDocument:
     chunks_created:int
 
 def store_uploaded_document(filename:str,content:bytes)->Path:
-    if len(content)>MAX_FILE_SIZE:
+    if len(content)>MAX_DOCUMENT_BYTES:
         raise ValueError("File too large")
     original=Path(filename or "documento").name
     suffix=Path(original).suffix.lower()
