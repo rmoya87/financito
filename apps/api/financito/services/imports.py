@@ -26,6 +26,10 @@ class ImportResult:
     duplicates_reference: int = 0
     duplicates_exact: int = 0
     duplicates_similar: int = 0
+    detected_inflows: int = 0
+    detected_outflows: int = 0
+    detected_inflow_amount: str = "0.00"
+    detected_outflow_amount: str = "0.00"
 
 
 def parse_decimal(raw: str) -> Decimal:
@@ -250,6 +254,9 @@ def import_csv(session: Session, account_id: str, content: bytes, source_ref: st
 
     inserted = duplicates = rejected = ignored = 0
     duplicates_reference = duplicates_exact = duplicates_similar = 0
+    detected_inflows = detected_outflows = 0
+    detected_inflow_amount = Decimal("0")
+    detected_outflow_amount = Decimal("0")
 
     for row in reader:
         try:
@@ -282,6 +289,12 @@ def import_csv(session: Session, account_id: str, content: bytes, source_ref: st
 
             booking_date = parse_date(raw_date)
             amount = parse_decimal(raw_amount)
+            if amount >= 0:
+                detected_inflows += 1
+                detected_inflow_amount += amount
+            else:
+                detected_outflows += 1
+                detected_outflow_amount += -amount
             normalized = normalize_text(description)
             external_reference = _stable_reference(mapped)
 
@@ -356,4 +369,8 @@ def import_csv(session: Session, account_id: str, content: bytes, source_ref: st
         duplicates_reference=duplicates_reference,
         duplicates_exact=duplicates_exact,
         duplicates_similar=duplicates_similar,
+        detected_inflows=detected_inflows,
+        detected_outflows=detected_outflows,
+        detected_inflow_amount=str(detected_inflow_amount.quantize(Decimal("0.01"))),
+        detected_outflow_amount=str(detected_outflow_amount.quantize(Decimal("0.01"))),
     )
