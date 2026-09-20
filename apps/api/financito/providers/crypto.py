@@ -1,12 +1,13 @@
 from __future__ import annotations
-import os
 import httpx
+
+from ..services.secure_config import get_secret
 
 BASE="https://api.coingecko.com/api/v3"
 
 class CoinGeckoDemoProvider:
     def __init__(self,api_key:str|None=None):
-        self.api_key=api_key or os.getenv("FINANCITO_COINGECKO_DEMO_KEY","")
+        self.api_key=api_key or get_secret("coingecko_demo_key") or ""
     def _headers(self)->dict:
         return {"x-cg-demo-api-key":self.api_key} if self.api_key else {}
     def simple_price(self,ids:list[str],vs_currency:str="eur")->dict:

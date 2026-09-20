@@ -85,3 +85,17 @@ class CryptoSnapshot(Base):
 class ModelEvaluationRun(Base):
     __tablename__="model_evaluation_run"
     id:Mapped[str]=mapped_column(String(36),primary_key=True,default=uuid_str);model_type:Mapped[str]=mapped_column(String(60));candidate_version:Mapped[str]=mapped_column(String(120));baseline_version:Mapped[str|None]=mapped_column(String(120),nullable=True);dataset_version:Mapped[str]=mapped_column(String(120));metrics_json:Mapped[str]=mapped_column(Text);passed_gate:Mapped[bool]=mapped_column(Boolean);created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=utcnow)
+
+
+class BankingAccountLink(Base,TimestampMixin):
+    __tablename__="banking_account_link"
+    __table_args__=(
+        UniqueConstraint("connection_id","provider_account_uid",name="uq_banking_connection_account"),
+    )
+    id:Mapped[str]=mapped_column(String(36),primary_key=True,default=uuid_str)
+    connection_id:Mapped[str]=mapped_column(ForeignKey("banking_connection.id",ondelete="CASCADE"),index=True)
+    local_account_id:Mapped[str]=mapped_column(ForeignKey("account.id",ondelete="CASCADE"),index=True)
+    provider_account_uid:Mapped[str]=mapped_column(String(120),index=True)
+    identification_hash:Mapped[str|None]=mapped_column(String(512),nullable=True,index=True)
+    last_sync_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+    metadata_json:Mapped[str]=mapped_column(Text,default="{}")

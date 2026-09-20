@@ -1,15 +1,15 @@
 from __future__ import annotations
-import os
-from datetime import datetime
 import httpx
+
+from ..services.secure_config import get_secret
 
 BASE="https://data.sec.gov"
 
 class SecFundamentalsProvider:
     def __init__(self,user_agent:str|None=None):
-        self.user_agent=user_agent or os.getenv("FINANCITO_SEC_USER_AGENT","")
+        self.user_agent=user_agent or get_secret("sec_user_agent")
         if not self.user_agent:
-            raise RuntimeError("Configure FINANCITO_SEC_USER_AGENT with an identifying contact string")
+            raise RuntimeError("Configure a SEC User-Agent with an identifying contact string")
     def companyfacts(self,cik:str)->dict:
         normalized=str(cik).strip().lstrip("0").zfill(10)
         with httpx.Client(base_url=BASE,timeout=25,headers={"User-Agent":self.user_agent,"Accept-Encoding":"gzip, deflate","Accept":"application/json"}) as client:
