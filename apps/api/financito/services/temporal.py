@@ -28,9 +28,6 @@ def wealth_as_of(session:Session,as_of:date)->dict:
     account_rows=[]
     used_account_fallback=False
     for account in session.scalars(select(Account)).all():
-        created=account.created_at.date() if account.created_at else None
-        if created and created>as_of:
-            continue
         snap=latest_snapshot(session,"account",account.id,as_of)
         if snap:
             values=json.loads(snap.values_json)
