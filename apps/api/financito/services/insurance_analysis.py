@@ -121,10 +121,9 @@ def insurance_verdict(session:Session,use_ai:bool=True)->dict:
             "deductible":_d(policy.deductible),
             "source_document_id":document_id,
             "source_document_name":None if document is None else document.file_name,
-            "source_documents":[{"id":doc_id,"name":documents[doc_id].file_name} for doc_id in document_ids if doc_id in documents],
-            "document_count":len(document_ids),
             "source_document_ids":document_ids,
             "source_documents":[{"id":doc_id,"file_name":documents[doc_id].file_name} for doc_id in document_ids if doc_id in documents],
+            "document_count":len(document_ids),
             "contract":None if contract is None else {
                 "provider_name":contract.provider_name,
                 "renewal_date":None if contract.renewal_date is None else str(contract.renewal_date),
