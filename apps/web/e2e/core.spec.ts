@@ -85,7 +85,7 @@ test('caso de decisión registra alternativa y resultado',async({page})=>{
   await page.getByPlaceholder('Coste mensual').fill('10');
   await page.getByPlaceholder('Beneficio esperado anual').fill('1000');
   await page.getByRole('button',{name:'Añadir alternativa'}).click();
-  await expect(page.getByText('Alternativa A')).toBeVisible();
+  await expect(page.getByRole('strong',{name:'Alternativa A',exact:true})).toBeVisible();
 
   await page.getByRole('combobox').filter({has:page.locator('option:text("Alternativa aplicada…")')}).selectOption({label:'Alternativa A'});
   await page.getByPlaceholder('Impacto esperado (€)').fill('780');
