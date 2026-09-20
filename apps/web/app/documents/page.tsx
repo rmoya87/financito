@@ -10,7 +10,6 @@ import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
 type ReviewSummary={total:number;pending:number;confirmed:number;ambiguous:number;reviewed:number};
 type EvidenceLink={entity_type:'insurance_policy'|'contract'|'mortgage'|string;entity_id:string;confidence:string;source_type:string};
 type Doc={id:string;file_name:string;document_type:string;status:string;page_count:number;review:ReviewSummary;ai_analysis:'ready'|'not_analyzed';mortgage_id:string|null;evidence_links:EvidenceLink[]};
-type MortgageOption={id:string;lender:string;remaining_principal:string;currency:string};
 type InsightItem={title:string;detail:string;pages:number[];impact?:string};
 type AIAnalysis={id?:string;status?:string;confidence:string;summary:string;advantages:InsightItem[];penalties:InsightItem[];obligations:InsightItem[];risks:InsightItem[];exclusions_or_limits:InsightItem[];linked_products:InsightItem[];optimization_opportunities:InsightItem[];negotiation_points:InsightItem[];comparison_requirements:InsightItem[];cross_area_impacts:InsightItem[];missing_information:InsightItem[];model_role:string};
 type AnalysisResponse={document_id:string;status:'ready'|'not_analyzed';analysis:AIAnalysis|null;ai:{available:boolean;configured_model:string|null;chat_ready?:boolean}};
@@ -39,7 +38,6 @@ export default function DocumentsPage(){
   },[]);
 
   const docs=useQuery({queryKey:['documents'],queryFn:()=>apiGet<Doc[]>('/api/v1/documents')});
-  const mortgages=useQuery({queryKey:['mortgages'],queryFn:()=>apiGet<MortgageOption[]>('/api/v1/mortgages')});
   const groups=useQuery({queryKey:['evidence-groups'],queryFn:()=>apiGet<EvidenceGroup[]>('/api/v1/evidence-groups')});
   const actions=useQuery({queryKey:['actions'],queryFn:()=>apiGet<ActionItem[]>('/api/v1/actions'),enabled:!!actionId});
   const facts=useQuery({
@@ -121,10 +119,6 @@ export default function DocumentsPage(){
   });
   const update=useMutation({
     mutationFn:({id,status}:{id:string;status:string})=>apiMutate('/api/v1/facts/'+id,'PATCH',{status,user_verified:true}),
-    onSuccess:invalidateEvidence,
-  });
-  const linkMortgage=useMutation({
-    mutationFn:({documentId,mortgageId}:{documentId:string;mortgageId:string|null})=>apiMutate('/api/v1/documents/'+documentId+'/mortgage-link','PUT',{mortgage_id:mortgageId}),
     onSuccess:invalidateEvidence,
   });
   const linkEntity=useMutation({
@@ -311,29 +305,55 @@ export default function DocumentsPage(){
           >Abrir original</a>}
         </div>
 
-        {selected&&materialFacts.length>0&&<div className="mt-4 rounded-xl bg-[var(--surface-2)] p-3 text-sm">
-          <strong>{pending>0?pending+' dato(s) por revisar':'Revisión completada'}</strong>
-          <div className="mt-1 text-xs text-[var(--muted)]">
-            {confirmed} confirmados · {ambiguous} dudosos. Los confirmados se sincronizan automáticamente con las áreas de Financito que pueden utilizarlos.
-          </div>
+        {currentAction&&currentAction.status!=='done'&&currentAction.status!=='dismissed'&&<div className="mt-4 rounded-xl border border-[var(--brand)] bg-[var(--brand-soft)] p-4 text-sm">
+          <div className="font-semibold">Esto es lo que te pidió “Para ti”</div>
+          <div className="mt-1">{currentAction.title}</div>
+          {currentAction.action_type==='review_document_ai_insights'?<>
+            <p className="mt-2 text-xs text-[var(--muted)]">Lee la conclusión del análisis local de este documento. No cambia ningún dato financiero por sí sola. Si ya la has comprobado y no requiere otra acción, márcala como revisada.</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button className="fin-button py-1.5 text-xs" onClick={()=>closeAction.mutate({id:currentAction.id,status:'done'})} disabled={closeAction.isPending}>Marcar como revisada</button>
+              <button className="fin-button secondary py-1.5 text-xs" onClick={()=>closeAction.mutate({id:currentAction.id,status:'dismissed'})} disabled={closeAction.isPending}>Ocultar este aviso</button>
+            </div>
+          </>:<p className="mt-2 text-xs text-[var(--muted)]">Revisa los datos estructurados. Puedes validarlos en bloque: Financito confirmará solo los coherentes y dejará como conflicto cualquier dato incompatible.</p>}
+          {closeAction.error&&<div className="mt-3"><ErrorState error={closeAction.error}/></div>}
         </div>}
 
-        {selectedDoc?.document_type==='mortgage'&&<div className="mt-4 rounded-xl border border-[var(--border)] p-4">
-          <h3 className="font-semibold">¿A qué hipoteca pertenece?</h3>
-          <p className="mt-1 text-xs text-[var(--muted)]">Asóciala solo si este documento describe tu hipoteca actual. Si es una FEIN, simulación u oferta de otro banco, déjala como oferta o referencia: se analizará y podrá compararse, pero no modificará capital, TIN, cuota, plazo ni penalizaciones de tu hipoteca vigente.</p>
-          <select
-            className="fin-input mt-3"
-            aria-label="Hipoteca asociada al documento"
-            value={selectedDoc.mortgage_id||''}
-            onChange={e=>linkMortgage.mutate({documentId:selectedDoc.id,mortgageId:e.target.value||null})}
-            disabled={linkMortgage.isPending}
-          >
-            <option value="">Oferta o referencia — no alimentar hipoteca actual</option>
-            {mortgages.data?.map(m=><option key={m.id} value={m.id}>{m.lender} · capital {Number(m.remaining_principal).toLocaleString('es-ES',{maximumFractionDigits:2})} {m.currency}</option>)}
+        {selected&&materialFacts.length>0&&<div className="mt-4 rounded-xl bg-[var(--surface-2)] p-3 text-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <strong>{pending>0?pending+' dato(s) por revisar':'Revisión completada'}</strong>
+              <div className="mt-1 text-xs text-[var(--muted)]">{confirmed} confirmados · {ambiguous} dudosos. Los confirmados se sincronizan automáticamente con las áreas de Financito que pueden utilizarlos.</div>
+            </div>
+            {pending>0&&selected&&<button className="fin-button py-1.5 text-xs" onClick={()=>confirmCoherent.mutate({documentId:selected,group:currentGroup})} disabled={confirmCoherent.isPending}>
+              {confirmCoherent.isPending?'Validando…':currentGroup&&currentGroup.document_count>1?'Validar los '+currentGroup.document_count+' documentos juntos':'Validar datos coherentes'}
+            </button>}
+          </div>
+          {confirmCoherent.data&&<div className="mt-2 text-xs font-medium">{confirmCoherent.data.confirmed} dato(s) confirmados · {confirmCoherent.data.conflicts} conflicto(s) separados para revisión.</div>}
+          {confirmCoherent.error&&<div className="mt-3"><ErrorState error={confirmCoherent.error}/></div>}
+        </div>}
+
+        {selectedDoc&&<div className="mt-4 rounded-xl border border-[var(--border)] p-4">
+          <h3 className="font-semibold">¿A qué producto pertenece este documento?</h3>
+          <p className="mt-1 text-xs text-[var(--muted)]">Vincula todos los PDFs, anexos, recibos y condiciones del mismo seguro, hipoteca o servicio a una única ficha. Financito combinará su evidencia y la tratará como un solo producto.</p>
+          <select className="fin-input mt-3" aria-label="Producto financiero asociado al documento"
+            value={currentGroup?currentGroup.entity_type+':'+currentGroup.entity_id:''}
+            onChange={e=>{
+              const raw=e.target.value;
+              const defaultType:'insurance_policy'|'contract'|'mortgage'=selectedDoc.document_type==='insurance'?'insurance_policy':selectedDoc.document_type==='mortgage'?'mortgage':'contract';
+              if(!raw){linkEntity.mutate({documentId:selectedDoc.id,entityType:defaultType,entityId:null});return}
+              const [entityType,entityId]=raw.split(':');
+              linkEntity.mutate({documentId:selectedDoc.id,entityType:entityType as 'insurance_policy'|'contract'|'mortgage',entityId});
+            }} disabled={linkEntity.isPending}>
+            <option value="">Sin vincular a una ficha existente</option>
+            {compatibleGroups.map(g=><option key={g.entity_type+g.entity_id} value={g.entity_type+':'+g.entity_id}>{g.label} · {g.document_count} documento(s)</option>)}
           </select>
-          {!mortgages.data?.length&&<div className="mt-2 text-xs text-[var(--muted)]">Aún no hay un perfil hipotecario. Añade la documentación vigente y completa los datos necesarios antes de vincular ofertas comparativas.</div>}
-          {selectedDoc.mortgage_id&&<div className="mt-2 text-xs font-medium">Los hechos que confirmes en este documento podrán alimentar esa hipoteca y sus cálculos.</div>}
-          {linkMortgage.error&&<div className="mt-3"><ErrorState error={linkMortgage.error}/></div>}
+          {currentGroup&&<div className="mt-3 rounded-xl bg-[var(--surface-2)] p-3 text-xs">
+            <strong>{currentGroup.label}</strong>
+            <div className="mt-1 text-[var(--muted)]">{currentGroup.document_count} documento(s) forman esta única ficha.</div>
+            {currentGroup.documents.length>1&&<div className="mt-2">{currentGroup.documents.map(d=><div key={d.id}>• {d.file_name}</div>)}</div>}
+          </div>}
+          {!currentGroup&&selectedDoc.document_type==='insurance'&&<div className="mt-2 text-xs text-[var(--muted)]">Si la póliza contiene un número identificador claro, Financito intentará agrupar automáticamente los siguientes documentos que compartan ese número.</div>}
+          {linkEntity.error&&<div className="mt-3"><ErrorState error={linkEntity.error}/></div>}
         </div>}
 
         {selected&&<div className="mt-4 rounded-xl border border-[var(--border)] p-4">
