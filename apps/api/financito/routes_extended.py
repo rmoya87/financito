@@ -476,6 +476,14 @@ def add_asset(p:AssetCreate,db:Session=Depends(dbdep)):
     r=Asset(**p.model_dump());db.add(r);db.flush()
     record_snapshot(db,"asset",r.id,{"value":str(r.current_value),"ownership_percentage":str(r.ownership_percentage),"currency":r.currency},r.valuation_date,"asset_created")
     db.commit();return {"id":r.id}
+@router.patch("/assets/{asset_id}")
+def update_asset(asset_id:str,p:AssetCreate,db:Session=Depends(dbdep)):
+    r=db.get(Asset,asset_id)
+    if not r:raise HTTPException(404,"Asset not found")
+    for key,value in p.model_dump().items():setattr(r,key,value)
+    db.flush()
+    record_snapshot(db,"asset",r.id,{"value":str(r.current_value),"ownership_percentage":str(r.ownership_percentage),"currency":r.currency},r.valuation_date,"asset_updated")
+    db.commit();return {"id":r.id}
 @router.get("/liabilities")
 def liabilities(db:Session=Depends(dbdep)):return [{"id":r.id,"type":r.liability_type,"name":r.name,"amount":str(r.outstanding_amount),"currency":r.currency} for r in db.scalars(select(Liability).order_by(Liability.name)).all()]
 @router.post("/liabilities")
