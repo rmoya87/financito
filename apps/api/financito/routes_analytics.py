@@ -1,13 +1,16 @@
 from __future__ import annotations
+import json
 from datetime import date,timedelta
 from decimal import Decimal
 from fastapi import APIRouter,Depends,HTTPException,Response
+from pydantic import BaseModel,Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .domain.analytics import detect_anomalies,detect_recurring
 from .domain.backtest import amortize_vs_invest,backtest_ma
 from .domain.recommendations import score
+from .models import Transaction
 from .models_analytics import Anomaly,EntityLink,RecurringSeries
 from .services.calendar import events
 from .services.data_quality import reconciliation
@@ -23,8 +26,34 @@ def refresh(db:Session=Depends(dbdep)):
     recurring=detect_recurring(db);anomalies=detect_anomalies(db);db.commit();return {"recurring_series":len(recurring),"anomalies":len(anomalies)}
 @router.get("/recurring")
 def recurring(db:Session=Depends(dbdep)):return [{"id":r.id,"merchant":r.merchant_normalized,"cadence":r.cadence,"expected_amount":str(r.expected_amount),"next_expected_date":r.next_expected_date,"confidence":str(r.confidence)} for r in db.scalars(select(RecurringSeries)).all()]
+class AnomalyStatusIn(BaseModel):
+    status:str=Field(pattern="^(open|normal|ignored|resolved)$")
+
 @router.get("/anomalies")
-def anomalies(db:Session=Depends(dbdep)):return [{"id":a.id,"transaction_id":a.transaction_id,"type":a.anomaly_type,"explanation":a.explanation,"confidence":str(a.confidence),"status":a.status} for a in db.scalars(select(Anomaly)).all()]
+def anomalies(db:Session=Depends(dbdep)):
+    out=[]
+    for a in db.scalars(select(Anomaly).where(Anomaly.status=="open").order_by(Anomaly.created_at.desc())).all():
+        tx=db.get(Transaction,a.transaction_id)
+        baseline=json.loads(a.baseline_json or "{}");observed=json.loads(a.observed_json or "{}")
+        median=Decimal(str(baseline.get("median","0")));amount=Decimal(str(observed.get("amount","0")))
+        delta=max(Decimal("0"),amount-median)
+        pct=None if median<=0 else (delta/median*Decimal("100"))
+        out.append({
+            "id":a.id,"transaction_id":a.transaction_id,"type":a.anomaly_type,"explanation":a.explanation,
+            "confidence":str(a.confidence),"status":a.status,
+            "transaction":None if tx is None else {
+                "booking_date":tx.booking_date,"description":tx.description_raw,"merchant":tx.merchant_raw,
+                "amount":str(tx.amount),"currency":tx.currency,"category_id":tx.category_id,
+            },
+            "baseline":{"typical_amount":str(median),"difference":str(delta),"difference_pct":None if pct is None else str(pct.quantize(Decimal("0.1")))},
+        })
+    return out
+
+@router.patch("/anomalies/{anomaly_id}")
+def update_anomaly(anomaly_id:str,p:AnomalyStatusIn,db:Session=Depends(dbdep)):
+    row=db.get(Anomaly,anomaly_id)
+    if not row:raise HTTPException(404,"Anomaly not found")
+    row.status=p.status;db.commit();return {"id":row.id,"status":row.status}
 @router.get("/reconciliation")
 def reconcile(db:Session=Depends(dbdep)):return {"issues":reconciliation(db)}
 @router.get("/calendar")
