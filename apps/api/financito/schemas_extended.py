@@ -49,3 +49,27 @@ class CorporateActionCreate(BaseModel):
     value:Decimal=Field(gt=0)
     currency:str="EUR"
     notes:str|None=None
+
+
+class TaxSavingsRequest(BaseModel):
+    jurisdiction:str="ES"
+    tax_year:int
+    investment_income_net:Decimal=Decimal("0")
+    capital_gains_net:Decimal=Decimal("0")
+
+class CommercialOfferInput(BaseModel):
+    category:str
+    provider_name:str
+    product_name:str
+    source:str
+    source_url:str|None=None
+    fetched_at:datetime
+    valid_until:date|None=None
+    currency:str="EUR"
+    attributes:dict[str,str]=Field(default_factory=dict)
+    missing_fields:list[str]=Field(default_factory=list)
+
+class CommercialComparisonRequest(BaseModel):
+    offers:list[CommercialOfferInput]=Field(min_length=1,max_length=100)
+    required_fields:list[str]=Field(default_factory=list,max_length=50)
+    max_age_days:int=Field(default=31,ge=0,le=3650)
