@@ -19,6 +19,7 @@ def apply_trade(session:Session,trade:Trade)->dict:
         else:
             position=Position(portfolio_id=trade.portfolio_id,security_id=trade.security_id,quantity=trade.quantity,average_cost=total_cost/trade.quantity,current_price=trade.price);session.add(position)
         session.add(TaxLot(portfolio_id=trade.portfolio_id,security_id=trade.security_id,acquisition_date=trade.executed_at.date(),quantity_original=trade.quantity,quantity_remaining=trade.quantity,unit_cost=trade.price,fees=trade.fees,currency=trade.currency,fx_rate_at_acquisition=trade.fx_rate,source_ref=trade.id))
+        session.flush()
         return {"realized_pnl":m(Decimal("0")),"quantity":str(position.quantity)}
     if not position or position.quantity<trade.quantity: raise ValueError("Insufficient position quantity")
     remaining=trade.quantity; realized=Decimal("0")
@@ -36,6 +37,7 @@ def apply_trade(session:Session,trade:Trade)->dict:
     position.quantity-=trade.quantity
     position.current_price=trade.price
     if position.quantity==0:position.average_cost=Decimal("0")
+    session.flush()
     return {"realized_pnl":m(realized),"quantity":str(position.quantity)}
 
 def portfolio_summary(session:Session,portfolio_id:str)->dict:
