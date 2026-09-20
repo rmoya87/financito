@@ -17,6 +17,22 @@ ANALYSIS_KEY = "document_analysis"
 MAX_CONTEXT_CHARS = 48000
 MAX_CHUNKS = 18
 
+CONTRACT_FACT_KEYS = {
+    "cancellation_notice_days","early_exit_penalty","annual_cost","monthly_cost","deductible",
+    "permanence_end_date","renewal_date",
+}
+MORTGAGE_FACT_KEYS = {
+    "nominal_rate","apr_rate","reference_index","interest_type","differential_rate",
+    "mortgage_term_years","rate_review_months","opening_fee_percent",
+    "early_repayment_fee_percent","subrogation_fee_percent","cancellation_fee_percent",
+    "remaining_principal","monthly_payment",
+}
+LINKED_FACT_KEYS = {
+    "linked_salary","linked_home_insurance","linked_life_insurance","linked_card","linked_pension_plan",
+    "linked_home_insurance_rate_penalty_pp","linked_life_insurance_rate_penalty_pp","linked_salary_rate_penalty_pp",
+}
+ALLOWED_MATERIAL_FACT_KEYS = CONTRACT_FACT_KEYS | MORTGAGE_FACT_KEYS | LINKED_FACT_KEYS
+
 TYPE_FOCUS = {
     "insurance": (
         "Analiza especialmente coberturas, límites, franquicias, exclusiones, carencias, renovaciones, "
@@ -173,6 +189,123 @@ def _clean_list(value) -> list[dict]:
     return [x for x in out if x["title"] or x["detail"]]
 
 
+def _clean_material_facts(value) -> list[dict]:
+    if not isinstance(value,list):
+        return []
+    out=[]
+    for item in value[:30]:
+        if not isinstance(item,dict):
+            continue
+        key=str(item.get("key") or "").strip()
+        if key not in ALLOWED_MATERIAL_FACT_KEYS:
+            continue
+        raw=item.get("value")
+        if raw in {None,""}:
+            continue
+        try:page=int(item.get("page"))
+        except Exception:page=None
+        if page is None or page<1:
+            continue
+        try:confidence=float(item.get("confidence",0.65))
+        except Exception:confidence=0.65
+        out.append({
+            "key":key,
+            "value":str(raw)[:500],
+            "unit":str(item.get("unit") or "")[:80],
+            "page":page,
+            "confidence":max(0.0,min(0.85,confidence)),
+        })
+    return out
+
+
+def _clean_coverage_facts(value) -> list[dict]:
+    if not isinstance(value,list):
+        return []
+    out=[]
+    for item in value[:40]:
+        if not isinstance(item,dict):
+            continue
+        coverage_type=str(item.get("coverage_type") or "").strip()
+        if not coverage_type:
+            continue
+        try:page=int(item.get("page"))
+        except Exception:page=None
+        if page is None or page<1:
+            continue
+        try:confidence=float(item.get("confidence",0.65))
+        except Exception:confidence=0.65
+        out.append({
+            "coverage_type":coverage_type[:100],
+            "limit_amount":None if item.get("limit_amount") in {None,""} else str(item.get("limit_amount"))[:80],
+            "deductible":None if item.get("deductible") in {None,""} else str(item.get("deductible"))[:80],
+            "conditions":str(item.get("conditions") or "")[:1000],
+            "exclusions":str(item.get("exclusions") or "")[:1000],
+            "page":page,
+            "confidence":max(0.0,min(0.85,confidence)),
+        })
+    return out
+
+
+def _replace_ai_proposals(session:Session,document:Document,analysis:dict)->None:
+    session.execute(
+        delete(ExtractedFact).where(
+            ExtractedFact.document_id==document.id,
+            ExtractedFact.user_verified.is_(False),
+            ExtractedFact.source_section.like("IA local:%"),
+        )
+    )
+    for fact in analysis.get("proposed_material_facts") or []:
+        key=fact["key"];page=fact["page"]
+        existing=session.scalar(select(ExtractedFact.id).where(
+            ExtractedFact.document_id==document.id,
+            ExtractedFact.key==key,
+            ExtractedFact.source_page==page,
+            ExtractedFact.source_section.not_like("IA local:%"),
+        ))
+        if existing:
+            continue
+        if key in LINKED_FACT_KEYS:
+            fact_type="linked_product"
+        elif key in MORTGAGE_FACT_KEYS:
+            fact_type="mortgage_term"
+        else:
+            fact_type="contract_term"
+        session.add(ExtractedFact(
+            document_id=document.id,
+            fact_type=fact_type,
+            key=key,
+            value_json=json.dumps({"value":fact["value"],"unit":fact["unit"],"source":"local_ai_proposal"},ensure_ascii=False),
+            confidence=Decimal(str(fact["confidence"])),
+            status="inferred",
+            source_page=page,
+            source_section=f"IA local: propuesta para revisar en pág. {page}",
+            user_verified=False,
+        ))
+    for index,coverage in enumerate(analysis.get("coverage_facts") or []):
+        page=coverage["page"]
+        slug=re.sub(r"[^a-z0-9]+","_",coverage["coverage_type"].lower()).strip("_")[:45] or "coverage"
+        session.add(ExtractedFact(
+            document_id=document.id,
+            fact_type="coverage_fact",
+            key=f"coverage:{slug}:{page}:{index}",
+            value_json=json.dumps({
+                "value":coverage["coverage_type"],
+                "coverage_type":coverage["coverage_type"],
+                "limit_amount":coverage["limit_amount"],
+                "deductible":coverage["deductible"],
+                "conditions":coverage["conditions"],
+                "exclusions":coverage["exclusions"],
+                "source":"local_ai_proposal",
+            },ensure_ascii=False),
+            confidence=Decimal(str(coverage["confidence"])),
+            status="inferred",
+            source_page=page,
+            source_section=f"IA local: cobertura propuesta para revisar en pág. {page}",
+            user_verified=False,
+        ))
+    session.flush()
+
+
 def _normalize(result: dict, document: Document) -> dict:
     if not isinstance(result, dict):
         raise RuntimeError("La IA local no devolvió un objeto JSON")
@@ -193,6 +326,8 @@ def _normalize(result: dict, document: Document) -> dict:
         "optimization_opportunities": _clean_list(result.get("optimization_opportunities")),
         "cross_area_impacts": _clean_list(result.get("cross_area_impacts")),
         "missing_information": _clean_list(result.get("missing_information")),
+        "proposed_material_facts": _clean_material_facts(result.get("proposed_material_facts")),
+        "coverage_facts": _clean_coverage_facts(result.get("coverage_facts")),
         "confidence": str(confidence),
         "model_role": (
             "Interpretación local. No sustituye hechos contractuales confirmados ni se usa por sí sola "
@@ -261,6 +396,9 @@ REGLAS OBLIGATORIAS:
 - Señala impactos cruzados: por ejemplo, quitar un seguro puede encarecer una hipoteca.
 - No decidas por el usuario. Explica oportunidades y riesgos de forma neutral.
 - Los hechos con status=confirmed y user_verified=true son confirmados. Los demás son indicios.
+- En proposed_material_facts incluye SOLO condiciones numéricas/textuales explícitas de estas claves: ${Array.from(ALLOWED_MATERIAL_FACT_KEYS).sort().join(', ')}.
+- Cada proposed_material_fact requiere una página concreta; si no puedes citarla, no lo propongas.
+- En coverage_facts incluye SOLO coberturas explícitas del seguro, con página concreta. No inventes límites, franquicias, condiciones ni exclusiones ausentes.
 - Devuelve SOLO JSON válido.
 
 HECHOS ESTRUCTURADOS:
@@ -281,11 +419,14 @@ SCHEMA JSON:
   "optimization_opportunities": [{{"title":"","detail":"","pages":[1],"impact":""}}],
   "cross_area_impacts": [{{"title":"","detail":"","pages":[1],"impact":""}}],
   "missing_information": [{{"title":"","detail":"","pages":[],"impact":""}}],
+  "proposed_material_facts": [{{"key":"cancellation_notice_days","value":"30","unit":"days","page":1,"confidence":0.75}}],
+  "coverage_facts": [{{"coverage_type":"Responsabilidad civil","limit_amount":null,"deductible":null,"conditions":"","exclusions":"","page":1,"confidence":0.75}}],
   "confidence": 0.0
 }}
 """
     result = _normalize(generate_json(prompt, timeout=180), document)
     confidence = Decimal(result["confidence"])
+    _replace_ai_proposals(session,document,result)
 
     session.execute(
         delete(ExtractedFact).where(
