@@ -68,7 +68,7 @@ Local FastAPI
     +-- Local caches
 ```
 
-La WebApp funciona como interfaz local. No se requiere backend cloud para almacenar datos privados.
+La WebApp y la API se ejecutan exclusivamente en el Mac. En producción, Next.js se exporta como frontend estático y FastAPI sirve UI + API desde un único origen en loopback. No hay backend cloud, base de datos cloud, IA cloud, telemetría remota ni almacenamiento remoto propio.
 
 ## Módulos funcionales
 
@@ -145,6 +145,12 @@ Además calcula break-even y compara calidad/coberturas/prestaciones equivalente
 ## Documentación
 
 - [Especificación funcional](docs/FUNCTIONAL_SPEC.md)
+- [Arquitectura estrictamente local](docs/LOCAL_ONLY.md)
+- [Arquitectura frontend](docs/FRONTEND_ARCHITECTURE.md)
+- [Arquitectura backend](docs/BACKEND_ARCHITECTURE.md)
+- [Catálogo de componentes](docs/COMPONENT_CATALOG.md)
+- [Modelo de seguridad estricto](docs/SECURITY_MODEL.md)
+- [Ciclo de vida de datos](docs/DATA_LIFECYCLE.md)
 - [Arquitectura](docs/ARCHITECTURE.md)
 - [Estructura del repositorio](docs/REPOSITORY_STRUCTURE.md)
 - [Modelo de datos](docs/DATA_MODEL.md)
