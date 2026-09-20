@@ -9,7 +9,7 @@ from .db import SessionLocal
 from .services.banking import close_connection,complete_authorization,list_connections,sync_connection
 from .services.secure_config import provider_status,set_secret
 from .services.preferences import effective_banking_redirect_url,read_preferences,update_preferences
-from .services.local_ai import status as ai_status
+from .services.local_ai import diagnose as ai_diagnose,status as ai_status
 from .providers.enable_banking import EnableBankingProvider
 
 router=APIRouter(prefix="/api/v1")
@@ -121,3 +121,8 @@ def ai_config():
 def update_ai_config(p:AIConfigIn):
     values=p.model_dump(exclude_unset=True)
     return {"preferences":update_preferences(values),"status":ai_status()}
+
+
+@router.post("/ai/test")
+def test_ai():
+    return ai_diagnose()
