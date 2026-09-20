@@ -191,7 +191,7 @@ export default function DocumentsPage(){
   )||selectedDoc?.evidence_links?.find(link=>['insurance_policy','mortgage','contract'].includes(link.entity_type));
   const currentGroup=groups.data?.find(g=>g.entity_type===currentLink?.entity_type&&g.entity_id===currentLink?.entity_id)||null;
   const compatibleGroups=(groups.data||[]).filter(g=>
-    selectedDoc?.document_type==='insurance'?g.entity_type==='insurance_policy':
+    selectedDoc?.document_type==='insurance'?g.kind==='insurance':
     selectedDoc?.document_type==='mortgage'?g.entity_type==='mortgage':
     ['contract','loan','energy','telecom'].includes(selectedDoc?.document_type||'')?g.entity_type==='contract':
     true
@@ -339,7 +339,10 @@ export default function DocumentsPage(){
             value={currentGroup?currentGroup.entity_type+':'+currentGroup.entity_id:''}
             onChange={e=>{
               const raw=e.target.value;
-              const defaultType:'insurance_policy'|'contract'|'mortgage'=selectedDoc.document_type==='insurance'?'insurance_policy':selectedDoc.document_type==='mortgage'?'mortgage':'contract';
+              const existingType=currentLink?.entity_type as 'insurance_policy'|'contract'|'mortgage'|undefined;
+              const defaultType:'insurance_policy'|'contract'|'mortgage'=existingType||(
+                selectedDoc.document_type==='insurance'?'insurance_policy':selectedDoc.document_type==='mortgage'?'mortgage':'contract'
+              );
               if(!raw){linkEntity.mutate({documentId:selectedDoc.id,entityType:defaultType,entityId:null});return}
               const [entityType,entityId]=raw.split(':');
               linkEntity.mutate({documentId:selectedDoc.id,entityType:entityType as 'insurance_policy'|'contract'|'mortgage',entityId});
