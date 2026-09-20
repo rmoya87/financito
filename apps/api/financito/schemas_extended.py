@@ -34,7 +34,28 @@ class BackupCreate(BaseModel):
 class BackupRestore(BaseModel):
     passphrase:str=Field(min_length=12,max_length=256); path:str
 class TaxEstimateRequest(BaseModel):
-    jurisdiction:str="ES"; tax_year:int; assumed_rate:Decimal|None=None
+    jurisdiction:str="ES"; tax_year:int
+
+class TaxProfileUpdate(BaseModel):
+    jurisdiction:str="ES"
+    tax_year:int
+    autonomous_community:str|None=None
+    filing_status:str|None=Field(default=None,pattern="^(individual|joint)$")
+    adults:int=Field(default=1,ge=1,le=4)
+    dependent_children:int=Field(default=0,ge=0,le=20)
+    children_under_three:int=Field(default=0,ge=0,le=20)
+    primary_residence:bool|None=None
+    employment_income:Decimal|None=Field(default=None,ge=0)
+    social_security_contributions:Decimal|None=Field(default=None,ge=0)
+    employment_deductible_expenses:Decimal|None=Field(default=None,ge=0)
+    tax_withholdings:Decimal|None=Field(default=None,ge=0)
+    interest_income:Decimal=Field(default=Decimal("0"),ge=0)
+    other_general_income:Decimal=Decimal("0")
+    carried_forward_savings_losses:Decimal=Field(default=Decimal("0"),ge=0)
+    pension_contributions:Decimal=Field(default=Decimal("0"),ge=0)
+
+class AssetSimulationStart(BaseModel):
+    amount:Decimal=Field(gt=0)
 class CostCenterCreate(BaseModel):
     name:str; center_type:str; metadata:dict={}
 class CoverageCompareRequest(BaseModel):
