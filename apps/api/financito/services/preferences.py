@@ -6,7 +6,7 @@ from . import __init__ as _unused
 from ..config import settings
 
 PREFERENCES_PATH=settings.data_dir/"preferences.json"
-ALLOWED={"local_ai_model","embedding_model"}
+ALLOWED={"local_ai_model","embedding_model","enable_banking_redirect_url"}
 
 def read_preferences()->dict:
     if not PREFERENCES_PATH.exists():
@@ -42,3 +42,8 @@ def update_preferences(values:dict)->dict:
 def effective_ai_models()->tuple[str,str]:
     p=read_preferences()
     return p.get("local_ai_model",settings.local_ai_model),p.get("embedding_model",settings.embedding_model)
+
+
+def effective_banking_redirect_url()->str:
+    p=read_preferences()
+    return p.get("enable_banking_redirect_url",os.getenv("FINANCITO_ENABLE_BANKING_REDIRECT_URL","")).strip()
