@@ -82,7 +82,7 @@ Para uso personal sin desplegar un agregador propio, Financito soporta Enable Ba
 5. guardar App ID y clave privada en el Keychain desde Configuración;
 6. autorizar cada cuenta desde **Banca conectada**.
 
-La sincronización actualiza saldo disponible/contable expuesto por el ASPSP y movimientos contabilizados. Estos saldos alimentan la liquidez acumulada del Decision Lab. El acceso PSD2 a cuentas de pago no implica que el banco exponga el capital hipotecario pendiente: ese dato sigue procediendo del perfil hipotecario y de documentación contractual.
+La sincronización actualiza saldo disponible/contable expuesto por el ASPSP y movimientos contabilizados. Después concilia automáticamente transferencias entre cuentas propias y reembolsos para evitar inflar ingresos/gastos. Estos saldos alimentan la liquidez acumulada del Decision Lab. El acceso PSD2 a cuentas de pago no implica que el banco exponga el capital hipotecario pendiente: ese dato sigue procediendo del perfil hipotecario y de documentación contractual.
 
 ## Investigación pública de hipotecas y seguros
 
