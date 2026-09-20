@@ -1,7 +1,7 @@
 # Estado de implementación
 
 Fecha de corte: **2026-09-20**.  
-Schema actual: **v8**.
+Schema actual: **v9**.
 
 Este documento describe únicamente comportamiento ejecutable en `main`. Los planes futuros viven en `ROADMAP.md`.
 
