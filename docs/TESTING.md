@@ -89,6 +89,7 @@ Las regresiones cubren:
 
 - propagación de una categoría al mismo concepto en el histórico y en una importación futura;
 - autoagrupación de un segundo documento con una póliza existente mediante número de póliza;
+- agrupación de documentos de un seguro incompleto antes de conocer la prima y posterior convergencia a una sola póliza;
 - validación conjunta: valores coherentes se confirman y valores contradictorios permanecen `conflicting` sin verificación automática;
 - exclusión de seguros e hipoteca del endpoint de contratos generales;
 - aceptación de intervalos explícitos en el Dashboard.
