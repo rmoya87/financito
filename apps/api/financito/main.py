@@ -324,10 +324,21 @@ def evidence_groups(db:Session=Depends(get_db)):
             "document_count":len(docs),
             "documents":[{"id":x.from_id,"file_name":documents[x.from_id].file_name} for x in docs if x.from_id in documents],
         })
+    policy_contract_ids={row.contract_id for row in db.scalars(select(InsurancePolicy)).all() if row.contract_id}
     for contract in contracts.values():
-        if contract.contract_type in {"insurance","mortgage"}:
+        if contract.contract_type=="mortgage":
             continue
         docs=grouped.get(("contract",contract.id),[])
+        if contract.contract_type=="insurance":
+            if contract.id in policy_contract_ids:
+                continue
+            result.append({
+                "entity_type":"contract","entity_id":contract.id,"kind":"insurance_pending",
+                "label":f"Seguro pendiente · {contract.provider_name}",
+                "provider":contract.provider_name,"document_count":len(docs),
+                "documents":[{"id":x.from_id,"file_name":documents[x.from_id].file_name} for x in docs if x.from_id in documents],
+            })
+            continue
         result.append({
             "entity_type":"contract","entity_id":contract.id,"kind":contract.contract_type,
             "label":f"{contract.provider_name} · {contract.contract_type}",
