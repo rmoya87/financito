@@ -159,7 +159,7 @@ def wealth_home(db:Session=Depends(dbdep)):
     policies=[]
     for policy in db.scalars(select(InsurancePolicy)).all():
         kind=(policy.insurance_type or "").lower()
-        if kind not in {"home","house","hogar","life","vida","mortgage_life"}:
+        if not any(token in kind for token in ("home","house","hogar","life","vida","mortgage","hipoteca")):
             continue
         contract=contracts.get(policy.contract_id or "")
         policies.append({
@@ -183,6 +183,7 @@ def wealth_home(db:Session=Depends(dbdep)):
             "source_documents":[],
             "insurance":policies,
             "equity":None,
+            "owned_equity":None,
             "ltv":None,
             "missing":[
                 {"key":"mortgage","label":"Datos de la hipoteca","reason":"Necesarios para calcular cuota, intereses y escenarios de mejora."}
@@ -214,12 +215,15 @@ def wealth_home(db:Session=Depends(dbdep)):
             else:
                 extra_payload[target]=raw
 
-    equity=None;ltv=None
+    equity=None;ltv=None;owned_equity=None
     if home is not None:
+        # LTV bancario se calcula contra el valor total de la garantía, no
+        # contra el porcentaje patrimonial del usuario.
+        equity=(home.current_value-mortgage.remaining_principal).quantize(Decimal("0.01"))
+        if home.current_value>0:
+            ltv=(mortgage.remaining_principal/home.current_value*Decimal("100")).quantize(Decimal("0.01"))
         owned_value=home.current_value*home.ownership_percentage/Decimal("100")
-        equity=(owned_value-mortgage.remaining_principal).quantize(Decimal("0.01"))
-        if owned_value>0:
-            ltv=(mortgage.remaining_principal/owned_value*Decimal("100")).quantize(Decimal("0.01"))
+        owned_equity=(owned_value-mortgage.remaining_principal).quantize(Decimal("0.01"))
 
     missing=[]
     def need(key,label,reason,value):
@@ -249,6 +253,7 @@ def wealth_home(db:Session=Depends(dbdep)):
         "source_documents":context["source_documents"],
         "insurance":policies,
         "equity":None if equity is None else str(equity),
+        "owned_equity":None if owned_equity is None else str(owned_equity),
         "ltv":None if ltv is None else str(ltv),
         "missing":missing,
     }
