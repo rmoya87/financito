@@ -172,7 +172,6 @@ export default function DocumentsPage(){
         Admite PDF, imágenes/HEIC, DOCX, XLSX, CSV, TXT y JSON. Máximo 50 MB y 500 páginas por PDF.
       </div>
       {index.error&&<div className="mt-3"><ErrorState error={index.error}/></div>}
-        </form>
       </details>
     </Card>
 
