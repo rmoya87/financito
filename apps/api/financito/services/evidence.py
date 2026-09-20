@@ -6,7 +6,7 @@ from pathlib import Path
 import json
 import re
 
-from sqlalchemy import select
+from sqlalchemy import delete,select
 from sqlalchemy.orm import Session
 
 from ..models import ActionItem, Contract, Document, ExtractedFact
