@@ -1,0 +1,77 @@
+name: macOS signed release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-sign-notarize:
+    runs-on: macos-latest
+    env:
+      APPLE_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+      CERTIFICATE_B64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+      CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      NOTARY_KEY_B64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+      APPLE_API_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+      FINANCITO_VERSION: 0.2.${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Validate required Apple secrets
+        run: |
+          test -n "$APPLE_SIGNING_IDENTITY"
+          test -n "$CERTIFICATE_B64"
+          test -n "$CERTIFICATE_PASSWORD"
+          test -n "$NOTARY_KEY_B64"
+          test -n "$APPLE_API_KEY_ID"
+          test -n "$APPLE_API_ISSUER_ID"
+      - name: Import Developer ID certificate
+        env:
+          KEYCHAIN_PASSWORD: financito-${{ github.run_id }}
+        run: |
+          CERT_PATH="$RUNNER_TEMP/developer-id.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/financito-signing.keychain-db"
+          export CERT_PATH KEYCHAIN_PATH
+          python3 - <<'PY'
+          import base64, os
+          from pathlib import Path
+          Path(os.environ["CERT_PATH"]).write_bytes(base64.b64decode(os.environ["CERTIFICATE_B64"]))
+          PY
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+      - name: Prepare App Store Connect notarization key
+        run: |
+          export APPLE_API_KEY_PATH="$RUNNER_TEMP/AuthKey_$APPLE_API_KEY_ID.p8"
+          python3 - <<'PY'
+          import base64, os
+          from pathlib import Path
+          Path(os.environ["APPLE_API_KEY_PATH"]).write_bytes(base64.b64decode(os.environ["NOTARY_KEY_B64"]))
+          PY
+          chmod 600 "$APPLE_API_KEY_PATH"
+          echo "APPLE_API_KEY_PATH=$APPLE_API_KEY_PATH" >> "$GITHUB_ENV"
+      - name: Build app bundle
+        run: bash scripts/build-macos-app.sh
+      - name: Sign and notarize
+        run: bash scripts/sign-notarize-macos.sh
+      - name: Upload notarized artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Financito-macOS-${{ runner.arch }}
+          path: dist/macos/Financito.zip
+          if-no-files-found: error
+      - name: Remove temporary credentials
+        if: always()
+        env:
+          KEYCHAIN_PASSWORD: financito-${{ github.run_id }}
+        run: |
+          security delete-keychain "$RUNNER_TEMP/financito-signing.keychain-db" || true
+          rm -f "$RUNNER_TEMP/developer-id.p12" "$RUNNER_TEMP"/AuthKey_*.p8
