@@ -10,7 +10,7 @@ from ..models import Budget,Category,Transaction
 from ..models_analytics import EntityLink
 
 CENT=Decimal("0.01")
-ESSENTIAL={"housing","groceries","utilities","insurance","health","education","taxes","transport"}
+ESSENTIAL={"housing","groceries","utilities","telecom","insurance","health","education","family","pets","taxes","transport","vehicle","debt"}
 
 def _refund_ids(session:Session,transaction_ids:list[str]|None=None)->set[str]:
     stmt=select(EntityLink.from_id).where(EntityLink.from_type=="transaction",EntityLink.relation_type=="refund_of")
