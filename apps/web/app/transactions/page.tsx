@@ -50,7 +50,7 @@ export default function TransactionsPage(){
 
   const accounts=useQuery({queryKey:['accounts'],queryFn:()=>apiGet<Account[]>('/api/v1/accounts')});
   const cats=useQuery({queryKey:['categories'],queryFn:()=>apiGet<Category[]>('/api/v1/categories')});
-  const txs=useQuery({queryKey:['transactions'],queryFn:()=>apiGet<Tx[]>('/api/v1/transactions?limit=1000')});
+  const txs=useQuery({queryKey:['transactions'],queryFn:()=>apiGet<Tx[]>('/api/v1/transactions?limit=5000')});
   const rules=useQuery({queryKey:['transaction-rules'],queryFn:()=>apiGet<Rule[]>('/api/v1/transaction-rules')});
 
   const invalidateTransactions=()=>{
