@@ -32,6 +32,7 @@ from .services.categorization import ensure_categories,propagate_verified_mercha
 from .services.documents import index_document,reprocess_document,safe_path
 from .services.evidence import review_summary,synchronize_all_document_evidence,synchronize_document_evidence
 from .services.forecast import forecast
+from .services.month_end import month_end_projection
 from .services.imports import import_csv
 from .services.local_ai import status as ai_status
 from .services.secure_config import provider_status
@@ -171,6 +172,10 @@ def list_commitments(db:Session=Depends(get_db)):
 def calculate_forecast(payload:ForecastRequest,db:Session=Depends(get_db)):
     result=forecast(db,payload.start,payload.end)
     return {k:(str(v) if isinstance(v,Decimal) else v) for k,v in result.__dict__.items()}
+
+@app.get("/api/v1/forecast/month-end")
+def calculate_month_end_forecast(as_of:date|None=None,db:Session=Depends(get_db)):
+    return month_end_projection(db,as_of)
 
 
 @app.post("/api/v1/documents/index")
