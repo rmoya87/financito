@@ -1,107 +1,51 @@
 # Seguridad y privacidad
 
-## Modelo de amenaza
+Financito adopta un modelo de seguridad estrictamente local y de mínimo privilegio.
+
+La especificación autoritativa está en [SECURITY_MODEL.md](SECURITY_MODEL.md) y [LOCAL_ONLY.md](LOCAL_ONLY.md).
+
+## Reglas no negociables
+
+- Todo dato privado, documento, embedding, base de datos, log, configuración y modelo IA permanece en el Mac.
+- No existe infraestructura propia remota.
+- La API escucha únicamente en loopback.
+- WebApp y API comparten origen en producción.
+- No se usan analytics, telemetría, crash reporting ni assets remotos.
+- No se guardan secretos en frontend, .env, repositorio ni logs.
+- Claves y tokens sensibles se almacenan en Keychain.
+- SQLite se cifra con SQLCipher o alternativa auditada.
+- LLM, embeddings y reranking son locales.
+- Documentos/noticias se consideran input hostil.
+- El LLM no tiene acceso arbitrario a SQL, shell, filesystem ni URLs.
+- Providers externos se comunican desde adapters con allowlist de hosts.
+- Ningún provider puede recibir más datos personales de los estrictamente necesarios.
+- Backups son locales y cifrados.
+- El usuario puede borrar derivados, índices, conexiones y todos sus datos.
+
+## Threat model mínimo
 
 Proteger frente a:
 - robo de secretos;
-- fuga en logs;
+- fuga de logs;
 - acceso no autorizado al Vault;
-- exposición accidental de API local;
-- documentos maliciosos;
-- prompt injection desde documentos/noticias;
-- proveedores externos comprometidos;
-- dependencias vulnerables.
+- XSS;
+- CSRF;
+- ataques contra localhost y DNS rebinding;
+- SSRF;
+- path traversal/symlinks;
+- parsers maliciosos;
+- prompt injection;
+- tool abuse;
+- supply-chain;
+- modelos locales manipulados;
+- exposición accidental a LAN.
 
-## Datos en reposo
+## Privacy by design
 
-- SQLite cifrada;
-- claves fuera de la DB;
-- secretos en Keychain/almacén seguro del sistema;
-- documentos opcionalmente cifrados si Financito gestiona copias;
-- backups cifrados.
+No se persisten datos sensibles en localStorage/sessionStorage. No se incluyen datos privados en URLs. No se cargan Google Fonts, CDNs o iframes remotos.
 
-## API local
+Todo dato externo guarda procedencia y frescura. Los embeddings se tratan como datos sensibles.
 
-Por defecto:
-- bind a 127.0.0.1 / ::1;
-- CORS restringido;
-- token/sesión local;
-- protección CSRF donde aplique;
-- sin exposición LAN automática.
+## Security gate
 
-## Secretos
-
-Nunca:
-- hardcode;
-- localStorage para tokens sensibles;
-- commits;
-- logs.
-
-Usar almacén seguro del SO.
-
-## Logs
-
-Redactar:
-- IBAN;
-- números de cuenta;
-- tokens;
-- API keys;
-- identificadores bancarios;
-- documentos;
-- payloads sensibles.
-
-## Open Banking
-
-- consentimiento explícito;
-- read-only inicial;
-- no guardar usuario/contraseña bancaria;
-- tokens cifrados;
-- mostrar expiración del consentimiento;
-- desconexión/revocación.
-
-## Navegador
-
-La WebApp no debe exponer secretos a JavaScript si no es necesario.
-La comunicación con providers externos debe pasar por la API local cuando requiera credenciales.
-
-## Upload/ingestión
-
-Validar:
-- MIME real;
-- tamaño;
-- extensión;
-- paths;
-- traversal;
-- descompresión;
-- parser sandboxing cuando sea viable.
-
-## Prompt injection
-
-Todo contenido externo es datos no confiables.
-Un documento/noticia no puede:
-- modificar system prompt;
-- autorizar tools;
-- revelar secretos;
-- cambiar políticas.
-
-Las tools se permiten según intención y política de aplicación.
-
-## Dependencias
-
-- lockfiles;
-- análisis de vulnerabilidades;
-- actualizaciones controladas;
-- evitar paquetes abandonados.
-
-## Backups
-
-Definir:
-- export cifrado;
-- restauración;
-- integridad;
-- versión de schema.
-
-## Privacidad
-
-No recopilar telemetría de datos financieros por defecto.
-Cualquier telemetría futura debe ser opt-in y no contener contenido.
+Una fase no se considera terminada si falla cualquiera de los tests de seguridad críticos definidos en SECURITY_MODEL.md y TESTING.md.
