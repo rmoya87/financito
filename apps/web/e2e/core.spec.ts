@@ -62,6 +62,21 @@ test('cuenta e importación de extracto funcionan de extremo a extremo',async({p
   await expect(page.getByRole('cell',{name:'Compra E2E',exact:true})).toBeVisible();
 });
 
+test('Documentos permite subir y procesar un archivo desde la aplicación',async({page})=>{
+  await page.goto('/documents/');
+  await page.locator('input[type="file"]').first().setInputFiles({
+    name:'e2e-upload-policy.txt',
+    mimeType:'text/plain',
+    buffer:Buffer.from('Póliza de seguro de hogar. Prima anual 480 euros. Franquicia 100 euros. Preaviso de 30 días.'),
+  });
+  await expect(page.getByText(/1 documento\(s\) añadido\(s\)/)).toBeVisible();
+  await expect(page.getByText('e2e-upload-policy.txt',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:/e2e-upload-policy\.txt/}).click();
+  await expect(page.getByText('annual_cost',{exact:true})).toBeVisible();
+  await expect(page.getByText('deductible',{exact:true})).toBeVisible();
+  await expect(page.getByText('cancellation_notice_days',{exact:true})).toBeVisible();
+});
+
 test('Vault indexa evidencia y conserva cita navegable',async({page})=>{
   await page.goto('/documents/');
   const input=page.getByPlaceholder('Ruta dentro del Financial Knowledge Vault');
