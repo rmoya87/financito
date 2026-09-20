@@ -322,3 +322,49 @@ def test_mortgage_context_does_not_mix_linked_documents_across_profiles():
         ctx_b=mortgage_contract_context(db,b.id)
         assert ctx_a["by_key"]["nominal_rate"]["value"]=="2.00"
         assert "nominal_rate" not in ctx_b["by_key"]
+
+
+
+def test_unlinked_mortgage_offer_does_not_change_current_mortgage():
+    suffix=uuid4().hex[:8]
+    path=settings.vault_dir/f"oferta-hipoteca-{suffix}.txt"
+    path.write_text(
+        "FEIN préstamo hipotecario de Banco Alternativo. Capital pendiente 80.000 euros. "
+        "TIN 1,90 %. Cuota mensual 500 euros. Quedan 160 meses. Tipo fijo.",
+        encoding="utf-8",
+    )
+    with SessionLocal() as db:
+        mortgage=Mortgage(
+            lender="Bankinter actual",
+            remaining_principal=Decimal("125000"),
+            currency="EUR",
+            interest_type="fixed",
+            nominal_rate=Decimal("0.025"),
+            monthly_payment=Decimal("850"),
+            remaining_months=180,
+            early_repayment_fee=None,
+        )
+        db.add(mortgage);db.flush()
+        indexed=index_document(db,str(path),"unknown")
+        doc=indexed.document
+        facts=db.scalars(select(ExtractedFact).where(
+            ExtractedFact.document_id==doc.id,
+            ExtractedFact.fact_type.in_(["mortgage_term","contract_term","linked_product"]),
+        )).all()
+        for fact in facts:
+            fact.status="confirmed";fact.user_verified=True
+        sync=synchronize_document_evidence(db,doc)
+        db.flush()
+        assert sync["mortgage_id"] is None
+        db.refresh(mortgage)
+        assert mortgage.remaining_principal==Decimal("125000.0000")
+        assert mortgage.nominal_rate==Decimal("0.025000")
+        assert mortgage.monthly_payment==Decimal("850.0000")
+        assert mortgage.remaining_months==180
+        link=db.scalar(select(EntityLink).where(
+            EntityLink.from_type=="document",
+            EntityLink.from_id==doc.id,
+            EntityLink.relation_type=="evidence_for",
+            EntityLink.to_type=="mortgage",
+        ))
+        assert link is None
