@@ -205,6 +205,14 @@ def auto_link_document_entity(session: Session, document: Document) -> dict | No
                 continue
             target_type = "insurance_policy" if document.document_type == "insurance" else "contract"
             link = _entity_link(session, fact.document_id, target_type)
+            if link is None and document.document_type == "insurance":
+                # An incomplete insurance can exist as a contract/evidence
+                # group before a premium is known and a policy can be created.
+                contract_link = _entity_link(session, fact.document_id, "contract")
+                contract = session.get(Contract, contract_link.to_id) if contract_link else None
+                if contract is not None and contract.contract_type == "insurance":
+                    link = contract_link
+                    target_type = "contract"
             if link is None:
                 continue
             _add_evidence_link(
@@ -624,6 +632,19 @@ def _ensure_insurance_projection(
     policy = session.get(InsurancePolicy, link.to_id) if link else None
     if contract is None and policy is not None and policy.contract_id:
         contract = session.get(Contract, policy.contract_id)
+    if policy is None and contract is not None:
+        # Reuse the single policy already projected from another document in
+        # this insurance evidence group instead of creating one policy per PDF.
+        policy = session.scalar(
+            select(InsurancePolicy)
+            .where(InsurancePolicy.contract_id == contract.id)
+            .order_by(InsurancePolicy.created_at.asc())
+        )
+        if policy is not None:
+            _add_evidence_link(
+                session, document.id, "insurance_policy", policy.id,
+                confidence=Decimal("0.98"), source_type="contract_group",
+            )
 
     premium = None
     if "annual_cost" in values:
