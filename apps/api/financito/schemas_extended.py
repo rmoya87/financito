@@ -86,6 +86,23 @@ class MortgageProfileCreate(BaseModel):
 class MortgageProfileUpdate(MortgageProfileCreate):
     pass
 
+class MortgageExtraUpdate(BaseModel):
+    original_principal:Decimal|None=Field(default=None,gt=0)
+    original_term_months:int|None=Field(default=None,gt=0,le=1200)
+    start_date:date|None=None
+    maturity_date:date|None=None
+    apr_rate:Decimal|None=Field(default=None,ge=0,le=1)
+    reference_index:str|None=Field(default=None,max_length=80)
+    differential_rate:Decimal|None=Field(default=None,ge=-1,le=1)
+    rate_review_months:int|None=Field(default=None,gt=0,le=120)
+    next_review_date:date|None=None
+    opening_fee_percent:Decimal|None=Field(default=None,ge=0,le=100)
+    early_repayment_fee_percent:Decimal|None=Field(default=None,ge=0,le=100)
+    subrogation_fee_percent:Decimal|None=Field(default=None,ge=0,le=100)
+    cancellation_fee_percent:Decimal|None=Field(default=None,ge=0,le=100)
+    notes:str|None=Field(default=None,max_length=4000)
+
+
 class StoredMortgageScenarioRequest(BaseModel):
     mortgage_id:str
 
