@@ -136,3 +136,26 @@ Métricas:
 - faithfulness;
 - citation accuracy;
 - latency.
+
+
+## RAG contractual
+
+Los contratos no se tratan solo como texto recuperable.
+
+Para hipotecas, seguros, préstamos, tarjetas y servicios:
+1. recuperar cláusula;
+2. extraer fact estructurado;
+3. asociar vigencia;
+4. asociar página/sección;
+5. validar confidence;
+6. alimentar engine determinista.
+
+El texto recuperado sirve como evidencia; el cálculo usa facts/ContractSnapshot.
+
+Consultar CONTRACT_EVIDENCE.md.
+
+## Regla material
+
+No encontrado != valor cero.
+
+Si una pregunta/cálculo depende de una penalización, comisión, preaviso o vinculación no localizada con suficiente confianza, la respuesta debe marcar falta de evidencia en lugar de inferir.
