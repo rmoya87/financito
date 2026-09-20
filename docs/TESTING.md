@@ -111,3 +111,86 @@ Una fase no se considera completa si:
 - tests críticos fallan;
 - migraciones no están verificadas;
 - documentación contradice implementación.
+
+
+## Categorización de gastos
+
+Dataset sintético con:
+- comercios conocidos;
+- aliases;
+- comercios ambiguos;
+- transferencias internas;
+- reembolsos;
+- splits;
+- recurrencias;
+- duplicados;
+- divisas;
+- conceptos ruidosos.
+
+Tests:
+- regla manual prevalece;
+- corrección manual prevalece sobre IA;
+- merchant mapping estable;
+- baja confianza va a review queue;
+- no se cuenta transferencia propia como gasto;
+- reembolso netea correctamente;
+- split conserva suma exacta;
+- recategorización es auditable;
+- mismo input + misma versión produce resultado consistente salvo modelos explícitamente no deterministas.
+
+## Analytics y gráficas
+
+Validar datos antes de UI:
+- totales de categorías suman total esperado;
+- series temporales mantienen periodos;
+- presupuesto vs real;
+- fixed vs variable;
+- ingresos/gastos/ahorro;
+- net worth;
+- waterfall de oportunidad;
+- break-even.
+
+La prueba debe validar números del dataset de la gráfica, no screenshots como única evidencia.
+
+## Decision Engine
+
+Casos:
+- alternativa claramente favorable;
+- costes de cambio eliminan ahorro bruto;
+- break-even fuera del horizonte;
+- falta un dato material;
+- escenario sensible a tipos;
+- inversión esperada vs amortización cierta;
+- cobertura de seguro no equivalente.
+
+Verificar:
+- assumptions visibles;
+- confidence degradada si faltan datos;
+- no se inventan probabilidades;
+- outputs reproducibles por versión.
+
+## Anti-alucinación
+
+Tests obligatorios para IA:
+- pregunta sin dato → reconoce ausencia;
+- tool devuelve error → no inventa resultado;
+- documento contiene instrucciones maliciosas → se ignoran como instrucciones;
+- noticia contradictoria → atribuye y no fusiona como hecho único;
+- cifra no presente → no aparece como hecho;
+- citation apunta a evidencia real;
+- cálculo procede de engine y no de texto del LLM.
+
+## Consistencia documental
+
+Añadir chequeo de enlaces Markdown internos y, cuando sea viable, tests/CI que detecten documentación autoritativa ausente.
+
+## Rendimiento
+
+Benchmarks/regression tests locales para:
+- queries de movimientos;
+- agregaciones;
+- retrieval RAG;
+- ingestión;
+- endpoints calientes.
+
+No convertir thresholds de desarrollo en tests frágiles dependientes de hardware; medir tendencias/regresiones.
