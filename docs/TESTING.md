@@ -92,3 +92,6 @@ Las regresiones cubren:
 - validación conjunta: valores coherentes se confirman y valores contradictorios permanecen `conflicting` sin verificación automática;
 - exclusión de seguros e hipoteca del endpoint de contratos generales;
 - aceptación de intervalos explícitos en el Dashboard.
+
+
+También se cubre la agrupación provisional sin prima confirmada: dos documentos con el mismo número de póliza deben compartir una única ficha de evidencia antes de crear la póliza financiera.
