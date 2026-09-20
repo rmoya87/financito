@@ -11,10 +11,10 @@ from sqlalchemy.orm import Session
 
 from ..models import ActionItem, Contract, Document, ExtractedFact
 from ..models_analytics import EntityLink
-from ..models_extended import InsurancePolicy
+from ..models_extended import CoverageFact,InsurancePolicy
 from .document_ai import latest_analysis
 
-MATERIAL_FACT_TYPES = {"contract_term", "mortgage_term", "linked_product"}
+MATERIAL_FACT_TYPES = {"contract_term", "mortgage_term", "linked_product", "coverage_fact"}
 CONTRACT_DOCUMENT_TYPES = {"mortgage", "insurance", "loan", "contract", "energy", "telecom"}
 REVIEWED_STATUSES = {"confirmed", "ambiguous", "conflicting", "not_found", "superseded"}
 
@@ -292,16 +292,73 @@ def _ensure_insurance_projection(
     return policy
 
 
+def _ensure_coverage_projection(
+    session: Session,
+    document: Document,
+    contract: Contract | None,
+    policy: InsurancePolicy | None,
+) -> int:
+    if document.document_type != "insurance" or policy is None:
+        return 0
+
+    rows = session.scalars(
+        select(ExtractedFact).where(
+            ExtractedFact.document_id == document.id,
+            ExtractedFact.fact_type == "coverage_fact",
+            ExtractedFact.status == "confirmed",
+            ExtractedFact.user_verified.is_(True),
+        )
+    ).all()
+
+    session.execute(
+        delete(CoverageFact).where(
+            CoverageFact.source_document_id == document.id,
+            CoverageFact.insurance_policy_id == policy.id,
+        )
+    )
+
+    created = 0
+    for row in rows:
+        payload = _payload(row)
+        coverage_type = str(payload.get("coverage_type") or payload.get("value") or "").strip()
+        if not coverage_type:
+            continue
+        limit_amount = _decimal(payload.get("limit_amount"))
+        deductible = _decimal(payload.get("deductible"))
+        conditions = str(payload.get("conditions") or "").strip()
+        exclusions = str(payload.get("exclusions") or "").strip()
+        session.add(
+            CoverageFact(
+                contract_id=None if contract is None else contract.id,
+                insurance_policy_id=policy.id,
+                coverage_type=coverage_type[:100],
+                limit_amount=limit_amount,
+                deductible=deductible,
+                conditions_json=json.dumps({"text":conditions},ensure_ascii=False) if conditions else "{}",
+                exclusions_json=json.dumps({"text":exclusions},ensure_ascii=False) if exclusions else "{}",
+                source_document_id=document.id,
+                source_page=row.source_page,
+                confidence=row.confidence,
+                user_verified=True,
+            )
+        )
+        created += 1
+    session.flush()
+    return created
+
+
 def synchronize_document_evidence(session: Session, document: Document) -> dict:
     summary = sync_review_action(session, document)
     values = _confirmed_values(session, document.id)
     contract = _ensure_contract_projection(session, document, values, summary)
     policy = _ensure_insurance_projection(session, document, contract, values)
+    coverage_count = _ensure_coverage_projection(session, document, contract, policy)
     session.flush()
     return {
         **summary,
         "contract_id": None if contract is None else contract.id,
         "insurance_policy_id": None if policy is None else policy.id,
+        "coverage_count": coverage_count,
     }
 
 
