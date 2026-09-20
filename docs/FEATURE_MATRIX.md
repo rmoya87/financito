@@ -37,6 +37,7 @@ Estado:
 | Portfolio | posiciones/trades/FIFO tax lots | OK |
 | Markets | quotes/histórico/caché | EXTERNO |
 | Crypto | precio y riesgo | OK |
+| Crypto/Stocks | seguimiento owned/watch + coste/precio/P&L real | OK |
 | Risk | vol/Sharpe/Sortino/drawdown/VaR/CVaR | OK |
 | Risk | exposición y concentración | OK |
 | Fundamentals | SEC companyfacts seleccionados | PARCIAL |
@@ -50,6 +51,7 @@ Estado:
 | Insurance | requisitos y huecos definidos por usuario | OK |
 | Mortgage | cuota/intereses | OK |
 | Mortgage | amortización parcial cuota/plazo | OK |
+| Mortgage | perfil real persistente + laboratorio por mortgage_id | OK |
 | Mortgage | FEIN/FIAE compleja y novación/subrogación | PARCIAL |
 | Optimization | switching costs + break-even | OK |
 | Optimization | benefits/linked products | OK |
@@ -57,6 +59,7 @@ Estado:
 | Backtest | media móvil | OK |
 | Planning | amortizar vs invertir | OK |
 | Decisions | casos/alternativas/outcomes | OK |
+| Decisions | snapshot + contexto vivo de datos reales | OK |
 | Cost Centers | asignaciones y agregación | OK |
 | Stress | shocks y cash runway | OK |
 | Calendar | eventos financieros | OK |
