@@ -21,6 +21,7 @@ from .services.tax import estimate
 from .services.wealth import summary as wealth_summary
 from .services.financial_analytics import cash_flow
 from .services.snapshots import record_snapshot
+from .services.broker_import import import_broker_csv
 from .providers.market import AlphaVantageProvider
 from .providers.news import GdeltNewsProvider
 router=APIRouter(prefix="/api/v1")
@@ -79,6 +80,19 @@ def trade(p:TradeCreate,db:Session=Depends(dbdep)):
     try:result=apply_trade(db,r)
     except ValueError as e:db.rollback();raise HTTPException(409,str(e))
     db.commit();return {"id":r.id,**{k:str(v) for k,v in result.items()}}
+
+@router.post("/portfolios/{portfolio_id}/imports/broker")
+async def broker_import(portfolio_id:str,file:UploadFile=File(...),db:Session=Depends(dbdep)):
+    if not db.get(Portfolio,portfolio_id):raise HTTPException(404,"Portfolio not found")
+    content=await file.read()
+    if len(content)>10*1024*1024:raise HTTPException(413,"Broker file too large")
+    try:
+        result=import_broker_csv(db,portfolio_id,content,file.filename or "broker.csv")
+        db.commit()
+        return result
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(400,str(exc))
 
 @router.post("/insurance")
 def add_insurance(p:InsuranceCreate,db:Session=Depends(dbdep)):r=InsurancePolicy(**p.model_dump(),insured_object_json="{}");db.add(r);db.commit();return {"id":r.id}
