@@ -4,6 +4,7 @@ from uuid import uuid4
 from financito.db import SessionLocal
 from financito.models import Account, Transaction
 from financito.services.imports import import_csv, parse_decimal, parse_date
+from financito.services.import_formats import import_statement
 
 
 def test_spanish_decimal():
@@ -117,3 +118,21 @@ def test_same_amount_and_merchant_are_not_enough_to_drop_a_distinct_purchase():
         assert result.inserted==1
         assert result.duplicates==0
         assert db.query(Transaction).filter(Transaction.account_id==account.id).count()==2
+
+
+def test_ofx_fitid_prevents_duplicate_across_changed_exports():
+    with SessionLocal() as db:
+        account=_account(db)
+        first=b"""<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><BANKTRANLIST>
+<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20260919120000<TRNAMT>-25.00<FITID>FIT-999<MEMO>COMPRA ORIGINAL<NAME>TIENDA</STMTTRN>
+</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>"""
+        second=b"""<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><BANKTRANLIST>
+<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20260920120000<TRNAMT>-25.00<FITID>FIT-999<MEMO>PAGO TARJETA TIENDA<NAME>TIENDA CENTRAL</STMTTRN>
+</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>"""
+        r1=import_statement(db,account.id,"a.ofx",first)
+        db.commit()
+        r2=import_statement(db,account.id,"b.ofx",second)
+        db.commit()
+        assert r1.inserted==1
+        assert r2.inserted==0
+        assert r2.duplicates_reference==1
