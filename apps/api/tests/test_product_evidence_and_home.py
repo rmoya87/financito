@@ -10,7 +10,7 @@ from financito.db import SessionLocal
 from financito.main import app
 from financito.models import Contract, Document, ExtractedFact, Mortgage
 from financito.models_analytics import EntityLink
-from financito.models_extended import Asset, InsurancePolicy
+from financito.models_extended import Asset, InsurancePolicy, MortgageProfileExtra
 from financito.services.evidence import (
     confirm_entity_coherent_evidence,
     synchronize_document_evidence,
@@ -174,9 +174,14 @@ def test_market_scan_calculates_comparable_payment_without_network(monkeypatch):
             nominal_rate=Decimal("0.04"),
             monthly_payment=Decimal("900"),
             remaining_months=180,
-            early_repayment_fee=Decimal("100"),
+            early_repayment_fee=None,
         )
-        db.add(mortgage);db.commit()
+        db.add(mortgage);db.flush()
+        db.add(MortgageProfileExtra(
+            mortgage_id=mortgage.id,
+            subrogation_fee_percent=Decimal("0.5"),
+        ))
+        db.commit()
 
         def fake_scan(source, client):
             return {
@@ -196,4 +201,5 @@ def test_market_scan_calculates_comparable_payment_without_network(monkeypatch):
         assert lead["scenario"] is not None
         assert Decimal(lead["scenario"]["estimated_payment"])>0
         assert Decimal(lead["scenario"]["monthly_payment_difference"])>0
-        assert lead["scenario"]["known_exit_penalty"]=="100"
+        assert Decimal(lead["scenario"]["known_exit_penalty"])==Decimal("600.00")
+        assert lead["scenario"]["break_even_months_known_penalty_only"] is not None
