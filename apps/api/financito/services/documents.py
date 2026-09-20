@@ -13,135 +13,147 @@ from pypdf import PdfReader
 from PIL import Image
 from pillow_heif import register_heif_opener
 import pytesseract
-from sqlalchemy import select
+from sqlalchemy import delete,select
 from sqlalchemy.orm import Session
 
 from ..config import settings
-from ..models import ActionItem, Document, ExtractedFact
+from ..models import ActionItem,Document,ExtractedFact
 
 register_heif_opener()
-
+Image.MAX_IMAGE_PIXELS=50_000_000
+MAX_DOCUMENT_BYTES=50*1024*1024
+MAX_PDF_PAGES=500
 
 @dataclass(frozen=True)
 class IndexedDocument:
-    document: Document
-    facts_created: int
-    chunks_created: int
+    document:Document
+    facts_created:int
+    chunks_created:int
 
-
-def safe_path(path: Path) -> Path:
-    expanded = path.expanduser()
-    if expanded.is_symlink():
-        raise ValueError("Symlink documents are not accepted")
-    resolved = expanded.resolve(strict=True)
-    vault = settings.vault_dir.resolve()
-    if resolved != vault and vault not in resolved.parents:
-        raise ValueError("Document is outside configured vault")
+def safe_path(path:Path)->Path:
+    expanded=path.expanduser()
+    if expanded.is_symlink():raise ValueError("Symlink documents are not accepted")
+    resolved=expanded.resolve(strict=True);vault=settings.vault_dir.resolve()
+    if resolved!=vault and vault not in resolved.parents:raise ValueError("Document is outside configured vault")
+    if not resolved.is_file():raise ValueError("Document path is not a file")
+    if resolved.stat().st_size>MAX_DOCUMENT_BYTES:raise ValueError("Document exceeds the 50 MB local ingestion limit")
     return resolved
 
-
-def extract_content(path: Path) -> tuple[str, int, list[str] | None]:
-    suffix = path.suffix.lower()
-    if suffix == ".pdf":
-        reader = PdfReader(str(path))
-        pages = [(page.extract_text() or "") for page in reader.pages]
-        return "\n\n".join(pages), len(pages), pages
-    if suffix in {".txt", ".csv", ".json"}:
-        return path.read_text(encoding="utf-8", errors="replace"), 1, None
-    if suffix == ".docx":
-        doc = DocxDocument(str(path))
-        return "\n".join(p.text for p in doc.paragraphs), 1, None
-    if suffix in {".xlsx", ".xlsm"}:
-        wb = load_workbook(path, read_only=True, data_only=True)
-        lines: list[str] = []
+def extract_content(path:Path)->tuple[str,int,list[str]|None]:
+    suffix=path.suffix.lower()
+    if suffix==".pdf":
+        reader=PdfReader(str(path))
+        if len(reader.pages)>MAX_PDF_PAGES:raise ValueError("PDF exceeds the 500 page ingestion limit")
+        pages=[(page.extract_text() or "") for page in reader.pages]
+        return "\n\n".join(pages),len(pages),pages
+    if suffix in {".txt",".csv",".json"}:return path.read_text(encoding="utf-8",errors="replace"),1,None
+    if suffix==".docx":
+        doc=DocxDocument(str(path));return "\n".join(p.text for p in doc.paragraphs),1,None
+    if suffix in {".xlsx",".xlsm"}:
+        wb=load_workbook(path,read_only=True,data_only=True);lines=[]
         for ws in wb.worksheets:
             lines.append(f"[{ws.title}]")
-            for row in ws.iter_rows(values_only=True):
-                lines.append(" | ".join("" if v is None else str(v) for v in row))
-        return "\n".join(lines), 1, None
-    if suffix in {".png", ".jpg", ".jpeg", ".heic", ".tiff", ".bmp"}:
-        image = Image.open(path)
-        return pytesseract.image_to_string(image, lang="spa+eng"), 1, None
+            for row in ws.iter_rows(values_only=True):lines.append(" | ".join("" if v is None else str(v) for v in row))
+        return "\n".join(lines),1,None
+    if suffix in {".png",".jpg",".jpeg",".heic",".tiff",".bmp"}:
+        image=Image.open(path);image.verify();image=Image.open(path)
+        return pytesseract.image_to_string(image,lang="spa+eng"),1,None
     raise ValueError(f"Unsupported document type: {suffix}")
 
+def detect_language(text:str)->tuple[str,float]:
+    sample=(" "+re.sub(r"\s+"," ",text[:50000].lower())+" ")
+    es=sum(sample.count(" "+w+" ") for w in (" de "," la "," el "," y "," en "," para "," con "," del "," una "," por "))
+    en=sum(sample.count(" "+w+" ") for w in (" the "," and "," of "," to "," in "," for "," with "," from "," is "," a "))
+    if es==0 and en==0:return "unknown",0.3
+    if es>=en:return "es",min(.98,.60+(es-en+1)/max(10,es+en))
+    return "en",min(.98,.60+(en-es+1)/max(10,es+en))
 
-def extract_contract_facts(text: str) -> list[dict]:
-    facts: list[dict] = []
-    patterns = [
-        ("cancellation_notice_days", r"(?:preaviso|antelaci[oó]n)\D{0,50}(\d{1,3})\s*d[ií]as", "days"),
-        ("early_exit_penalty", r"(?:penalizaci[oó]n|comisi[oó]n)\D{0,80}(\d+[\.,]?\d*)\s*(?:€|euros?)", "EUR"),
-        ("annual_cost", r"(?:prima anual|coste anual|cuota anual)\D{0,60}(\d+[\.,]?\d*)\s*(?:€|euros?)", "EUR"),
+def classify_document(text:str,file_name:str)->tuple[str,float]:
+    sample=(file_name+" "+text[:100000]).lower()
+    groups=[
+        ("mortgage",("fein","fia e","fiae","hipoteca","préstamo hipotecario","prestamo hipotecario","euribor","amortización anticipada")),
+        ("insurance",("póliza","poliza","asegurado","cobertura","siniestro","franquicia","prima anual")),
+        ("bank_statement",("extracto","saldo disponible","saldo contable","fecha valor","movimientos","iban")),
+        ("investment_statement",("isin","cartera de valores","valor liquidativo","participaciones","dividendo","plusvalía","plusvalia")),
+        ("tax",("agencia tributaria","irpf","modelo 100","declaración de la renta","declaracion de la renta")),
+        ("energy",("kwh","potencia contratada","punto de suministro","peaje de acceso","término de energía")),
+        ("telecom",("fibra","línea móvil","linea movil","datos móviles","permanencia","gb")),
+        ("loan",("préstamo personal","prestamo personal","tin","tae","cuota mensual","cuadro de amortización")),
+        ("contract",("contrato","condiciones particulares","renovación","renovacion","preaviso")),
     ]
-    lowered = text.lower()
-    for key, pattern, unit in patterns:
-        match = re.search(pattern, lowered, re.IGNORECASE)
-        if match:
-            raw = match.group(1).replace(",", ".")
-            facts.append({"fact_type": "contract_term", "key": key, "value": raw, "unit": unit, "confidence": 0.72})
-    for key, pattern in [
-        ("permanence_end_date", r"permanencia.{0,80}(\d{1,2}/\d{1,2}/\d{4})"),
-        ("renewal_date", r"renovaci[oó]n.{0,80}(\d{1,2}/\d{1,2}/\d{4})"),
+    best=("unknown",0)
+    for kind,keywords in groups:
+        hits=sum(1 for k in keywords if k in sample)
+        if hits>best[1]:best=(kind,hits)
+    if best[1]==0:return "unknown",.35
+    return best[0],min(.97,.58+.10*best[1])
+
+def _context(text:str,start:int,end:int)->str:
+    left=max(0,start-80);right=min(len(text),end+120)
+    return re.sub(r"\s+"," ",text[left:right]).strip()[:255]
+
+def extract_contract_facts(text:str,source_page:int|None=None)->list[dict]:
+    facts=[]
+    patterns=[
+        ("cancellation_notice_days",r"(?:preaviso|antelaci[oó]n)\D{0,50}(\d{1,3})\s*d[ií]as","days",.76),
+        ("early_exit_penalty",r"(?:penalizaci[oó]n|comisi[oó]n(?:\s+por\s+cancelaci[oó]n)?|compensaci[oó]n por reembolso)\D{0,100}(\d+[\.,]?\d*)\s*(?:€|euros?)","EUR",.74),
+        ("annual_cost",r"(?:prima anual|coste anual|cuota anual)\D{0,70}(\d+[\.,]?\d*)\s*(?:€|euros?)","EUR",.76),
+        ("monthly_cost",r"(?:cuota mensual|mensualidad)\D{0,70}(\d+[\.,]?\d*)\s*(?:€|euros?)","EUR",.72),
+        ("deductible",r"(?:franquicia)\D{0,60}(\d+[\.,]?\d*)\s*(?:€|euros?)","EUR",.78),
+        ("nominal_rate",r"(?:\bTIN\b|tipo nominal)\D{0,60}(\d+[\.,]?\d*)\s*%","percent",.76),
+        ("apr_rate",r"(?:\bTAE\b)\D{0,60}(\d+[\.,]?\d*)\s*%","percent",.78),
+    ]
+    lowered=text.lower()
+    for key,pattern,unit,confidence in patterns:
+        for match in re.finditer(pattern,lowered,re.I):
+            raw=match.group(1).replace(",",".")
+            facts.append({"fact_type":"contract_term","key":key,"value":raw,"unit":unit,"confidence":confidence,"source_page":source_page,"source_section":_context(text,match.start(),match.end())})
+    for key,pattern in [
+        ("permanence_end_date",r"(?:fin de )?permanencia.{0,100}(\d{1,2}[/-]\d{1,2}[/-]\d{4})"),
+        ("renewal_date",r"renovaci[oó]n.{0,100}(\d{1,2}[/-]\d{1,2}[/-]\d{4})"),
     ]:
-        match = re.search(pattern, lowered, re.IGNORECASE)
-        if match:
-            facts.append({"fact_type": "contract_term", "key": key, "value": match.group(1), "unit": "date", "confidence": 0.68})
+        for match in re.finditer(pattern,lowered,re.I):
+            facts.append({"fact_type":"contract_term","key":key,"value":match.group(1),"unit":"date","confidence":.70,"source_page":source_page,"source_section":_context(text,match.start(),match.end())})
     return facts
 
+def _derive_facts(session:Session,doc:Document,text_value:str,pages:list[str]|None)->int:
+    session.execute(delete(ExtractedFact).where(ExtractedFact.document_id==doc.id))
+    lang,lang_conf=detect_language(text_value)
+    session.add(ExtractedFact(document_id=doc.id,fact_type="document_metadata",key="language",value_json=json.dumps({"value":lang},ensure_ascii=False),confidence=str(lang_conf),status="inferred",source_page=1,user_verified=False))
+    count=0
+    units=list(enumerate(pages,1)) if pages else [(1,text_value)]
+    for page_number,body in units:
+        for fact in extract_contract_facts(body,page_number):
+            session.add(ExtractedFact(document_id=doc.id,fact_type=fact["fact_type"],key=fact["key"],value_json=json.dumps({"value":fact["value"],"unit":fact["unit"]},ensure_ascii=False),confidence=str(fact["confidence"]),status="inferred",source_page=fact["source_page"],source_section=fact["source_section"],user_verified=False));count+=1
+    return count
 
-def index_document(session: Session, source_path: str, document_type: str = "unknown") -> IndexedDocument:
-    path = safe_path(Path(source_path))
-    digest = sha256(path.read_bytes()).hexdigest()
-    existing = session.scalar(select(Document).where(Document.sha256 == digest))
-    if existing:
-        from .rag import index_document_chunks
+def _ensure_review_action(session:Session,doc:Document,count:int)->None:
+    existing=session.scalar(select(ActionItem.id).where(ActionItem.action_type=="review_document_evidence",ActionItem.related_entity_id==doc.id,ActionItem.status.in_(["pending","in_progress"])))
+    if count and not existing:
+        session.add(ActionItem(action_type="review_document_evidence",title=f"Revisar {count} dato(s) contractual(es) extraído(s) de {doc.file_name}",related_entity_type="document",related_entity_id=doc.id,priority="high",source_type="document",source_ref=doc.id,notes="Los datos extraídos son inferidos y no deben usarse como evidencia confirmada hasta su revisión."))
 
-        chunks = index_document_chunks(session, existing)
-        return IndexedDocument(existing, 0, chunks)
-
-    extracted_text, page_count, pages = extract_content(path)
-    doc = Document(
-        file_path=str(path),
-        file_name=path.name,
-        mime_type=mimetypes.guess_type(path.name)[0],
-        sha256=digest,
-        document_type=document_type,
-        status="indexed",
-        page_count=page_count,
-        extracted_text=extracted_text,
-    )
-    session.add(doc)
-    session.flush()
-
-    count = 0
-    for fact in extract_contract_facts(extracted_text):
-        session.add(
-            ExtractedFact(
-                document_id=doc.id,
-                fact_type=fact["fact_type"],
-                key=fact["key"],
-                value_json=json.dumps({"value": fact["value"], "unit": fact["unit"]}, ensure_ascii=False),
-                confidence=str(fact["confidence"]),
-                status="inferred",
-                user_verified=False,
-            )
-        )
-        count += 1
-
-    if count:
-        session.add(
-            ActionItem(
-                action_type="review_document_evidence",
-                title=f"Revisar {count} dato(s) contractual(es) extraído(s) de {path.name}",
-                related_entity_type="document",
-                related_entity_id=doc.id,
-                priority="high",
-                source_type="document",
-                source_ref=doc.id,
-                notes="Los datos extraídos son inferidos y no deben usarse como evidencia confirmada hasta su revisión.",
-            )
-        )
-
+def reprocess_document(session:Session,doc:Document)->IndexedDocument:
+    path=safe_path(Path(doc.file_path));text_value,page_count,pages=extract_content(path)
+    doc.extracted_text=text_value;doc.page_count=page_count;doc.sha256=sha256(path.read_bytes()).hexdigest();doc.status="indexed"
+    kind,_=classify_document(text_value,path.name)
+    if doc.document_type in {"unknown","contract"} or kind!="unknown":doc.document_type=kind
+    count=_derive_facts(session,doc,text_value,pages);_ensure_review_action(session,doc,count)
     from .rag import index_document_chunks
+    chunks=index_document_chunks(session,doc,pages)
+    session.flush();return IndexedDocument(doc,count,chunks)
 
-    chunks = index_document_chunks(session, doc, pages)
-    return IndexedDocument(doc, count, chunks)
+def index_document(session:Session,source_path:str,document_type:str="unknown")->IndexedDocument:
+    path=safe_path(Path(source_path));digest=sha256(path.read_bytes()).hexdigest()
+    existing=session.scalar(select(Document).where(Document.sha256==digest))
+    if existing:return reprocess_document(session,existing)
+    text_value,page_count,pages=extract_content(path)
+    auto_type,type_conf=classify_document(text_value,path.name)
+    final_type=auto_type if document_type in {"","unknown","contract"} else document_type
+    doc=Document(file_path=str(path),file_name=path.name,mime_type=mimetypes.guess_type(path.name)[0],sha256=digest,document_type=final_type,status="indexed",page_count=page_count,extracted_text=text_value)
+    session.add(doc);session.flush()
+    count=_derive_facts(session,doc,text_value,pages)
+    session.add(ExtractedFact(document_id=doc.id,fact_type="document_metadata",key="document_type_confidence",value_json=json.dumps({"value":str(type_conf)},ensure_ascii=False),confidence=str(type_conf),status="inferred",source_page=1,user_verified=False))
+    _ensure_review_action(session,doc,count)
+    from .rag import index_document_chunks
+    chunks=index_document_chunks(session,doc,pages)
+    return IndexedDocument(doc,count,chunks)
