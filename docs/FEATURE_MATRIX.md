@@ -24,6 +24,7 @@ Estado:
 | Chat | cálculo estructurado + citas navegables | OK |
 | Demo | dataset sintético | OK |
 | Movimientos | CSV/XLSX/QIF/OFX/CAMT/MT940 | OK |
+| Movimientos | deduplicación de extractos solapados por referencia/exacto/similitud conservadora | OK |
 | Movimientos | categorización/reglas/review queue | OK |
 | Movimientos | splits/transferencias/reembolsos | OK |
 | Recurrentes | detección y anomalías | OK |
