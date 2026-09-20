@@ -226,6 +226,17 @@ def extract_contract_facts(text:str,source_page:int|None=None)->list[dict]:
         ("remaining_months",r"(?:plazo\s+pendiente|meses\s+pendientes|quedan)\D{0,60}(\d{1,4})\s*meses","months",.84),
     ]
     lowered=text.lower()
+    identity_patterns=[
+        ("policy_number",r"(?:n[uú]mero|n[ºo]\.?|num\.?)[\s\-]*(?:de\s+)?p[oó]liza\s*[:#\-]?\s*([a-z0-9][a-z0-9\-\/.]{4,40})","text",.90),
+        ("policy_number",r"p[oó]liza\s*(?:n[uú]mero|n[ºo]\.?|num\.?)?\s*[:#\-]?\s*([a-z0-9][a-z0-9\-\/.]{4,40})","text",.86),
+        ("contract_number",r"(?:n[uú]mero|n[ºo]\.?|num\.?)[\s\-]*(?:de\s+)?contrato\s*[:#\-]?\s*([a-z0-9][a-z0-9\-\/.]{4,40})","text",.88),
+        ("provider_name",r"(?:entidad\s+aseguradora|aseguradora|compa[nñ][ií]a\s+aseguradora|proveedor|comercializadora)\s*[:\-]\s*([^\n\r]{3,100})","text",.78),
+    ]
+    for key,pattern,unit,confidence in identity_patterns:
+        for match in re.finditer(pattern,lowered,re.I):
+            value=re.sub(r"\s+"," ",match.group(1)).strip(" .,:;-")
+            if value:
+                facts.append({"fact_type":"contract_term","key":key,"value":value,"unit":unit,"confidence":confidence,"source_page":source_page,"source_section":_context(text,match.start(),match.end())})
     for key,pattern,unit,confidence in patterns:
         for match in re.finditer(pattern,lowered,re.I):
             raw=_normalize_number(match.group(1))
