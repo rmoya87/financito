@@ -39,6 +39,7 @@ La taxonomía principal implementada usa `system_key` estables para preservar re
 - Inversión
 - Ahorro
 - Transferencias
+- Movimiento entre cuentas
 - Otros
 
 La taxonomía evita crear categorías demasiado específicas como primer nivel. Cuando se implemente la UX de subcategorías, ejemplos naturales serán:
@@ -100,27 +101,22 @@ Mantener alias y evidencia del mapping.
 
 ## Transferencias internas
 
-Detectar transferencias entre cuentas propias para evitar contar:
-- salida como gasto;
-- entrada como ingreso.
+`Movimiento entre cuentas` es una categoría con semántica contable, no solo una etiqueta:
+- ni la salida cuenta como gasto;
+- ni la entrada cuenta como ingreso;
+- una regla explícita que asigne esta categoría aplica la misma semántica;
+- una corrección manual del usuario es autoritativa y no se vuelve a pisar con detección automática.
 
-Matching por:
-- importe;
-- divisa;
-- fechas cercanas;
-- cuentas propias;
-- referencia.
-
-Si existe duda, marcar como probable y no confirmar automáticamente con baja confianza.
+La detección automática se ejecuta al importar y busca pares entre cuentas propias por importe opuesto, divisa y fechas cercanas. Ya no depende de que el usuario pulse un botón separado.
 
 ## Reembolsos
 
-Relacionar reembolsos con gastos originales cuando sea posible.
+`Reembolsos` también tiene semántica contable propia:
+- un importe positivo reduce gasto y nunca infla ingresos;
+- cuando existe evidencia suficiente se enlaza con el gasto original;
+- si no puede enlazarse con certeza, la categoría manual o una regla sigue corrigiendo el cash-flow global sin inventar una compra de origen.
 
-El análisis debe poder mostrar:
-- gasto bruto;
-- reembolso;
-- gasto neto.
+La detección automática se ejecuta al importar. La interfaz permite crear reglas desde cualquier movimiento para aplicar esa clasificación a casos futuros y a históricos todavía no confirmados.
 
 ## Operaciones divididas
 
@@ -239,12 +235,16 @@ Distinguir:
 - previsto;
 - estimado.
 
-## Calidad
+## Calidad y revisión
 
-Movimientos con baja confianza aparecen en una cola de revisión.
+La pantalla de Movimientos muestra un único histórico buscable y filtrable. La baja confianza no crea una segunda lista que duplique movimientos.
 
-Objetivo de UX:
-“Revisar 8 movimientos” en vez de esconder errores de clasificación.
+Desde cualquier fila el usuario puede:
+- corregir la categoría;
+- crear una regla basada en comercio o texto;
+- dividir el movimiento.
+
+Las reglas guardadas viven en un modal para no ocupar espacio permanente y nunca sobrescriben movimientos ya confirmados manualmente.
 
 ## Datos derivados
 
