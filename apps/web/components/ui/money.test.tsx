@@ -9,6 +9,6 @@ describe('Money',()=>{
   });
   it('no muestra NaN para entradas inválidas',()=>{
     render(<Money value="no-es-numero"/>);
-    expect(screen.getByText(/0,00/)).toBeInTheDocument();
+    expect(screen.getByText('—')).toBeInTheDocument();
   });
 });
