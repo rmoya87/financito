@@ -59,7 +59,7 @@ test('cuenta e importación de extracto funcionan de extremo a extremo',async({p
   });
   await page.getByRole('button',{name:'Importar extracto'}).click();
   await expect(page.getByText(/Insertados: 1/)).toBeVisible();
-  await expect(page.getByText('Compra E2E')).toBeVisible();
+  await expect(page.getByRole('cell',{name:'Compra E2E',exact:true})).toBeVisible();
 });
 
 test('Vault indexa evidencia y conserva cita navegable',async({page})=>{
