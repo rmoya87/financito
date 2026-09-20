@@ -177,13 +177,13 @@ def _looks_like_same_transaction(
     # merchant is independently consistent. Without merchant evidence, require
     # a very high text match.
     if day_gap == 0:
-        if merchant_ok and (seq >= 0.72 or jac >= 0.60):
+        if merchant_ok and (seq >= 0.82 or jac >= 0.70):
             return True
         return seq >= 0.92 or jac >= 0.88
 
     # A one-day booking shift is common between pending/completed exports, but
     # requires stronger evidence to avoid merging two real purchases.
-    if merchant_ok and (seq >= 0.84 or jac >= 0.75):
+    if merchant_ok and (seq >= 0.90 or jac >= 0.82):
         return True
     return seq >= 0.97 and jac >= 0.90
 
