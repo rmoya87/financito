@@ -21,17 +21,52 @@ def _cell_date(value)->str:
     if isinstance(value,date):return value.isoformat()
     return str(value or "").strip()
 
+_XLSX_DATE_FIELDS={
+    "completeddate","transactioncompleted","transactioncompletedutc",
+    "fechadefinalizacion","fechadecompletado","fechacompletada",
+    "fecha","date","bookingdate","fechacontable",
+    "starteddate","transactionstarted","transactionstartedutc","fechadeinicio",
+}
+_XLSX_AMOUNT_FIELDS={"amount","amountpaymentcurrency","importe","cantidad"}
+_XLSX_DESCRIPTION_FIELDS={"description","transactiondescription","descripcion","descripciondelatransaccion","concepto","detalle"}
+_XLSX_CURRENCY_FIELDS={"currency","paymentcurrency","moneda","divisa"}
+
+def _xlsx_header_score(values:tuple|list)->int:
+    canonical=[canonical_key(str(x or "").strip()) for x in values]
+    keys={x for x in canonical if x}
+    if not (keys&_XLSX_DATE_FIELDS and keys&_XLSX_AMOUNT_FIELDS and keys&_XLSX_DESCRIPTION_FIELDS):
+        return -1
+    score=9
+    # Prefer the booked/settled transaction table over summary or pending
+    # sections. Bankinter exports both "MOVIMIENTOS PENDIENTES" and, later,
+    # the real ledger headed by Fecha contable/Fecha valor/.../Saldo.
+    if "fechacontable" in keys:score+=6
+    if "fechavalor" in keys or "valuedate" in keys:score+=3
+    if "saldo" in keys or "balance" in keys:score+=3
+    if keys&_XLSX_CURRENCY_FIELDS:score+=2
+    if {"state","status","transactionstatus","estado"}&keys:score+=2
+    if {"completeddate","transactioncompleted","transactioncompletedutc","fechadefinalizacion"}&keys:score+=3
+    return score
+
 def _xlsx(content:bytes)->bytes:
-    wb=load_workbook(BytesIO(content),read_only=True,data_only=True);ws=wb.active
-    values=ws.iter_rows(values_only=True)
-    try:
-        first=next(values)
-    except StopIteration:
+    wb=load_workbook(BytesIO(content),read_only=True,data_only=True)
+    best=None
+    for ws in wb.worksheets:
+        for row_index,row in enumerate(ws.iter_rows(min_row=1,max_row=min(ws.max_row or 1,100),values_only=True),start=1):
+            score=_xlsx_header_score(row)
+            if score<0:continue
+            candidate=(score,-row_index,ws,row_index,row)
+            if best is None or candidate[:2]>best[:2]:best=candidate
+    if best is None:
         return b""
-    headers=[str(x or "").strip() for x in first]
+
+    _,_,ws,header_row,header_values=best
+    headers=[str(x or "").strip() for x in header_values]
     canonical=[canonical_key(h) for h in headers]
     rows=[]
-    for row in values:
+    for row in ws.iter_rows(min_row=header_row+1,values_only=True):
+        if not any(value not in (None,"") for value in row):
+            continue
         d={canonical[i]:row[i] for i in range(min(len(canonical),len(row))) if canonical[i]}
         def pick(*names):
             for name in names:
@@ -44,11 +79,16 @@ def _xlsx(content:bytes)->bytes:
             "fecha","date","bookingdate","fechacontable",
             "starteddate","transactionstarted","transactionstartedutc","fechadeinicio",
         )
+        amount=pick("amount","amountpaymentcurrency","importe","cantidad")
+        description=pick("description","transactiondescription","descripcion","descripciondelatransaccion","concepto","detalle")
+        # Do not turn footer/filter rows into rejected transactions.
+        if raw_date in (None,"") or amount in (None,"") or description in (None,""):
+            continue
         rows.append({
             "Fecha":_cell_date(raw_date),
-            "Concepto":pick("description","transactiondescription","descripcion","descripciondelatransaccion","concepto","detalle"),
-            "Importe":pick("amount","amountpaymentcurrency","importe","cantidad"),
-            "Moneda":pick("currency","paymentcurrency","moneda") or "EUR",
+            "Concepto":description,
+            "Importe":amount,
+            "Moneda":pick("currency","paymentcurrency","moneda","divisa") or "EUR",
             "Comercio":pick("merchant","beneficiario","payer","comercio"),
             "Estado":pick("state","status","transactionstatus","estado"),
             "Referencia":pick("transactionid","transactionidentifier","transactionreference","banktransactionid","movementid","operationid","paymentid","fitid","endtoendid","txid","ntryref","acctsvcrref","bankreference","referencia","reference"),
