@@ -84,7 +84,19 @@ def mortgage_contract_context(session: Session, mortgage_id: str | None = None) 
     mortgage = session.get(Mortgage, mortgage_id) if mortgage_id else session.scalar(
         select(Mortgage).order_by(Mortgage.updated_at.desc())
     )
-    docs = session.scalars(select(Document).where(Document.document_type == "mortgage").order_by(Document.updated_at.desc())).all()
+    linked_doc_ids=[]
+    if mortgage is not None:
+        linked_doc_ids=list(session.scalars(select(EntityLink.from_id).where(
+            EntityLink.from_type=="document",
+            EntityLink.relation_type=="evidence_for",
+            EntityLink.to_type=="mortgage",
+            EntityLink.to_id==mortgage.id,
+        )).all())
+    if linked_doc_ids:
+        docs=session.scalars(select(Document).where(Document.id.in_(linked_doc_ids)).order_by(Document.updated_at.desc())).all()
+    else:
+        mortgage_count=len(session.scalars(select(Mortgage.id)).all())
+        docs=session.scalars(select(Document).where(Document.document_type=="mortgage").order_by(Document.updated_at.desc())).all() if mortgage_count<=1 else []
     doc_ids = [d.id for d in docs]
     facts = _confirmed_facts(session, doc_ids, MORTGAGE_KEYS)
     by_key = {x["key"]: x for x in facts}
