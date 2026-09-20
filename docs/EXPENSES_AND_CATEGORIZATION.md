@@ -285,3 +285,16 @@ El resultado de importación separa:
 - rechazados por formato/datos inválidos.
 
 No se usa solo “misma fecha + mismo importe” como criterio de borrado automático.
+
+
+## Signo del movimiento y semántica contable
+
+La categoría es la fuente de verdad contable cuando existe una categoría asignada:
+
+- cualquier movimiento positivo suma a ingresos, incluida `Nómina` e `Ingresos`;
+- `Movimiento entre cuentas` es una excepción: tanto la salida como la entrada del traspaso propio se excluyen de ingresos y gastos porque solo cambian el saldo entre cuentas del mismo usuario;
+- `Reembolsos` conserva una semántica específica: una entrada positiva reduce gasto y no se presenta como nuevo ingreso;
+- una recategorización a cualquier categoría distinta de `Movimiento entre cuentas` elimina automáticamente una marca interna de transferencia que pudiera haber quedado de una versión anterior;
+- al arrancar, Financito sincroniza las marcas internas con las categorías guardadas para reparar datos antiguos incoherentes.
+
+El detector automático de transferencias no puede convertir una `Nómina` o un `Reembolso` en transferencia interna solo porque exista otro movimiento del mismo importe y signo contrario en otra cuenta.
