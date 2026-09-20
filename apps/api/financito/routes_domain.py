@@ -8,9 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .domain.risk import risk_metrics
-from .models import DecisionCase
-from .models_extended import CostCenter,CostCenterLink,DecisionAlternative,DecisionOutcome,NewsItem
-from .models_analytics import Benefit,LinkedProduct,ModelEvaluationRun
+from .models import Commitment,Contract,DecisionCase,Transaction
+from .models_extended import Asset,CostCenter,CostCenterLink,CoverageFact,DecisionAlternative,DecisionOutcome,InsurancePolicy,Liability,NewsItem
+from .models_analytics import Benefit,CoverageRequirement,LinkedProduct,ModelEvaluationRun
 from .providers.crypto import CoinGeckoDemoProvider
 from .providers.fundamentals import SecFundamentalsProvider
 from .providers.macro import EcbMacroProvider
@@ -28,6 +28,14 @@ class CostCenterIn(BaseModel):
     name:str;center_type:str="life_area";parent_id:str|None=None;metadata:dict={}
 class CostLinkIn(BaseModel):
     cost_center_id:str;entity_type:str;entity_id:str;allocation_percentage:Decimal=Decimal("100")
+class CoverageRequirementIn(BaseModel):
+    insurance_type:str|None=None
+    coverage_type:str
+    minimum_limit:Decimal|None=None
+    currency:str="EUR"
+    notes:str|None=None
+    enabled:bool=True
+
 class BenefitIn(BaseModel):
     contract_id:str|None=None;name:str;benefit_type:str;theoretical_value:Decimal=Decimal("0");realized_value:Decimal=Decimal("0");user_adjusted_value:Decimal|None=None;period:str="annual"
 class LinkedProductIn(BaseModel):
@@ -54,6 +62,41 @@ def cost_centers(db:Session=Depends(dbdep)):
 @router.post("/cost-centers")
 def add_center(p:CostCenterIn,db:Session=Depends(dbdep)):
     r=CostCenter(name=p.name,center_type=p.center_type,parent_id=p.parent_id,metadata_json=json.dumps(p.metadata));db.add(r);db.commit();return {"id":r.id}
+@router.get("/cost-centers/{center_id}/summary")
+def cost_center_summary(center_id:str,db:Session=Depends(dbdep)):
+    center=db.get(CostCenter,center_id)
+    if not center:raise HTTPException(404,"Cost center not found")
+    links=db.scalars(select(CostCenterLink).where(CostCenterLink.cost_center_id==center_id)).all()
+    observed=Decimal("0");annual=Decimal("0");reference_assets=Decimal("0");reference_debt=Decimal("0");unpriced=[]
+    for link in links:
+        factor=link.allocation_percentage/Decimal("100")
+        if link.entity_type=="transaction":
+            row=db.get(Transaction,link.entity_id)
+            if row:observed+=(-row.amount)*factor if row.amount<0 else row.amount*Decimal("-1")*factor
+            else:unpriced.append({"type":link.entity_type,"id":link.entity_id})
+        elif link.entity_type=="contract":
+            row=db.get(Contract,link.entity_id)
+            if row and row.annual_cost is not None:annual+=row.annual_cost*factor
+            else:unpriced.append({"type":link.entity_type,"id":link.entity_id})
+        elif link.entity_type=="insurance_policy":
+            row=db.get(InsurancePolicy,link.entity_id)
+            if row:annual+=row.annual_premium*factor
+            else:unpriced.append({"type":link.entity_type,"id":link.entity_id})
+        elif link.entity_type=="commitment":
+            row=db.get(Commitment,link.entity_id)
+            if row:annual+=row.amount*factor
+            else:unpriced.append({"type":link.entity_type,"id":link.entity_id})
+        elif link.entity_type=="asset":
+            row=db.get(Asset,link.entity_id)
+            if row:reference_assets+=row.current_value*factor
+            else:unpriced.append({"type":link.entity_type,"id":link.entity_id})
+        elif link.entity_type=="liability":
+            row=db.get(Liability,link.entity_id)
+            if row:reference_debt+=row.outstanding_amount*factor
+            else:unpriced.append({"type":link.entity_type,"id":link.entity_id})
+        else:unpriced.append({"type":link.entity_type,"id":link.entity_id})
+    return {"id":center.id,"name":center.name,"observed_linked_spend":str(observed),"annual_linked_commitments":str(annual),"reference_asset_value":str(reference_assets),"reference_debt":str(reference_debt),"unpriced_links":unpriced}
+
 @router.post("/cost-center-links")
 def add_center_link(p:CostLinkIn,db:Session=Depends(dbdep)):
     if not db.get(CostCenter,p.cost_center_id):raise HTTPException(404,"Cost center not found")
@@ -184,3 +227,47 @@ def crypto_metrics(coin_id:str,vs_currency:str="eur",days:int=90):
         prices=[float(x[1]) for x in chart.get("prices",[]) if len(x)>1]
         return {"coin_id":coin_id,"vs_currency":vs_currency,"days":days,"metrics":risk_metrics(prices,periods_per_year=365),"observations":len(prices),"provider":"CoinGecko"}
     except Exception as e:raise HTTPException(503,str(e))
+
+
+@router.get("/coverage-requirements")
+def coverage_requirements(db:Session=Depends(dbdep)):
+    rows=db.scalars(select(CoverageRequirement).order_by(CoverageRequirement.coverage_type)).all()
+    return [{"id":r.id,"insurance_type":r.insurance_type,"coverage_type":r.coverage_type,"minimum_limit":None if r.minimum_limit is None else str(r.minimum_limit),"currency":r.currency,"notes":r.notes,"enabled":r.enabled} for r in rows]
+
+@router.post("/coverage-requirements")
+def add_coverage_requirement(p:CoverageRequirementIn,db:Session=Depends(dbdep)):
+    row=CoverageRequirement(**p.model_dump());db.add(row);db.commit();return {"id":row.id}
+
+@router.delete("/coverage-requirements/{requirement_id}")
+def delete_coverage_requirement(requirement_id:str,db:Session=Depends(dbdep)):
+    row=db.get(CoverageRequirement,requirement_id)
+    if not row:raise HTTPException(404,"Coverage requirement not found")
+    db.delete(row);db.commit();return {"deleted":requirement_id}
+
+@router.get("/coverage/gaps")
+def coverage_gaps(db:Session=Depends(dbdep)):
+    today=date.today()
+    requirements=db.scalars(select(CoverageRequirement).where(CoverageRequirement.enabled.is_(True))).all()
+    facts=db.scalars(select(CoverageFact).where(CoverageFact.user_verified.is_(True))).all()
+    policies={p.id:p for p in db.scalars(select(InsurancePolicy)).all()}
+    gaps=[];covered=[]
+    for req in requirements:
+        eligible=[]
+        for fact in facts:
+            if fact.coverage_type.strip().lower()!=req.coverage_type.strip().lower():continue
+            if fact.effective_from and fact.effective_from>today:continue
+            if fact.effective_to and fact.effective_to<today:continue
+            if req.insurance_type:
+                policy=policies.get(fact.insurance_policy_id)
+                if not policy or policy.insurance_type!=req.insurance_type:continue
+            eligible.append(fact)
+        limits=[f.limit_amount for f in eligible if f.limit_amount is not None]
+        if not eligible:
+            gaps.append({"requirement_id":req.id,"coverage_type":req.coverage_type,"insurance_type":req.insurance_type,"reason":"missing_verified_coverage","minimum_limit":None if req.minimum_limit is None else str(req.minimum_limit)})
+        elif req.minimum_limit is not None and not limits:
+            gaps.append({"requirement_id":req.id,"coverage_type":req.coverage_type,"insurance_type":req.insurance_type,"reason":"limit_unknown","minimum_limit":str(req.minimum_limit)})
+        elif req.minimum_limit is not None and max(limits)<req.minimum_limit:
+            gaps.append({"requirement_id":req.id,"coverage_type":req.coverage_type,"insurance_type":req.insurance_type,"reason":"limit_below_requirement","minimum_limit":str(req.minimum_limit),"best_verified_limit":str(max(limits))})
+        else:
+            covered.append({"requirement_id":req.id,"coverage_type":req.coverage_type,"insurance_type":req.insurance_type,"matching_coverages":len(eligible),"best_verified_limit":None if not limits else str(max(limits))})
+    return {"gaps":gaps,"covered":covered,"requirements":len(requirements)}
