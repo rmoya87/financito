@@ -1,6 +1,6 @@
 from datetime import date
 from decimal import Decimal
-from financito.domain.engines import CashFlowEngine, MortgageEngine, MortgageRatePathEngine, OptimizationEngine, comparable_period_last_year
+from financito.domain.engines import CashFlowEngine, MortgageEngine, MortgageRatePathEngine, MortgageIndexedRateEngine, OptimizationEngine, comparable_period_last_year
 
 def test_cashflow_excludes_internal_transfers():
     result=CashFlowEngine.calculate([(Decimal("3000"),False),(Decimal("-1000"),False),(Decimal("-500"),True)])
@@ -24,3 +24,11 @@ def test_variable_rate_path_recalculates_payment_without_predicting():
     assert rising.max_monthly_payment>flat.max_monthly_payment
     assert rising.total_interest>flat.total_interest
     assert [s.start_month for s in rising.segments]==[1,13,25]
+
+
+def test_indexed_mixed_mortgage_requires_every_revision():
+    missing=MortgageIndexedRateEngine.simulate(Decimal("150000"),36,"mixed",12,[(13,Decimal("0.02"))],Decimal("0.01"),12,Decimal("0.018"))
+    assert missing.status=="needs_more_data" and missing.missing_revision_months==(25,)
+    ready=MortgageIndexedRateEngine.simulate(Decimal("150000"),36,"mixed",12,[(13,Decimal("0.02")),(25,Decimal("0.025"))],Decimal("0.01"),12,Decimal("0.018"))
+    assert ready.status=="ready" and ready.path is not None and ready.path.final_balance==Decimal("0.00")
+    assert [m for m,_ in ready.applied_rate_steps]==[13,25]
