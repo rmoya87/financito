@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .db import SessionLocal
-from .migrations import migrate
+from .migrations import migrate,MIGRATION_VERSION
 from .domain.engines import CashFlowEngine, MortgageEngine, MortgagePrepaymentEngine, OptimizationEngine
 from .services.financial_analytics import cash_flow,category_spending
 from .models import Account, ActionItem, AuditEvent, Budget, CategorizationAudit, Category, Commitment, Document, ExtractedFact, Transaction
@@ -74,7 +74,7 @@ def session(response: Response):
 @app.get("/api/v1/health")
 def health(db: Session = Depends(get_db)):
     db.execute(select(func.count()).select_from(Account)).scalar_one()
-    return {"status":"ok","local_only":True,"database":"ok","database_encrypted":not settings.allow_plaintext_sqlite,"schema_version":3,"vault":str(settings.vault_dir),"vault_exists":settings.vault_dir.exists(),"frontend_built":settings.frontend_dir.exists(),"ai":ai_status(),"providers":provider_status()}
+    return {"status":"ok","local_only":True,"database":"ok","database_encrypted":not settings.allow_plaintext_sqlite,"schema_version":MIGRATION_VERSION,"vault":str(settings.vault_dir),"vault_exists":settings.vault_dir.exists(),"frontend_built":settings.frontend_dir.exists(),"ai":ai_status(),"providers":provider_status()}
 
 
 @app.get("/api/v1/categories")
