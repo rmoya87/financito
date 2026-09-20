@@ -139,10 +139,30 @@ def extract_contract_facts(text:str,source_page:int|None=None)->list[dict]:
         ("linked_card",r"(?:tarjeta de cr[eé]dito|tarjeta de d[eé]bito|uso de tarjeta)"),
         ("linked_pension_plan",r"(?:plan de pensiones|plan de previsi[oó]n)"),
     ]
+    linked_rate_patterns=[
+        ("linked_home_insurance_rate_penalty_pp",[
+            r"(?:seguro de hogar|seguro hogar).{0,180}?(?:se a[nñ]ade|aumenta|incrementa|margen adicional|pierde(?:s)? (?:una )?bonificaci[oó]n de)\D{0,40}(\d+[\.,]?\d*)\s*%",
+            r"(\d+[\.,]?\d*)\s*%\D{0,80}(?:por|sin|al no (?:tener|renovar)|bonificaci[oó]n).{0,80}(?:seguro de hogar|seguro hogar)",
+        ]),
+        ("linked_life_insurance_rate_penalty_pp",[
+            r"(?:seguro de vida|seguro vida).{0,180}?(?:se a[nñ]ade|aumenta|incrementa|margen adicional|pierde(?:s)? (?:una )?bonificaci[oó]n de)\D{0,40}(\d+[\.,]?\d*)\s*%",
+            r"(\d+[\.,]?\d*)\s*%\D{0,80}(?:por|sin|al no (?:tener|renovar)|bonificaci[oó]n).{0,80}(?:seguro de vida|seguro vida)",
+        ]),
+        ("linked_salary_rate_penalty_pp",[
+            r"(?:n[oó]mina|domiciliaci[oó]n de n[oó]mina).{0,180}?(?:se a[nñ]ade|aumenta|incrementa|margen adicional|pierde(?:s)? (?:una )?bonificaci[oó]n de)\D{0,40}(\d+[\.,]?\d*)\s*%",
+            r"(\d+[\.,]?\d*)\s*%\D{0,80}(?:por|sin|al no (?:tener|domiciliar)|bonificaci[oó]n).{0,80}(?:n[oó]mina|domiciliaci[oó]n de n[oó]mina)",
+        ]),
+    ]
     for key,pattern in linked_patterns:
         match=re.search(pattern,lowered,re.I)
         if match:
             facts.append({"fact_type":"linked_product","key":key,"value":"mentioned","unit":"boolean_signal","confidence":.62,"source_page":source_page,"source_section":_context(text,match.start(),match.end())})
+    for key,patterns in linked_rate_patterns:
+        for pattern in patterns:
+            match=re.search(pattern,lowered,re.I)
+            if match:
+                facts.append({"fact_type":"linked_product","key":key,"value":match.group(1).replace(",","."),"unit":"percentage_points","confidence":.82,"source_page":source_page,"source_section":_context(text,match.start(),match.end())})
+                break
     for key,pattern in [
         ("permanence_end_date",r"(?:fin de )?permanencia.{0,100}?(\d{1,2}[/-]\d{1,2}[/-]\d{4})"),
         ("renewal_date",r"renovaci[oó]n.{0,100}?(\d{1,2}[/-]\d{1,2}[/-]\d{4})"),
