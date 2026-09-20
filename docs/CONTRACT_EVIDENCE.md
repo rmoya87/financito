@@ -287,6 +287,7 @@ Para hipoteca:
 - `early_repayment_fee_percent` se aplica al importe concreto de amortización extraordinaria;
 - `subrogation_fee_percent` se aplica al capital pendiente actual;
 - `cancellation_fee_percent` puede utilizarse cuando la documentación confirme que es la cláusula aplicable;
+- `linked_home_insurance_rate_penalty_pp`, `linked_life_insurance_rate_penalty_pp` y `linked_salary_rate_penalty_pp` recogen cuánto sube el tipo al perder cada bonificación; Financito calcula el incremento de cuota/intereses antes de considerar rentable sacar un producto fuera del banco;
 - un importe fijo confirmado puede utilizarse como fallback;
 - si no existe evidencia suficiente, el resultado es `needs_more_data`; nunca se presupone 0 €.
 
