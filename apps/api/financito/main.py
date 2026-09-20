@@ -16,7 +16,7 @@ from .migrations import migrate
 from .domain.engines import CashFlowEngine, MortgageEngine, OptimizationEngine
 from .models import Account, ActionItem, AuditEvent, Budget, CategorizationAudit, Category, Commitment, Document, ExtractedFact, Transaction
 from .schemas import AccountCreate, AccountOut, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentIndexRequest, FactUpdate, ForecastRequest, MortgageScenarioRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
-from .security import LocalSecurityMiddleware, create_session
+from .security import LocalSecurityMiddleware, create_session\nfrom .routes_extended import router as extended_router
 from .services.categorization import ensure_categories
 from .services.documents import index_document
 from .services.forecast import forecast
@@ -25,7 +25,7 @@ from .services.local_ai import status as ai_status
 
 
 app = FastAPI(title="Financito Local API", version="0.1.0", docs_url="/api/docs", openapi_url="/api/openapi.json")
-app.add_middleware(LocalSecurityMiddleware)
+app.add_middleware(LocalSecurityMiddleware)\napp.include_router(extended_router)
 
 
 def get_db():
@@ -189,7 +189,7 @@ def update_action(action_id:str,payload:ActionUpdate,db:Session=Depends(get_db))
     row=db.get(ActionItem,action_id)
     if not row: raise HTTPException(404,"Action not found")
     row.status=payload.status; row.notes=payload.notes
-    if payload.status=="done": row.completed_at=datetime.utcnow()
+    if payload.status=="done": row.completed_at=datetime.now().astimezone()
     db.commit(); return {"id":row.id,"status":row.status}
 
 
