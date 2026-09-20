@@ -62,8 +62,8 @@ def extract_content(path:Path)->tuple[str,int,list[str]|None]:
 
 def detect_language(text:str)->tuple[str,float]:
     sample=(" "+re.sub(r"\s+"," ",text[:50000].lower())+" ")
-    es=sum(sample.count(" "+w+" ") for w in (" de "," la "," el "," y "," en "," para "," con "," del "," una "," por "))
-    en=sum(sample.count(" "+w+" ") for w in (" the "," and "," of "," to "," in "," for "," with "," from "," is "," a "))
+    es=sum(sample.count(" "+w+" ") for w in ("de","la","el","y","en","para","con","del","una","por"))
+    en=sum(sample.count(" "+w+" ") for w in ("the","and","of","to","in","for","with","from","is","a"))
     if es==0 and en==0:return "unknown",0.3
     if es>=en:return "es",min(.98,.60+(es-en+1)/max(10,es+en))
     return "en",min(.98,.60+(en-es+1)/max(10,es+en))
