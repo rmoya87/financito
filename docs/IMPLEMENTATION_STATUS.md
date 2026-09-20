@@ -19,6 +19,7 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 
 ### Movimientos y analítica
 - CSV y formatos bancarios estructurados: XLSX/XLSM, QIF, OFX, CAMT/XML y MT940/STA.
+- XLSX multi-sección de Bankinter: detección automática de la tabla contabilizada (`Fecha contable / Fecha valor / Descripción / Importe / Saldo / Divisa`), ignorando el bloque previo de movimientos pendientes para evitar duplicados al contabilizarse.
 - deduplicación de extractos solapados por referencia bancaria, huella exacta y similitud conservadora; preserva movimientos idénticos legítimos mediante conteo multiconjunto;
 - normalización, categorías, reglas, corrección manual auditable y review queue;
 - categorización híbrida local: reglas > memoria de comercios verificados > clasificador determinista > similitud por embeddings > LLM local para casos ambiguos; las propuestas de IA no se marcan como verificadas por el usuario.
