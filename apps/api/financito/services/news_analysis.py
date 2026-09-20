@@ -81,7 +81,8 @@ def analyze_item(session:Session,item:NewsItem)->list[NewsAnalysis]:
     if positive or negative:confidence+=Decimal("0.10")
     if event_hits:confidence+=Decimal("0.10")
     confidence=min(Decimal("0.90"),confidence)
-    rationale=", ".join([*(("+k) for k in positive),*(("-"+k) for k in negative),*(("evento:"+k) for k in event_hits)]) or "sin señales léxicas fuertes"
+    signals=["+"+k for k in positive]+["-"+k for k in negative]+["evento:"+k for k in event_hits]
+    rationale=", ".join(signals) or "sin señales léxicas fuertes"
     rows=[]
     targets=linked or [None]
     for security in targets:
