@@ -19,6 +19,7 @@ Antes de cualquier cambio:
 
 No:
 - desplegar nada en cloud;
+- introducir una dependencia obligatoria de pago;
 - añadir backend remoto;
 - añadir telemetría;
 - añadir analytics;
@@ -167,3 +168,14 @@ Reportar:
 - limitaciones externas.
 
 Una tarea no está terminada hasta cumplir docs/DEFINITION_OF_DONE.md.
+
+
+## 15. Política de coste
+
+Leer docs/FREE_CONNECTORS.md antes de integrar fuentes externas.
+
+Toda funcionalidad base debe tener una ruta de coste cero. Si un proveedor gratuito cambia a pago:
+- no degradar el sistema silenciosamente;
+- activar fallback;
+- documentar el cambio;
+- no contratar ni exigir pago automáticamente.
