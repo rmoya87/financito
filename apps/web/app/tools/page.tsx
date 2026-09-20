@@ -36,13 +36,13 @@ const EMPTY_MORTGAGE={lender:'',remaining_principal:'',currency:'EUR',interest_t
 
 export default function ToolsPage(){
   const qc=useQueryClient();
+  const [selectedMortgage,setSelectedMortgage]=useState('');
+  const [mortgageForm,setMortgageForm]=useState(EMPTY_MORTGAGE);
   const mortgages=useQuery({queryKey:['mortgages'],queryFn:()=>apiGet<MortgageProfile[]>('/api/v1/mortgages')});
   const contracts=useQuery({queryKey:['contracts'],queryFn:()=>apiGet<Contract[]>('/api/v1/contracts')});
   const context=useQuery({queryKey:['decision-lab-context'],queryFn:()=>apiGet<Context>('/api/v1/decision-lab/context')});
   const readiness=useQuery({queryKey:['switching-readiness',selectedMortgage],queryFn:()=>apiGet<SwitchingReadiness>('/api/v1/decision-lab/switching-readiness'+(selectedMortgage?'?mortgage_id='+encodeURIComponent(selectedMortgage):''))});
   const marketScan=useMutation({mutationFn:()=>apiGet<MarketScan>('/api/v1/decision-lab/market-scan')});
-  const [selectedMortgage,setSelectedMortgage]=useState('');
-  const [mortgageForm,setMortgageForm]=useState(EMPTY_MORTGAGE);
 
   useEffect(()=>{
     if(!selectedMortgage&&mortgages.data?.length)setSelectedMortgage(mortgages.data[0].id);
