@@ -15,7 +15,7 @@ from financito.services.financial_analytics import overview
 from financito.services.evidence import structured_evidence_context,synchronize_document_evidence
 from financito.services.document_ai import analyze_document,domain_insights,latest_analysis
 from financito.services.transaction_ops import detect_refunds
-from financito.models_extended import InsurancePolicy
+from financito.models_extended import CoverageFact,InsurancePolicy
 
 
 def _tx(account_id:str,day:date,amount:str,desc:str,merchant:str,fp:str):
@@ -189,6 +189,8 @@ def test_local_ai_document_analysis_is_persisted_and_shared(monkeypatch):
                 "optimization_opportunities":[{"title":"Comparar prima equivalente","detail":"Solicitar ofertas con coberturas equivalentes.","pages":[1],"impact":"No comparar solo por precio."}],
                 "cross_area_impacts":[],
                 "missing_information":[{"title":"Límites de cobertura","detail":"No aparecen completos en el fragmento.","pages":[],"impact":""}],
+                "proposed_material_facts":[],
+                "coverage_facts":[{"coverage_type":"Responsabilidad civil","limit_amount":None,"deductible":None,"conditions":"Incluida","exclusions":"","page":1,"confidence":0.80}],
                 "confidence":0.88,
             },
         )
@@ -208,3 +210,19 @@ def test_local_ai_document_analysis_is_persisted_and_shared(monkeypatch):
         projected=next(x for x in evidence["documents"] if x["document_id"]==document.id)
         assert projected["ai_analysis"]["summary"].startswith("Seguro con prima")
         assert "interpretación" in evidence["rule"].lower()
+
+        proposal=db.scalar(select(ExtractedFact).where(
+            ExtractedFact.document_id==document.id,
+            ExtractedFact.fact_type=="coverage_fact",
+        ))
+        assert proposal is not None
+        assert proposal.status=="inferred"
+        proposal.status="confirmed"
+        proposal.user_verified=True
+        sync=synchronize_document_evidence(db,document)
+        db.commit()
+        assert sync["coverage_count"]==1
+        coverage=db.scalar(select(CoverageFact).where(CoverageFact.source_document_id==document.id))
+        assert coverage is not None
+        assert coverage.coverage_type=="Responsabilidad civil"
+        assert coverage.user_verified is True
