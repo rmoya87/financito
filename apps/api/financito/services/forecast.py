@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..domain.engines import comparable_period_last_year, money
 from ..models import Account, Commitment, Transaction
+from .financial_analytics import cash_flow
 
 
 @dataclass(frozen=True)
@@ -31,16 +32,8 @@ MODEL_VERSION = "seasonal-commitments-v1"
 
 
 def _sum_transactions(session: Session, start: date, end: date, positive: bool) -> Decimal:
-    rows = session.scalars(select(Transaction).where(
-        and_(Transaction.booking_date >= start, Transaction.booking_date <= end, Transaction.is_internal_transfer.is_(False))
-    )).all()
-    total = Decimal("0")
-    for tx in rows:
-        if positive and tx.amount > 0:
-            total += tx.amount
-        if not positive and tx.amount < 0:
-            total += -tx.amount
-    return total
+    flow = cash_flow(session, start, end)
+    return flow["income"] if positive else flow["expenses"]
 
 
 def forecast(session: Session, start: date, end: date) -> ForecastResult:

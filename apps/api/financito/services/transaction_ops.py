@@ -5,7 +5,7 @@ from decimal import Decimal
 from sqlalchemy import delete,select
 from sqlalchemy.orm import Session
 from ..models import Category,Transaction
-from ..models_analytics import TransactionRule,TransactionSplit
+from ..models_analytics import EntityLink,TransactionRule,TransactionSplit
 from .categorization import normalize_text
 
 def apply_rule(session:Session,tx:Transaction)->bool:
@@ -52,3 +52,32 @@ def set_splits(session:Session,transaction_id:str,splits:list[dict])->list[Trans
     session.execute(delete(TransactionSplit).where(TransactionSplit.transaction_id==transaction_id))
     rows=[TransactionSplit(transaction_id=transaction_id,amount=Decimal(str(x["amount"])),category_id=x["category_id"],note=x.get("note")) for x in splits]
     session.add_all(rows);session.flush();return rows
+
+
+def detect_refunds(session:Session,lookback_days:int=90)->int:
+    positives=session.scalars(select(Transaction).where(Transaction.amount>0,Transaction.is_internal_transfer.is_(False)).order_by(Transaction.booking_date)).all()
+    negatives=session.scalars(select(Transaction).where(Transaction.amount<0,Transaction.is_internal_transfer.is_(False)).order_by(Transaction.booking_date)).all()
+    created=0
+    for refund in positives:
+        if not refund.merchant_normalized:
+            continue
+        existing=session.scalar(select(EntityLink.id).where(EntityLink.from_type=="transaction",EntityLink.from_id==refund.id,EntityLink.relation_type=="refund_of"))
+        if existing:
+            continue
+        matches=[
+            expense for expense in negatives
+            if expense.merchant_normalized==refund.merchant_normalized
+            and expense.booking_date<=refund.booking_date
+            and (refund.booking_date-expense.booking_date).days<=lookback_days
+            and abs((-expense.amount)-refund.amount)<=Decimal("0.01")
+        ]
+        if not matches:
+            continue
+        expense=max(matches,key=lambda x:x.booking_date)
+        session.add(EntityLink(from_type="transaction",from_id=refund.id,relation_type="refund_of",to_type="transaction",to_id=expense.id,confidence=Decimal("0.98"),source_type="deterministic_refund_match",source_ref=expense.id))
+        refund.category_id=expense.category_id
+        refund.categorization_method="refund_match"
+        refund.categorization_confidence=Decimal("0.98")
+        created+=1
+    session.flush()
+    return created

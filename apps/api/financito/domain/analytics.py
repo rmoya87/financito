@@ -19,6 +19,7 @@ def detect_recurring(session:Session)->list[RecurringSeries]:
         if not cadence:continue
         amounts=[-i.amount for i in items];expected=Decimal(str(median(amounts)));tol=max(Decimal("1"),expected*Decimal("0.15"));confidence=Decimal("0.90") if len(items)>=6 else Decimal("0.75")
         r=RecurringSeries(merchant_normalized=merchant,cadence=cadence,expected_amount=expected,amount_tolerance=tol,next_expected_date=items[-1].booking_date+timedelta(days=round(med)),confidence=confidence);session.add(r);out.append(r)
+        for tx in items: tx.is_recurring=True
         if len(amounts)>=4 and amounts[-1]>Decimal(str(median(amounts[:-1])))*Decimal("1.10"):
             exists=session.scalar(select(ActionItem.id).where(ActionItem.action_type=="recurring_price_increase",ActionItem.source_ref==merchant,ActionItem.status=="pending"))
             if not exists:session.add(ActionItem(action_type="recurring_price_increase",title="Revisar subida de "+merchant,priority="medium",source_type="recurring",source_ref=merchant,expected_impact_json='{"latest":"'+str(amounts[-1])+'"}'))

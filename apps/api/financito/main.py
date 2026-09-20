@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .db import SessionLocal
 from .migrations import migrate
-from .domain.engines import CashFlowEngine, MortgageEngine, OptimizationEngine
+from .domain.engines import CashFlowEngine, MortgageEngine, OptimizationEngine\nfrom .services.financial_analytics import cash_flow,category_spending
 from .models import Account, ActionItem, AuditEvent, Budget, CategorizationAudit, Category, Commitment, Document, ExtractedFact, Transaction
 from .schemas import AccountCreate, AccountOut, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentIndexRequest, FactUpdate, ForecastRequest, MortgageScenarioRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
 from .security import LocalSecurityMiddleware, create_session
@@ -123,12 +123,12 @@ def update_category(transaction_id:str,payload:TransactionCategoryUpdate,db:Sess
 def dashboard(db:Session=Depends(get_db)):
     today=date.today(); start=today.replace(day=1)
     txs=db.scalars(select(Transaction).where(and_(Transaction.booking_date>=start,Transaction.booking_date<=today))).all()
-    flow=CashFlowEngine.calculate((t.amount,t.is_internal_transfer) for t in txs)
+    flow_data=cash_flow(db,start,today)
     balances=sum((a.current_balance for a in db.scalars(select(Account)).all()),Decimal("0"))
     upcoming=db.scalars(select(Commitment).where(and_(Commitment.due_date>=today,Commitment.due_date<=today+timedelta(days=45),Commitment.status=="active")).order_by(Commitment.due_date)).all()
     actions=db.scalars(select(ActionItem).where(ActionItem.status.in_(["pending","in_progress"])).order_by(ActionItem.due_date.asc().nullslast()).limit(10)).all()
-    category_rows=db.execute(select(Category.name,func.sum(-Transaction.amount)).join(Transaction,Transaction.category_id==Category.id).where(and_(Transaction.booking_date>=start,Transaction.booking_date<=today,Transaction.amount<0,Transaction.is_internal_transfer.is_(False))).group_by(Category.name).order_by(func.sum(Transaction.amount).asc())).all()
-    return {"period":{"start":start,"end":today},"liquidity":str(balances),"income":str(flow.income),"expenses":str(flow.expenses),"savings":str(flow.savings),"savings_rate":str(flow.savings_rate) if flow.savings_rate is not None else None,"spending_by_category":[{"category":n,"amount":str(v or 0)} for n,v in category_rows],"upcoming_commitments":[{"id":c.id,"title":c.title,"amount":str(c.amount),"due_date":c.due_date} for c in upcoming],"actions":[{"id":a.id,"title":a.title,"priority":a.priority,"due_date":a.due_date,"status":a.status} for a in actions]}
+    category_rows=category_spending(db,start,today)
+    return {"period":{"start":start,"end":today},"liquidity":str(balances),"income":str(flow_data["income"]),"expenses":str(flow_data["expenses"]),"savings":str(flow_data["savings"]),"savings_rate":str(flow_data["savings_rate"]) if flow_data["savings_rate"] is not None else None,"spending_by_category":[{"category":r["category"],"amount":str(r["amount"])} for r in category_rows],"upcoming_commitments":[{"id":c.id,"title":c.title,"amount":str(c.amount),"due_date":c.due_date} for c in upcoming],"actions":[{"id":a.id,"title":a.title,"priority":a.priority,"due_date":a.due_date,"status":a.status} for a in actions]}
 
 
 @app.post("/api/v1/budgets")

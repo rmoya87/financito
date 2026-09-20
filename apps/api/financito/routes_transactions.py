@@ -1,4 +1,5 @@
 from __future__ import annotations
+from datetime import date
 from decimal import Decimal
 from pydantic import BaseModel,Field
 from fastapi import APIRouter,Depends,HTTPException
@@ -6,8 +7,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .models_analytics import TransactionRule,TransactionSplit
-from .services.transaction_ops import apply_rules_to_unverified,detect_internal_transfers,set_splits
+from .services.transaction_ops import apply_rules_to_unverified,detect_internal_transfers,detect_refunds,set_splits
 from .services.forecast_accuracy import evaluate as forecast_evaluate
+from .services.financial_analytics import overview as analytics_overview
+from .models import Transaction
 router=APIRouter(prefix="/api/v1")
 def dbdep():
     s=SessionLocal()
@@ -35,3 +38,19 @@ def splits(transaction_id:str,p:SplitsIn,db:Session=Depends(dbdep)):
 def forecast_accuracy(months:int=6,db:Session=Depends(dbdep)):
     if months<1 or months>24:raise HTTPException(400,"months must be 1..24")
     return forecast_evaluate(db,months)
+
+@router.post("/transactions/detect-refunds")
+def refunds(db:Session=Depends(dbdep)):
+    n=detect_refunds(db);db.commit();return {"matched_refunds":n}
+
+@router.get("/transactions/review-queue")
+def review_queue(limit:int=100,db:Session=Depends(dbdep)):
+    rows=db.scalars(select(Transaction).where(Transaction.user_verified.is_(False),Transaction.categorization_confidence<Decimal("0.70")).order_by(Transaction.booking_date.desc()).limit(min(max(limit,1),500))).all()
+    return [{"id":r.id,"booking_date":r.booking_date,"amount":str(r.amount),"currency":r.currency,"description_raw":r.description_raw,"merchant_raw":r.merchant_raw,"category_id":r.category_id,"confidence":str(r.categorization_confidence),"method":r.categorization_method} for r in rows]
+
+@router.get("/analytics/overview")
+def analytics(start:date|None=None,end:date|None=None,db:Session=Depends(dbdep)):
+    from datetime import date as _date,timedelta
+    end=end or _date.today();start=start or end-timedelta(days=365)
+    if end<start:raise HTTPException(400,"end must be >= start")
+    return analytics_overview(db,start,end)
