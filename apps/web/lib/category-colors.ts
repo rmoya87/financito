@@ -36,10 +36,10 @@ const FALLBACK_COLORS=[
   '#2874A6','#A04000','#117864','#884EA0','#566573',
 ];
 
-export function categoryColor(systemKey:string,index=0):string{
+export function categoryColor(systemKey:string):string{
   const direct=CATEGORY_COLORS[systemKey];
   if(direct)return direct;
   let hash=0;
   for(let i=0;i<systemKey.length;i++)hash=(hash*31+systemKey.charCodeAt(i))>>>0;
-  return FALLBACK_COLORS[(hash+index)%FALLBACK_COLORS.length];
+  return FALLBACK_COLORS[hash%FALLBACK_COLORS.length];
 }
