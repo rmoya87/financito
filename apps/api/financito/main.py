@@ -217,7 +217,7 @@ async def upload_documents(
     for file in files[:20]:
         content=await file.read()
         try:
-            stored=store_uploaded_document(file.filename or "documento",content)
+            stored=store_uploaded_document(file.filename or "documento",content,file.content_type)
             indexed=index_document(db,str(stored),document_type)
             actual=Path(indexed.document.file_path).resolve()
             if actual!=stored.resolve():
