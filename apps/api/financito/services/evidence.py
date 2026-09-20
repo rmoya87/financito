@@ -417,13 +417,22 @@ def _ensure_contract_projection(
     values: dict[str, dict],
     summary: dict,
 ) -> Contract | None:
-    if document.document_type not in CONTRACT_DOCUMENT_TYPES or not values:
+    if document.document_type not in CONTRACT_DOCUMENT_TYPES:
         return None
     if document.document_type=="mortgage" and _entity_link(session,document.id,"mortgage") is None:
         return None
 
     link = _entity_link(session, document.id, "contract")
     contract = session.get(Contract, link.to_id) if link else None
+    if contract is None and document.document_type=="insurance":
+        policy_link=_entity_link(session,document.id,"insurance_policy")
+        policy=session.get(InsurancePolicy,policy_link.to_id) if policy_link else None
+        if policy is not None and policy.contract_id:
+            contract=session.get(Contract,policy.contract_id)
+            if contract is not None:
+                _add_evidence_link(session,document.id,"contract",contract.id,confidence=Decimal("0.98"),source_type="policy_group")
+    if contract is None and not values:
+        return None
     if contract is None:
         contract = Contract(
             provider_name=_label(document),
@@ -547,8 +556,13 @@ def _ensure_insurance_projection(
     contract: Contract | None,
     values: dict[str, dict],
 ) -> InsurancePolicy | None:
-    if document.document_type != "insurance" or contract is None:
+    if document.document_type != "insurance":
         return None
+
+    link = _entity_link(session, document.id, "insurance_policy")
+    policy = session.get(InsurancePolicy, link.to_id) if link else None
+    if contract is None and policy is not None and policy.contract_id:
+        contract = session.get(Contract, policy.contract_id)
 
     premium = None
     if "annual_cost" in values:
@@ -557,12 +571,9 @@ def _ensure_insurance_projection(
         monthly = _decimal(values["monthly_cost"].get("value"))
         premium = None if monthly is None else monthly * Decimal("12")
 
-    link = _entity_link(session, document.id, "insurance_policy")
-    policy = session.get(InsurancePolicy, link.to_id) if link else None
-
-    # annual_premium is mandatory. Do not invent zero when the document has not
-    # provided a confirmed amount.
-    if policy is None and premium is None:
+    # annual_premium is mandatory for creating a new policy. A document that
+    # is already linked to an existing policy may contribute other evidence.
+    if policy is None and (premium is None or contract is None):
         return None
 
     if policy is None:
@@ -589,7 +600,10 @@ def _ensure_insurance_projection(
             )
         )
 
-    policy.contract_id = contract.id
+    if contract is not None:
+        policy.contract_id = contract.id
+    if values.get("policy_number",{}).get("value"):
+        policy.policy_number_masked=str(values["policy_number"]["value"])[:80]
     if values.get("insurance_type",{}).get("value"):
         policy.insurance_type=str(values["insurance_type"]["value"])[:60]
     if premium is not None:
@@ -653,6 +667,7 @@ def _ensure_coverage_projection(
 
 
 def synchronize_document_evidence(session: Session, document: Document) -> dict:
+    auto_link_document_entity(session, document)
     summary = sync_review_action(session, document)
     values = _confirmed_values(session, document.id)
     contract = _ensure_contract_projection(session, document, values, summary)
