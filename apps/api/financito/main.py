@@ -17,8 +17,9 @@ from .db import SessionLocal
 from .migrations import migrate,MIGRATION_VERSION
 from .domain.engines import MortgageEngine, MortgagePrepaymentEngine, MortgageRatePathEngine, OptimizationEngine
 from .services.financial_analytics import cash_flow,category_spending
-from .models import Account, ActionItem, AuditEvent, Budget, CategorizationAudit, Category, Commitment, Document, ExtractedFact, Transaction
-from .schemas import AccountCreate, AccountOut, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentIndexRequest, FactUpdate, ForecastRequest, MortgageScenarioRequest, MortgagePrepaymentRequest, MortgageRatePathRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
+from .models import Account, ActionItem, AuditEvent, Budget, CategorizationAudit, Category, Commitment, Document, ExtractedFact, Mortgage, Transaction
+from .models_analytics import EntityLink
+from .schemas import AccountCreate, AccountOut, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentIndexRequest, DocumentMortgageLinkUpdate, FactUpdate, ForecastRequest, MortgageScenarioRequest, MortgagePrepaymentRequest, MortgageRatePathRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
 from .security import LocalSecurityMiddleware, create_session
 from .routes_extended import router as extended_router
 from .routes_analytics import router as analytics_router
@@ -259,6 +260,14 @@ def index_doc(payload:DocumentIndexRequest,db:Session=Depends(get_db)):
 @app.get("/api/v1/documents")
 def documents(db:Session=Depends(get_db)):
     rows=db.scalars(select(Document).order_by(Document.created_at.desc())).all()
+    mortgage_links={
+        link.from_id:link.to_id
+        for link in db.scalars(select(EntityLink).where(
+            EntityLink.from_type=="document",
+            EntityLink.relation_type=="evidence_for",
+            EntityLink.to_type=="mortgage",
+        )).all()
+    }
     return [
         {
             "id":r.id,
@@ -268,9 +277,54 @@ def documents(db:Session=Depends(get_db)):
             "page_count":r.page_count,
             "review":review_summary(db,r.id),
             "ai_analysis":"ready" if latest_analysis(db,r.id) is not None else "not_analyzed",
+            "mortgage_id":mortgage_links.get(r.id),
         }
         for r in rows
     ]
+
+
+@app.put("/api/v1/documents/{document_id}/mortgage-link")
+def set_document_mortgage_link(document_id:str,payload:DocumentMortgageLinkUpdate,db:Session=Depends(get_db)):
+    document=db.get(Document,document_id)
+    if not document: raise HTTPException(404,"Document not found")
+    if document.document_type!="mortgage":
+        raise HTTPException(409,"Only mortgage documents can be linked to a mortgage profile")
+    links=db.scalars(select(EntityLink).where(
+        EntityLink.from_type=="document",
+        EntityLink.from_id==document_id,
+        EntityLink.relation_type=="evidence_for",
+        EntityLink.to_type=="mortgage",
+    )).all()
+    current_id=links[0].to_id if links else None
+    if payload.mortgage_id==current_id:
+        sync=synchronize_document_evidence(db,document)
+        db.commit()
+        return {"document_id":document_id,"mortgage_id":current_id,"evidence_sync":sync}
+    for link in links:
+        db.delete(link)
+    if payload.mortgage_id:
+        mortgage=db.get(Mortgage,payload.mortgage_id)
+        if not mortgage: raise HTTPException(404,"Mortgage not found")
+        db.add(EntityLink(
+            from_type="document",
+            from_id=document_id,
+            relation_type="evidence_for",
+            to_type="mortgage",
+            to_id=mortgage.id,
+            confidence=Decimal("1"),
+            source_type="user",
+            source_ref=document_id,
+        ))
+        db.flush()
+    sync=synchronize_document_evidence(db,document)
+    db.add(AuditEvent(
+        event_type="document_mortgage_link_updated",
+        entity_type="document",
+        entity_id=document_id,
+        metadata_json=json.dumps({"previous_mortgage_id":current_id,"mortgage_id":payload.mortgage_id}),
+    ))
+    db.commit()
+    return {"document_id":document_id,"mortgage_id":payload.mortgage_id,"evidence_sync":sync}
 
 
 @app.get("/api/v1/documents/{document_id}/facts")
