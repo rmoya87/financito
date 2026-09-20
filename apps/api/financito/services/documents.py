@@ -23,6 +23,7 @@ from ..models import ActionItem, Document, ExtractedFact
 class IndexedDocument:
     document: Document
     facts_created: int
+    chunks_created: int
 
 
 def safe_path(path: Path) -> Path:
@@ -41,12 +42,15 @@ def extract_text(path: Path) -> tuple[str, int]:
     if suffix == ".pdf":
         reader = PdfReader(str(path))
         pages = [(page.extract_text() or "") for page in reader.pages]
-        return "\n\n".join(pages), len(pages)
+        return "
+
+".join(pages), len(pages)
     if suffix in {".txt", ".csv", ".json"}:
         return path.read_text(encoding="utf-8", errors="replace"), 1
     if suffix == ".docx":
         doc = DocxDocument(str(path))
-        return "\n".join(p.text for p in doc.paragraphs), 1
+        return "
+".join(p.text for p in doc.paragraphs), 1
     if suffix in {".xlsx", ".xlsm"}:
         wb = load_workbook(path, read_only=True, data_only=True)
         lines: list[str] = []
@@ -54,7 +58,8 @@ def extract_text(path: Path) -> tuple[str, int]:
             lines.append(f"[{ws.title}]")
             for row in ws.iter_rows(values_only=True):
                 lines.append(" | ".join("" if v is None else str(v) for v in row))
-        return "\n".join(lines), 1
+        return "
+".join(lines), 1
     if suffix in {".png", ".jpg", ".jpeg", ".heic", ".tiff", ".bmp"}:
         image = Image.open(path)
         return pytesseract.image_to_string(image, lang="spa+eng"), 1
@@ -98,4 +103,6 @@ def index_document(session: Session, source_path: str, document_type: str = "unk
         session.add(ExtractedFact(document_id=doc.id, fact_type=fact["fact_type"], key=fact["key"], value_json=json.dumps({"value":fact["value"],"unit":fact["unit"]}, ensure_ascii=False), confidence=str(fact["confidence"]), status="inferred", user_verified=False)); count += 1
     if count:
         session.add(ActionItem(action_type="review_document_evidence", title=f"Revisar {count} dato(s) contractual(es) extraído(s) de {path.name}", related_entity_type="document", related_entity_id=doc.id, priority="high", source_type="document", source_ref=doc.id, notes="Los datos extraídos son inferidos y no deben usarse como evidencia confirmada hasta su revisión."))
-    from .rag import index_document_chunks\n    chunks = index_document_chunks(session, doc)\n    return IndexedDocument(doc, count, chunks)
+    from .rag import index_document_chunks
+    chunks = index_document_chunks(session, doc)
+    return IndexedDocument(doc, count, chunks)
