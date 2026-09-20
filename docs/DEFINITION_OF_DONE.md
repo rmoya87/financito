@@ -43,3 +43,49 @@ Además:
 - cache/freshness;
 - errores normalizados;
 - secrets fuera del código.
+
+
+## Categorización
+
+Una feature de movimientos no está terminada si:
+- existen movimientos sin estado de clasificación definido;
+- no se conserva confidence/method cuando la clasificación es automática;
+- una corrección manual puede ser sobrescrita silenciosamente;
+- transferencias internas contaminan ingresos/gastos;
+- splits no cuadran exactamente;
+- no existe trazabilidad de recategorización.
+
+## Decisiones
+
+Toda recomendación material debe incluir:
+- alternativas;
+- impacto monetario;
+- horizonte;
+- assumptions;
+- fuentes;
+- confidence de evidencia;
+- riesgos;
+- break-even cuando aplique;
+- datos faltantes.
+
+No se considera terminada si solo devuelve texto generado por LLM.
+
+## Visualizaciones
+
+Toda gráfica:
+- responde a una pregunta;
+- usa datos agregados/validados;
+- tiene unidades y periodo;
+- muestra fuente/frescura;
+- tiene alternativa accesible;
+- no induce a error visual.
+
+## IA/Agentes de desarrollo
+
+Cualquier cambio generado por IA debe cumplir AI_ENGINEERING_RULES.md y DEVELOPMENT_WORKFLOW.md.
+
+La IA no puede declarar una tarea completa sin:
+- build ejecutado cuando exista código;
+- tests relevantes ejecutados;
+- docs actualizadas;
+- limitaciones reales declaradas.
