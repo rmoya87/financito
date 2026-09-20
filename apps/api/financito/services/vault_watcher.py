@@ -4,6 +4,7 @@ from pathlib import Path
 from ..config import settings
 from ..db import SessionLocal
 from .documents import SUPPORTED_SUFFIXES,index_document
+from .document_ai import analyze_document
 class VaultWatcher:
     def __init__(self,interval:float=10):self.interval=interval;self.stop_event=threading.Event();self.thread=None;self.seen={}
     def scan_once(self):
@@ -14,7 +15,11 @@ class VaultWatcher:
             except OSError:continue
             if self.seen.get(str(path))==stamp:continue
             with SessionLocal() as db:
-                try:index_document(db,str(path),"unknown");db.commit();self.seen[str(path)]=stamp
+                try:
+                    indexed=index_document(db,str(path),"unknown")
+                    try:analyze_document(db,indexed.document)
+                    except Exception:pass
+                    db.commit();self.seen[str(path)]=stamp
                 except Exception:db.rollback()
     def _run(self):
         while not self.stop_event.is_set():self.scan_once();self.stop_event.wait(self.interval)
