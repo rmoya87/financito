@@ -163,6 +163,24 @@ Nunca mostrar un único escenario como certeza.
 - riesgo temporal → drawdown;
 - distribución → histogram si procede.
 
+## Movimientos fuera de patrón
+
+La interfaz no presenta la detección como una “anomalía” técnica que el usuario deba interpretar.
+
+Cada aviso debe explicar:
+- qué movimiento se compara;
+- cuál es el importe habitual comparable;
+- cuánto se desvía;
+- confianza de la señal;
+- que no implica fraude ni error confirmado;
+- acciones concretas: marcar como correcto, abrir el movimiento para corregirlo o ignorar el aviso.
+
+## Centros de coste
+
+Un centro de coste responde a preguntas transversales como “¿cuánto me cuesta realmente la vivienda?” o “¿cuánto gasto en el coche?”.
+
+La asociación principal es por categoría: todos los movimientos actuales y futuros de la categoría vinculada alimentan el centro. Contratos, pólizas, activos y deuda pueden añadirse como referencias complementarias. El resumen muestra gasto observado de los últimos 12 meses y media mensual.
+
 ## Rendimiento frontend
 
 Gráficas:
