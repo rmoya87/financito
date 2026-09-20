@@ -16,6 +16,7 @@ from .providers.fundamentals import SecFundamentalsProvider
 from .providers.macro import EcbMacroProvider
 from .providers.news import GdeltNewsProvider
 from .services.market_data import history as market_history,portfolio_exposure,refresh_history,refresh_security,security_risk
+from .services.news_analysis import analyze_all,analyze_item,local_news
 
 router=APIRouter(prefix="/api/v1")
 
@@ -190,7 +191,7 @@ def ingest_news(q:str,db:Session=Depends(dbdep)):
         except Exception:
             from datetime import datetime,timezone
             dt=datetime.now(timezone.utc)
-        db.add(NewsItem(canonical_url=url,source=item.get("source") or "GDELT",headline=item.get("title") or "",published_at=dt,summary=None,reliability=Decimal("0.5")));inserted+=1
+        row=NewsItem(canonical_url=url,source=item.get("source") or "GDELT",headline=item.get("title") or "",published_at=dt,summary=None,reliability=Decimal("0.5"));db.add(row);db.flush();analyze_item(db,row);inserted+=1
     db.commit();return {"inserted":inserted,"discovered":len(items)}
 
 
@@ -271,3 +272,12 @@ def coverage_gaps(db:Session=Depends(dbdep)):
         else:
             covered.append({"requirement_id":req.id,"coverage_type":req.coverage_type,"insurance_type":req.insurance_type,"matching_coverages":len(eligible),"best_verified_limit":None if not limits else str(max(limits))})
     return {"gaps":gaps,"covered":covered,"requirements":len(requirements)}
+
+
+@router.get("/news/local")
+def news_local(limit:int=100,db:Session=Depends(dbdep)):
+    return {"items":local_news(db,limit)}
+
+@router.post("/news/analyze")
+def news_analyze(limit:int=500,db:Session=Depends(dbdep)):
+    result=analyze_all(db,limit);db.commit();return result
