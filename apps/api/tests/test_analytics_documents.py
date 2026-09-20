@@ -1,17 +1,20 @@
 from datetime import date,timedelta
 from decimal import Decimal
 from pathlib import Path
+from uuid import uuid4
 
 from sqlalchemy import select
 
 from financito.config import settings
 from financito.db import SessionLocal
-from financito.models import Account,Category,Document,ExtractedFact,Transaction
+from financito.models import Account,ActionItem,Category,Contract,Document,ExtractedFact,Transaction
 from financito.models_analytics import EntityLink
 from financito.services.categorization import ensure_categories
 from financito.services.documents import classify_document,detect_language,index_document
 from financito.services.financial_analytics import overview
+from financito.services.evidence import structured_evidence_context,synchronize_document_evidence
 from financito.services.transaction_ops import detect_refunds
+from financito.models_extended import InsurancePolicy
 
 
 def _tx(account_id:str,day:date,amount:str,desc:str,merchant:str,fp:str):
@@ -72,3 +75,72 @@ def test_mortgage_fein_extracts_structured_terms():
         keys={f.key for f in facts}
         assert {"reference_index","interest_type","differential_rate","mortgage_term_years","rate_review_months","opening_fee_percent","early_repayment_fee_percent","linked_salary","linked_home_insurance"} <= keys
         assert all(f.source_page==1 for f in facts if f.key in keys)
+
+
+
+def test_confirmed_document_evidence_projects_and_closes_review_action():
+    suffix=uuid4().hex[:8]
+    text=(
+        "Póliza de seguro de hogar. Prima anual de 360 euros. Franquicia de 120 euros. "
+        "Preaviso de 30 días. Renovación 30/09/2027."
+    )
+    path=settings.vault_dir/f"poliza-evidencia-{suffix}.txt"
+    path.write_text(text,encoding="utf-8")
+    with SessionLocal() as db:
+        result=index_document(db,str(path),"unknown")
+        db.flush()
+        doc=result.document
+        assert doc.document_type=="insurance"
+
+        action=db.scalar(select(ActionItem).where(
+            ActionItem.action_type=="review_document_evidence",
+            ActionItem.related_entity_id==doc.id,
+        ))
+        assert action is not None
+        assert action.status=="pending"
+
+        facts=db.scalars(select(ExtractedFact).where(
+            ExtractedFact.document_id==doc.id,
+            ExtractedFact.fact_type.in_(["contract_term","mortgage_term","linked_product"]),
+        )).all()
+        assert facts
+        for fact in facts:
+            fact.status="confirmed"
+            fact.user_verified=True
+
+        sync=synchronize_document_evidence(db,doc)
+        db.commit()
+        assert sync["pending"]==0
+
+        db.refresh(action)
+        assert action.status=="done"
+
+        contract_link=db.scalar(select(EntityLink).where(
+            EntityLink.from_type=="document",
+            EntityLink.from_id==doc.id,
+            EntityLink.relation_type=="evidence_for",
+            EntityLink.to_type=="contract",
+        ))
+        assert contract_link is not None
+        contract=db.get(Contract,contract_link.to_id)
+        assert contract is not None
+        assert contract.annual_cost==Decimal("360")
+        assert contract.cancellation_notice_days==30
+        assert contract.renewal_date==date(2027,9,30)
+        assert contract.evidence_status=="confirmed"
+
+        policy_link=db.scalar(select(EntityLink).where(
+            EntityLink.from_type=="document",
+            EntityLink.from_id==doc.id,
+            EntityLink.relation_type=="evidence_for",
+            EntityLink.to_type=="insurance_policy",
+        ))
+        assert policy_link is not None
+        policy=db.get(InsurancePolicy,policy_link.to_id)
+        assert policy is not None
+        assert policy.annual_premium==Decimal("360")
+        assert policy.deductible==Decimal("120")
+
+        evidence=structured_evidence_context(db)
+        projected=next(x for x in evidence["documents"] if x["document_id"]==doc.id)
+        assert any(x["key"]=="annual_cost" and x["user_verified"] for x in projected["facts"])
