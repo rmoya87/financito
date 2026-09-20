@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .services.banking import close_connection,complete_authorization,list_connections,sync_connection
 from .services.secure_config import provider_status,set_secret
+from .services.preferences import read_preferences,update_preferences
+from .services.local_ai import status as ai_status
 
 router=APIRouter(prefix="/api/v1")
 
@@ -14,6 +16,10 @@ def dbdep():
     s=SessionLocal()
     try:yield s
     finally:s.close()
+
+class AIConfigIn(BaseModel):
+    local_ai_model:str|None=None
+    embedding_model:str|None=None
 
 class ProviderSecretsIn(BaseModel):
     enable_banking_app_id:str|None=None
@@ -63,3 +69,13 @@ def banking_close(connection_id:str,db:Session=Depends(dbdep)):
         db.rollback();raise HTTPException(404,str(exc))
     except Exception as exc:
         db.rollback();raise HTTPException(503,str(exc))
+
+
+@router.get("/ai/config")
+def ai_config():
+    return {"preferences":read_preferences(),"status":ai_status()}
+
+@router.patch("/ai/config")
+def update_ai_config(p:AIConfigIn):
+    values=p.model_dump(exclude_unset=True)
+    return {"preferences":update_preferences(values),"status":ai_status()}
