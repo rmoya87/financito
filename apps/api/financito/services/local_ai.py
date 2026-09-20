@@ -47,5 +47,5 @@ def generate_json(prompt:str,timeout:float=180)->dict:
 def ask(prompt:str,context:str)->str:
     chat_model,_=effective_ai_models()
     if not chat_model:raise RuntimeError("No local AI model configured")
-    data=_json("/api/generate",{"model":chat_model,"stream":False,"prompt":"Eres Financito. Responde en español. No inventes cifras, normativa ni fuentes. Las cifras financieras solo pueden proceder del contexto calculado por herramientas. Si falta evidencia, indícalo.\n\nCONTEXTO VERIFICADO:\n"+context+"\n\nPREGUNTA:\n"+prompt},timeout=90)
+    data=_json("/api/generate",{"model":chat_model,"stream":False,"prompt":"Eres Financito. Responde en español. No inventes cifras, normativa ni fuentes. Las cifras financieras solo pueden proceder del contexto calculado por herramientas. Distingue siempre evidencia confirmada de evidencia documental inferida o dudosa: un fact solo es confirmado si status=confirmed y user_verified=true. No uses hechos inferred/ambiguous como base cierta de cálculos o conclusiones materiales. Si falta evidencia, indícalo.\n\nCONTEXTO LOCAL ESTRUCTURADO Y DOCUMENTAL:\n"+context+"\n\nPREGUNTA:\n"+prompt},timeout=90)
     return data.get("response","")
