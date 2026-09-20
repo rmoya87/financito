@@ -68,3 +68,27 @@ def test_bankinter_xlsx_reimport_is_idempotent():
         assert second.inserted==0
         assert second.duplicates==3
         assert db.query(Transaction).filter(Transaction.account_id==account.id).count()==3
+
+
+
+def test_bankinter_pending_only_xlsx_is_not_imported_as_booked():
+    wb=Workbook()
+    ws=wb.active
+    ws.title="Movimientos"
+    ws.append(["MOVIMIENTOS DE LA CUENTA ES00TEST"])
+    ws.append([])
+    ws.append(["MOVIMIENTOS PENDIENTES -18,10 EUR"])
+    ws.append([])
+    ws.append(["Fecha","Descripción","Importe","Divisa"])
+    ws.append(["21/09/2026","PENDIENTE COMERCIO A",-13,"EUR"])
+    ws.append(["21/09/2026","PENDIENTE COMERCIO B",-5.10,"EUR"])
+    out=BytesIO();wb.save(out)
+
+    with SessionLocal() as db:
+        account=Account(name="Bankinter pending",institution_name="Bankinter",current_balance=Decimal("0"))
+        db.add(account);db.flush()
+        result=import_statement(db,account.id,"bankinter-pendientes.xlsx",out.getvalue())
+        db.commit()
+        assert result.inserted==0
+        assert result.rejected==0
+        assert db.query(Transaction).filter(Transaction.account_id==account.id).count()==0
