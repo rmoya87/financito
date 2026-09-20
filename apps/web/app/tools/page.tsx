@@ -17,7 +17,7 @@ type Prepay={mortgage:MortgageProfile;original_monthly_payment:string;original_t
 type RatePath={mortgage:MortgageProfile;total_payments:string;total_interest:string;min_monthly_payment:string;max_monthly_payment:string;final_balance:string;notice:string;segments:{start_month:number;annual_rate:string;monthly_payment:string;end_balance:string}[]};
 type Contract={id:string;provider_name:string;contract_type:string;annual_cost:string|null;early_exit_penalty:string|null;evidence_status:string;renewal_date:string|null};
 type Opt={status:string;net_annual_benefit:string|null;break_even_months:string|null};
-type Context={generated_at:string;real_data_only:boolean;liquidity:string;tracked_assets:any[];rules:string[]};
+type Context={generated_at:string;real_data_only:boolean;liquidity:string;cash_flow_current_month:{start:string;end:string;income:string;expenses:string;savings:string;savings_rate:string|null};cash_flow_last_90_days:{start:string;end:string;income:string;expenses:string;savings:string;savings_rate:string|null;average_monthly_income:string;average_monthly_expenses:string;average_monthly_savings:string};tracked_assets:any[];rules:string[]};
 
 function parseRatePath(raw:string){
   if(!raw.trim())return [];
@@ -109,11 +109,16 @@ export default function ToolsPage(){
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="font-bold">Datos reales utilizados</h2>
-          <p className="mt-1 text-sm text-[var(--muted)]">Hipoteca, contratos, liquidez, patrimonio e inversiones se leen de tu base local. No se cargan ejemplos por defecto.</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">Hipoteca, ingresos, gastos, ahorro, contratos, liquidez, patrimonio e inversiones se leen de tu base local. No se cargan ejemplos por defecto.</p>
         </div>
         {context.data&&<div className="text-right text-xs text-[var(--muted)]">Contexto actualizado<br/>{new Date(context.data.generated_at).toLocaleString()}</div>}
       </div>
-      {context.isLoading?<div className="mt-3"><Loading/></div>:context.error?<div className="mt-3"><ErrorState error={context.error}/></div>:null}
+      {context.isLoading?<div className="mt-3"><Loading/></div>:context.error?<div className="mt-3"><ErrorState error={context.error}/></div>:context.data?<div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+        <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Ingresos mes actual</div><div className="mt-1 font-bold"><Money value={context.data.cash_flow_current_month.income}/></div></div>
+        <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Gastos mes actual</div><div className="mt-1 font-bold"><Money value={context.data.cash_flow_current_month.expenses}/></div></div>
+        <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Ahorro mes actual</div><div className="mt-1 font-bold"><Money value={context.data.cash_flow_current_month.savings}/></div></div>
+        <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Ingreso medio mensual 90 días</div><div className="mt-1 font-bold"><Money value={context.data.cash_flow_last_90_days.average_monthly_income}/></div></div>
+      </div>:null}
     </Card>
 
     <div className="mt-4 grid gap-4 xl:grid-cols-2">
