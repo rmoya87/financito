@@ -22,12 +22,14 @@ from .routes_extended import router as extended_router
 from .routes_analytics import router as analytics_router
 from .routes_transactions import router as transactions_router
 from .routes_domain import router as domain_router
+from .routes_config import router as config_router
 from .services.vault_watcher import VaultWatcher
 from .services.categorization import ensure_categories
 from .services.documents import index_document
 from .services.forecast import forecast
 from .services.imports import import_csv
 from .services.local_ai import status as ai_status
+from .services.secure_config import provider_status
 
 
 @asynccontextmanager
@@ -49,6 +51,7 @@ app.include_router(extended_router)
 app.include_router(analytics_router)
 app.include_router(transactions_router)
 app.include_router(domain_router)
+app.include_router(config_router)
 
 
 def get_db():
@@ -67,7 +70,7 @@ def session(response: Response):
 @app.get("/api/v1/health")
 def health(db: Session = Depends(get_db)):
     db.execute(select(func.count()).select_from(Account)).scalar_one()
-    return {"status":"ok","local_only":True,"database":"ok","database_encrypted":not settings.allow_plaintext_sqlite,"schema_version":3,"vault":str(settings.vault_dir),"vault_exists":settings.vault_dir.exists(),"frontend_built":settings.frontend_dir.exists(),"ai":ai_status()}
+    return {"status":"ok","local_only":True,"database":"ok","database_encrypted":not settings.allow_plaintext_sqlite,"schema_version":3,"vault":str(settings.vault_dir),"vault_exists":settings.vault_dir.exists(),"frontend_built":settings.frontend_dir.exists(),"ai":ai_status(),"providers":provider_status()}
 
 
 @app.get("/api/v1/categories")
