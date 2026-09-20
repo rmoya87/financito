@@ -30,6 +30,7 @@ from .routes_observability import router as observability_router
 from .services.vault_watcher import VaultWatcher
 from .services.categorization import ensure_categories,propagate_verified_merchant
 from .services.documents import index_document,reprocess_document,safe_path
+from .services.evidence import review_summary,synchronize_all_document_evidence,synchronize_document_evidence
 from .services.forecast import forecast
 from .services.imports import import_csv
 from .services.local_ai import status as ai_status
@@ -43,7 +44,9 @@ async def lifespan(_: FastAPI):
         raise RuntimeError("Financito may only bind to loopback")
     migrate()
     with SessionLocal() as db:
-        ensure_categories(db); db.commit()
+        ensure_categories(db)
+        synchronize_all_document_evidence(db)
+        db.commit()
     watcher=VaultWatcher(); watcher.start()
     try:
         yield
@@ -182,7 +185,17 @@ def index_doc(payload:DocumentIndexRequest,db:Session=Depends(get_db)):
 @app.get("/api/v1/documents")
 def documents(db:Session=Depends(get_db)):
     rows=db.scalars(select(Document).order_by(Document.created_at.desc())).all()
-    return [{"id":r.id,"file_name":r.file_name,"document_type":r.document_type,"status":r.status,"page_count":r.page_count} for r in rows]
+    return [
+        {
+            "id":r.id,
+            "file_name":r.file_name,
+            "document_type":r.document_type,
+            "status":r.status,
+            "page_count":r.page_count,
+            "review":review_summary(db,r.id),
+        }
+        for r in rows
+    ]
 
 
 @app.get("/api/v1/documents/{document_id}/facts")
@@ -213,8 +226,12 @@ def document_file(document_id:str,db:Session=Depends(get_db)):
 def update_fact(fact_id:str,payload:FactUpdate,db:Session=Depends(get_db)):
     row=db.get(ExtractedFact,fact_id)
     if not row: raise HTTPException(404,"Fact not found")
-    row.status=payload.status; row.user_verified=payload.user_verified; db.commit()
-    return {"id":row.id,"status":row.status,"user_verified":row.user_verified}
+    row.status=payload.status
+    row.user_verified=payload.user_verified
+    document=db.get(Document,row.document_id)
+    sync=None if document is None else synchronize_document_evidence(db,document)
+    db.commit()
+    return {"id":row.id,"status":row.status,"user_verified":row.user_verified,"evidence_sync":sync}
 
 
 @app.get("/api/v1/actions")
@@ -222,15 +239,33 @@ def actions(status:str|None=None,db:Session=Depends(get_db)):
     stmt=select(ActionItem).order_by(ActionItem.due_date.asc().nullslast(),ActionItem.created_at.desc())
     if status: stmt=stmt.where(ActionItem.status==status)
     rows=db.scalars(stmt).all()
-    return [{"id":r.id,"title":r.title,"action_type":r.action_type,"priority":r.priority,"status":r.status,"due_date":r.due_date,"notes":r.notes} for r in rows]
+    return [{
+        "id":r.id,
+        "title":r.title,
+        "action_type":r.action_type,
+        "priority":r.priority,
+        "status":r.status,
+        "due_date":r.due_date,
+        "notes":r.notes,
+        "related_entity_type":r.related_entity_type,
+        "related_entity_id":r.related_entity_id,
+        "source_type":r.source_type,
+        "source_ref":r.source_ref,
+    } for r in rows]
 
 
 @app.patch("/api/v1/actions/{action_id}")
 def update_action(action_id:str,payload:ActionUpdate,db:Session=Depends(get_db)):
     row=db.get(ActionItem,action_id)
     if not row: raise HTTPException(404,"Action not found")
-    row.status=payload.status; row.notes=payload.notes
-    if payload.status=="done": row.completed_at=datetime.now().astimezone()
+    if row.action_type=="review_document_evidence" and payload.status=="done" and row.related_entity_id:
+        summary=review_summary(db,row.related_entity_id)
+        if summary["pending"]>0:
+            raise HTTPException(409,"Revisa o marca como dudosos los datos pendientes antes de completar esta tarea")
+    row.status=payload.status
+    if payload.notes is not None: row.notes=payload.notes
+    if payload.status=="done": row.completed_at=datetime.now().astimezone().replace(tzinfo=None)
+    elif payload.status in {"pending","in_progress"}: row.completed_at=None
     db.commit(); return {"id":row.id,"status":row.status}
 
 
