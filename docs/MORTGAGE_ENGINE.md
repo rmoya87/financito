@@ -130,3 +130,22 @@ Tests con:
 - comisiones;
 - bonificaciones;
 - escenarios adversos.
+
+
+## Documentación contractual como input
+
+El motor debe construir un MortgageContractSnapshot con la documentación del usuario, incluyendo cuando exista:
+- escritura;
+- FEIN/FIAE;
+- novaciones;
+- anexos;
+- comunicaciones del banco;
+- condiciones de vinculaciones.
+
+Las comisiones y penalizaciones deben extraerse con fuente y vigencia.
+
+Una fórmula contractual se representa de forma estructurada y el motor la evalúa con el capital/fecha actuales.
+
+No asumir comisión 0 cuando no se encuentra la cláusula.
+
+Si una penalización o vinculación material es unknown/ambiguous/conflicting, el escenario puede calcular rangos o marcar needs_more_data, pero no concluir que cambiar de hipoteca compensa de forma firme.
