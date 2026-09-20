@@ -199,3 +199,24 @@ Cada oportunidad conserva:
 - versión del motor.
 
 Así una recomendación histórica puede reproducirse.
+
+
+## Evidencia contractual obligatoria
+
+Antes de calcular una oportunidad de cambio, resolver las condiciones vigentes del producto actual desde documentos contractuales.
+
+Entradas materiales:
+- penalizaciones;
+- preavisos;
+- permanencias;
+- vinculaciones;
+- bonificaciones;
+- coberturas;
+- costes de salida;
+- fórmulas contractuales.
+
+Prioridad: condiciones particulares y modificaciones vigentes sobre tarifas/web genéricas.
+
+Si falta un dato material, el estado pasa a needs_more_data y no se presenta el ahorro neto como conclusión firme.
+
+Ver CONTRACT_EVIDENCE.md.
