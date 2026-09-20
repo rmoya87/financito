@@ -1,13 +1,14 @@
 # Financito Local API
 
-Backend local definido por [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md) y [docs/API.md](../../docs/API.md).
+Backend local implementado con Python, FastAPI, Pydantic, SQLAlchemy y SQLite. Es la única capa autorizada para cálculos financieros, acceso a datos privados, documentos y adapters.
 
-Stack objetivo:
-- Python;
-- FastAPI;
-- Pydantic;
-- SQLite;
-- FTS5;
-- sqlite-vec.
+## Desarrollo
 
-La API escucha únicamente en loopback por defecto y contiene la capa de aplicación, motores, RAG, seguridad y adapters.
+```bash
+cd apps/api
+pip install -e '.[dev]'
+FINANCITO_ALLOW_PLAINTEXT_SQLITE=1 PYTHONPATH=. pytest
+FINANCITO_ALLOW_PLAINTEXT_SQLITE=1 PYTHONPATH=. uvicorn financito.main:app --host 127.0.0.1 --port 8765
+```
+
+Nunca usar `0.0.0.0`. El almacenamiento SQLite sin cifrar está limitado a desarrollo/tests; ver `docs/IMPLEMENTATION_STATUS.md`.
