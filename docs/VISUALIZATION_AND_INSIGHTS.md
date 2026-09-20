@@ -33,6 +33,8 @@ Mostrar:
 - porcentaje;
 - variación.
 
+Cada categoría debe conservar un color estable y diferenciado en las visualizaciones. El color es apoyo visual, nunca la única forma de identificar la categoría: nombre e importe siguen visibles.
+
 Evitar pie cuando hay muchas categorías.
 
 ### Evolución por categoría
