@@ -85,6 +85,7 @@ class TrackedAssetCreate(BaseModel):
     purchase_price:Decimal|None=Field(default=None,gt=0)
     purchase_date:date|None=None
     fees:Decimal=Field(default=Decimal("0"),ge=0)
+    fx_rate:Decimal=Field(default=Decimal("1"),gt=0)
     currency:str="EUR"
     provider_asset_id:str|None=None
     notes:str|None=None
