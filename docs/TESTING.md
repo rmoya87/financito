@@ -95,3 +95,17 @@ Las regresiones cubren:
 
 
 También se cubre la agrupación provisional sin prima confirmada: dos documentos con el mismo número de póliza deben compartir una única ficha de evidencia antes de crear la póliza financiera.
+
+
+## Casa y optimización hipotecaria
+
+Las regresiones cubren:
+- persistencia del perfil hipotecario ampliado: TAE, índice, diferencial, revisiones y comisiones;
+- cálculo de LTV a partir del valor completo de la garantía y capital pendiente;
+- uso de comisiones introducidas en Casa por los motores de amortización/subrogación;
+- comparación de cuota e intereses frente a un TIN público manteniendo capital y plazo, sin depender de red en CI;
+- cálculo del punto de equilibrio parcial cuando existe una penalización de salida conocida;
+- agrupación de anexos por número de póliza/contrato aunque su clasificación inicial sea distinta;
+- reagrupación de documentos procesados antes de que otro archivo identifique/materialice el producto.
+
+Los conflictos entre documentos nunca se confirman automáticamente: permanecen pendientes para decisión explícita del usuario.
