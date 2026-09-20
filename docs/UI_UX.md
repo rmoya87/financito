@@ -30,23 +30,56 @@ Móvil/PWA futuro:
 
 ## Navegación
 
-Sidebar:
-1. Resumen
-2. Cuentas
-3. Movimientos
-4. Presupuesto
-5. Patrimonio
-6. Inversiones
-7. Mercados
-8. Cripto
-9. Documentos
-10. Contratos
-11. Seguros
-12. Hipoteca
-13. Servicios
-14. Oportunidades
-15. Chat
-16. Configuración
+La navegación principal se organiza por intención de usuario, no por módulos técnicos.
+
+Sidebar principal:
+1. Inicio
+2. Movimientos
+3. Patrimonio
+4. Decisiones
+
+Utilidades globales:
+- Buscar
+- Preguntar
+
+Configuración aparece separada al pie del sidebar.
+
+### Navegación contextual
+
+Movimientos:
+- Movimientos
+- Análisis
+- Cuentas
+- Banca conectada se abre desde Cuentas.
+- Centros de coste se abre desde Análisis.
+
+Patrimonio:
+- Resumen
+- Inversiones
+- Mercado
+- Histórico
+- Fiscalidad se abre de forma contextual desde Patrimonio/Inversiones.
+
+Decisiones:
+- Para ti
+- Objetivos
+- Simular
+- Mis decisiones
+- Previsión, Contratos y Seguros se presentan como herramientas relacionadas dentro de Para ti.
+
+Configuración:
+- General
+- Datos y fuentes
+- Privacidad y copias
+- Avanzado
+
+Las rutas internas especializadas se conservan para deep links, búsqueda y flujos contextuales, pero no deben añadirse de nuevo al primer nivel salvo una revisión explícita de arquitectura de información.
+
+Regla de densidad:
+- máximo 4 áreas financieras en navegación principal;
+- búsqueda e IA son utilidades globales;
+- configuración y diagnóstico no compiten con el flujo financiero diario;
+- las capacidades avanzadas se descubren de forma progresiva desde su contexto.
 
 ## shadcn/ui
 
