@@ -110,3 +110,15 @@ class CoverageRequirement(Base,TimestampMixin):
     currency:Mapped[str]=mapped_column(String(3),default="EUR")
     notes:Mapped[str|None]=mapped_column(Text,nullable=True)
     enabled:Mapped[bool]=mapped_column(Boolean,default=True)
+
+
+class EntitySnapshot(Base,TimestampMixin):
+    __tablename__="entity_snapshot"
+    __table_args__=(UniqueConstraint("entity_type","entity_id","as_of_date",name="uq_entity_snapshot_day"),)
+    id:Mapped[str]=mapped_column(String(36),primary_key=True,default=uuid_str)
+    entity_type:Mapped[str]=mapped_column(String(60),index=True)
+    entity_id:Mapped[str]=mapped_column(String(36),index=True)
+    as_of_date:Mapped[date]=mapped_column(Date,index=True)
+    values_json:Mapped[str]=mapped_column(Text,default="{}")
+    source:Mapped[str]=mapped_column(String(60),default="manual")
+    confidence:Mapped[Decimal]=mapped_column(Numeric(5,4),default=Decimal("1"))
