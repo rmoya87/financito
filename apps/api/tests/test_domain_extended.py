@@ -87,7 +87,7 @@ def test_spanish_savings_tax_rules_and_commercial_matrix():
     rules=get_savings_rules("ES",2026);assert rules is not None
     integrated=rules.integrate_current_year(Decimal("-1000"),Decimal("10000"))
     assert integrated.taxable_base==Decimal("9000.00")
-    assert rules.tax_for_base(Decimal("60000"))==Decimal("12880.00")
+    assert rules.tax_for_base(Decimal("60000"))==Decimal("12680.00")
     offer=CommercialOffer("insurance","Proveedor","Producto","web oficial","https://example.test/oferta",datetime.now(timezone.utc),date.today(),"EUR",{"annual_premium":"300","coverage":"hogar"})
     matrix=comparison_matrix([offer],["annual_premium","coverage"])
     assert matrix["ready_for_domain_comparison"] is True
