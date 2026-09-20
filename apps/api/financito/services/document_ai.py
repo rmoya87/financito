@@ -524,12 +524,11 @@ SCHEMA JSON:
         user_verified=False,
     )
     session.add(row)
-    _upsert_action(session, document, result)
-    # Identity proposals can link this file to an existing policy/contract.
-    # Re-run evidence synchronization so several files become one product
-    # without turning inferred identity hints into confirmed contractual facts.
+    # Identity proposals must be grouped before creating "Para ti" actions so
+    # several files from one product produce one review item, not one per file.
     from .evidence import synchronize_document_evidence
     synchronize_document_evidence(session, document)
+    _upsert_action(session, document, result)
     session.flush()
     return {"status": "ready", "analysis": result, "message": None}
 
