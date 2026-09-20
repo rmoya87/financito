@@ -16,6 +16,7 @@ from financito.services.transaction_ops import (
     apply_category_semantics,
     apply_rules_to_unverified,
     detect_internal_transfers,
+    pair_internal_transfer_counterpart,
     synchronize_transaction_semantics,
 )
 
@@ -162,3 +163,28 @@ def test_salary_semantics_are_consistent_in_month_end_and_tax():
         tax=tax_estimate(db,"ES",2040)
         assert Decimal(tax["known_information"]["employment_income"])==Decimal("1800.00")
         assert tax["known_information"]["employment_income_source"]=="nóminas categorizadas"
+
+
+def test_manual_internal_transfer_category_pairs_the_opposite_account_movement():
+    with SessionLocal() as db:
+        source=_account(db);target=_account(db)
+        import_csv(db,source.id,_csv("08/01/2040","TRASPASO A AHORRO","-500,00","BANCO"),"transfer-out.csv")
+        import_csv(db,target.id,_csv("08/01/2040","ABONO ENTRE CUENTAS","500,00","BANCO"),"transfer-in.csv")
+        categories=ensure_categories(db)
+        outgoing=db.scalar(select(Transaction).where(Transaction.account_id==source.id))
+        incoming=db.scalar(select(Transaction).where(Transaction.account_id==target.id))
+
+        outgoing.category_id=categories["internal_transfer"].id
+        outgoing.categorization_method="manual"
+        outgoing.user_verified=True
+        assert apply_category_semantics(db,outgoing)=="internal_transfer"
+        assert pair_internal_transfer_counterpart(db,outgoing)==incoming.id
+        db.flush()
+
+        assert outgoing.is_internal_transfer is True
+        assert incoming.is_internal_transfer is True
+        assert incoming.category_id==categories["internal_transfer"].id
+        flow=cash_flow(db,date(2040,1,8),date(2040,1,8))
+        assert flow["income"]==Decimal("0.00")
+        assert flow["expenses"]==Decimal("0.00")
+        assert flow["savings"]==Decimal("0.00")
