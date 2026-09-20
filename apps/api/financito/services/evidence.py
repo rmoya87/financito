@@ -329,6 +329,10 @@ def _ensure_mortgage_projection(
         kind=_interest_type(values["interest_type"].get("value"))
         if kind and mortgage.interest_type!=kind:
             mortgage.interest_type=kind;changed=True
+    if "early_repayment_fee" in values:
+        fee=_decimal(values["early_repayment_fee"].get("value"))
+        if fee is not None and mortgage.early_repayment_fee!=fee:
+            mortgage.early_repayment_fee=fee;changed=True
 
     session.flush()
     if changed:
