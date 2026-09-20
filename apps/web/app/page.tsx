@@ -4,6 +4,7 @@ import Link from 'next/link';
 import {useQuery} from '@tanstack/react-query';
 import {ArrowRight,CalendarDays,CircleDollarSign,Sparkles,WalletCards} from 'lucide-react';
 import {apiGet} from '@/lib/api';
+import {categoryColor} from '@/lib/category-colors';
 import {PageHeader} from '@/components/page-header';
 import {Card} from '@/components/ui/card';
 import {Money} from '@/components/ui/money';
@@ -16,7 +17,7 @@ interface Dashboard{
   expenses:string;
   savings:string;
   savings_rate:string|null;
-  spending_by_category:{category:string;amount:string}[];
+  spending_by_category:{category:string;system_key:string;amount:string}[];
   upcoming_commitments:{id:string;title:string;amount:string;due_date:string}[];
   actions:{id:string;title:string;priority:string;due_date:string|null;status:string}[];
 }
@@ -87,10 +88,18 @@ export default function DashboardPage(){
           <CircleDollarSign size={20} className="text-[var(--brand)]"/>
         </div>
         <div className="mt-4 flex flex-col gap-3">
-          {d.spending_by_category.length?d.spending_by_category.slice(0,7).map(row=><div key={row.category}>
-            <div className="flex justify-between gap-3 text-sm"><span>{row.category}</span><strong><Money value={row.amount}/></strong></div>
-            <div className="mt-1 h-2 rounded-full bg-[var(--surface-2)]"><div className="h-2 rounded-full bg-[var(--brand)]" style={{width:`${Math.max(5,Number(row.amount)/maxCategory*100)}%`}}/></div>
-          </div>):<EmptyState>Importa movimientos para ver la distribución de gasto.</EmptyState>}
+          {d.spending_by_category.length?d.spending_by_category.slice(0,7).map((row,index)=>{
+            const color=categoryColor(row.system_key,index);
+            return <div key={row.system_key}>
+              <div className="flex justify-between gap-3 text-sm">
+                <span className="flex items-center gap-2"><span aria-hidden="true" className="size-2.5 rounded-full" style={{backgroundColor:color}}/>{row.category}</span>
+                <strong><Money value={row.amount}/></strong>
+              </div>
+              <div className="mt-1 h-2 rounded-full bg-[var(--surface-2)]" role="img" aria-label={`${row.category}: ${row.amount} euros`}>
+                <div className="h-2 rounded-full" style={{width:`${Math.max(5,Number(row.amount)/maxCategory*100)}%`,backgroundColor:color}}/>
+              </div>
+            </div>;
+          }):<EmptyState>Importa movimientos para ver la distribución de gasto.</EmptyState>}
         </div>
         <Link href="/analytics/" className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-[var(--brand)]">Ver análisis <ArrowRight size={16}/></Link>
       </Card>
