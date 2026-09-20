@@ -116,3 +116,22 @@ Criterio:
 - privacidad;
 - rendimiento;
 - UX.
+
+
+## Requisitos transversales desde Fase 1
+
+No son una fase posterior:
+- arquitectura estrictamente local;
+- seguridad;
+- backup/restore;
+- provenance;
+- data quality;
+- multi-divisa;
+- audit log;
+- Health Center;
+- performance budgets;
+- contratos frontend/backend generados;
+- design system reutilizable;
+- gestión de modelos locales.
+
+Las features nuevas deben integrarse sin duplicar componentes, engines ni DTO.
