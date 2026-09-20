@@ -188,7 +188,7 @@ export default function WealthPage(){
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-xl bg-[var(--surface-2)] p-4"><div className="text-xs text-[var(--muted)]">Valor vivienda</div><div className="mt-1 text-xl font-bold">{home.data.property?<Money value={home.data.property.value}/>:<span>—</span>}</div></div>
             <div className="rounded-xl bg-[var(--surface-2)] p-4"><div className="text-xs text-[var(--muted)]">Capital pendiente</div><div className="mt-1 text-xl font-bold">{home.data.mortgage?<Money value={home.data.mortgage.remaining_principal}/>:<span>—</span>}</div></div>
-            <div className="rounded-xl bg-[var(--surface-2)] p-4"><div className="text-xs text-[var(--muted)]">Equity estimado</div><div className="mt-1 text-xl font-bold">{home.data.equity!==null?<Money value={home.data.equity}/>:<span>—</span>}</div><div className="mt-1 text-[11px] text-[var(--muted)]">Valor atribuible menos capital pendiente</div></div>
+            <div className="rounded-xl bg-[var(--surface-2)] p-4"><div className="text-xs text-[var(--muted)]">Equity estimado</div><div className="mt-1 text-xl font-bold">{home.data.equity!==null?<Money value={home.data.equity}/>:<span>—</span>}</div><div className="mt-1 text-[11px] text-[var(--muted)]">Valor de la vivienda menos capital pendiente</div></div>
             <div className="rounded-xl bg-[var(--surface-2)] p-4"><div className="text-xs text-[var(--muted)]">LTV actual</div><div className="mt-1 text-xl font-bold">{home.data.ltv===null?'—':Number(home.data.ltv).toLocaleString('es-ES',{maximumFractionDigits:1})+'%'}</div><div className="mt-1 text-[11px] text-[var(--muted)]">Capital pendiente / valor atribuible</div></div>
           </div>
 
