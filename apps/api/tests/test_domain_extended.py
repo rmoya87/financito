@@ -78,3 +78,23 @@ def test_stress_backtest_and_planning_engines():
     assert bt["observations"] > 0
     scenario=amortize_vs_invest(10000,.03,.05,10,.19)
     assert "difference_invest_minus_amortize" in scenario
+
+
+def test_tax_estimate_uses_versioned_spanish_rules():
+    from financito.services.tax import estimate,upsert_profile
+    from financito.db import SessionLocal
+    with SessionLocal() as db:
+        upsert_profile(db,{
+            "jurisdiction":"ES","tax_year":2026,"autonomous_community":"Madrid","filing_status":"individual",
+            "adults":1,"dependent_children":0,"children_under_three":0,"primary_residence":True,
+            "employment_income":Decimal("40000"),"social_security_contributions":Decimal("2500"),
+            "employment_deductible_expenses":Decimal("2000"),"tax_withholdings":Decimal("7000"),
+            "interest_income":Decimal("1000"),"other_general_income":Decimal("0"),
+            "carried_forward_savings_losses":Decimal("0"),"pension_contributions":Decimal("0"),
+        })
+        db.flush()
+        result=estimate(db,"ES",2026)
+        assert result["rules_version"]=="es-irpf-2026-v1"
+        assert result["calculation"]["regional_rules_supported"] is True
+        assert Decimal(result["calculation"]["savings_tax"])==Decimal("190.00")
+        assert result["calculation"]["estimated_total_tax"] is not None
