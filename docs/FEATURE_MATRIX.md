@@ -80,3 +80,31 @@ Leyenda:
 | Search | búsqueda global | F1+ |
 | Privacy | borrado/retención | Core |
 | Performance | presupuestos y profiling | Core |
+
+
+## Categorización, análisis y decisiones
+
+| Área | Función | Fase |
+|---|---|---|
+| Transactions | taxonomía jerárquica | F2 |
+| Transactions | merchant normalization | F2 |
+| Transactions | clasificación automática | F2 |
+| Transactions | confidence + review queue | F2 |
+| Transactions | splits | F2 |
+| Transactions | transferencias internas | F2 |
+| Transactions | reembolsos | F2 |
+| Transactions | anomalías | F2 |
+| Analytics | cash-flow temporal | F2 |
+| Analytics | gastos por categoría/comercio | F2 |
+| Analytics | fijo vs variable | F2 |
+| Analytics | esencial vs discrecional | F2 |
+| Analytics | forecast | F2 |
+| Visualization | gráficas compartidas | F2+ |
+| Decision | DecisionCase | F5.5 |
+| Decision | alternativas e impacto | F5.5 |
+| Decision | sensibilidad | F5.5 |
+| Decision | confidence de evidencia | F5.5 |
+| Governance | AGENTS.md | Core |
+| Governance | workflow estándar | Core |
+| Governance | no-alucinación | Core |
+| Governance | documentación autoritativa | Core |
