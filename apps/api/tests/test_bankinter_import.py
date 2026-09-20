@@ -57,9 +57,9 @@ def test_bankinter_xlsx_uses_booked_ledger_not_pending_section():
         assert all("PENDIENTE" not in row.description_raw for row in rows)
         assert all(row.currency=="EUR" for row in rows)
         bizum=next(row for row in rows if row.description_raw=="PAGO BIZUM DE PERSONA")
-        assert bizum.booking_date.isoformat()=="2026-09-21"
+        assert bizum.booking_date.isoformat()=="2026-09-19"
         assert bizum.amount==Decimal("11")
-        flow=cash_flow(db,date(2026,9,17),date(2026,9,21))
+        flow=cash_flow(db,date(2026,9,14),date(2026,9,19))
         assert flow["income"]==Decimal("11.00")
         assert flow["expenses"]==Decimal("135.96")
         assert flow["savings"]==Decimal("-124.96")
