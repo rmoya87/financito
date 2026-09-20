@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from ..models import ActionItem, Contract, Document, ExtractedFact
 from ..models_analytics import EntityLink
 from ..models_extended import InsurancePolicy
+from .document_ai import latest_analysis
 
 MATERIAL_FACT_TYPES = {"contract_term", "mortgage_term", "linked_product"}
 CONTRACT_DOCUMENT_TYPES = {"mortgage", "insurance", "loan", "contract", "energy", "telecom"}
@@ -348,11 +349,12 @@ def structured_evidence_context(
                     "name": document.file_name,
                     "type": document.document_type,
                     "facts": items,
+                    "ai_analysis": latest_analysis(session,document.id),
                 }
             )
         if used >= max_facts:
             break
     return {
-        "rule": "Solo status=confirmed y user_verified=true es evidencia confirmada para cálculos deterministas. inferred/ambiguous es contexto pendiente de revisión.",
+        "rule": "Solo status=confirmed y user_verified=true es evidencia confirmada para cálculos deterministas. inferred/ambiguous es contexto pendiente de revisión. ai_analysis es interpretación local para explicar y descubrir relaciones; nunca sustituye un hecho contractual confirmado.",
         "documents": out,
     }
