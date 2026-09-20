@@ -161,7 +161,7 @@ def test_casa_endpoint_and_extra_profile_support_mortgage_optimization_fields():
         assert data["property"] is not None
         assert Decimal(data["ltv"])==Decimal("50.00")
         assert data["extra"]["reference_index"]=="Euríbor 12m"
-        assert data["extra"]["apr_rate"]=="0.038"
+        assert Decimal(data["extra"]["apr_rate"])==Decimal("0.038")
 
 
 def test_market_scan_calculates_comparable_payment_without_network(monkeypatch):
@@ -172,7 +172,7 @@ def test_market_scan_calculates_comparable_payment_without_network(monkeypatch):
             currency="EUR",
             interest_type="fixed",
             nominal_rate=Decimal("0.04"),
-            monthly_payment=Decimal("800"),
+            monthly_payment=Decimal("900"),
             remaining_months=180,
             early_repayment_fee=Decimal("100"),
         )
