@@ -1,0 +1,31 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.13' }
+      - run: pip install -e 'apps/api[dev]'
+      - run: FINANCITO_DEV_PLAINTEXT_DB=1 pytest -q
+        working-directory: apps/api
+      - run: python -m compileall financito_api
+        working-directory: apps/api
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      # Sustituir por npm ci en cuanto exista un lockfile generado y revisado.
+      - run: npm install --no-audit --no-fund
+        working-directory: apps/web
+      - run: npm run typecheck
+        working-directory: apps/web
+      - run: npm run build
+        working-directory: apps/web
