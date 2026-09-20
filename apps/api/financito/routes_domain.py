@@ -186,7 +186,22 @@ def ecb_series(flow:str,key:str,start:str|None=None,end:str|None=None,last_n:int
     except Exception as e:raise HTTPException(503,str(e))
 @router.get("/crypto/price")
 def crypto_price(ids:str,vs_currency:str="eur"):
-    try:return {"provider":"CoinGecko","data":CoinGeckoDemoProvider().simple_price([x.strip() for x in ids.split(",") if x.strip()],vs_currency)}
+    try:
+        requested=[x.strip() for x in ids.split(",") if x.strip()]
+        raw=CoinGeckoDemoProvider().simple_price(requested,vs_currency)
+        assets=[]
+        for coin_id in requested:
+            row=raw.get(coin_id) or {}
+            assets.append({
+                "id":coin_id,
+                "currency":vs_currency.upper(),
+                "price":row.get(vs_currency),
+                "market_cap":row.get(f"{vs_currency}_market_cap"),
+                "volume_24h":row.get(f"{vs_currency}_24h_vol"),
+                "change_24h_pct":row.get(f"{vs_currency}_24h_change"),
+                "last_updated_at":row.get("last_updated_at"),
+            })
+        return {"provider":"CoinGecko","assets":assets}
     except Exception as e:raise HTTPException(503,str(e))
 
 @router.post("/news/ingest")
