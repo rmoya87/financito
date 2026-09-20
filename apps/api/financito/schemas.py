@@ -78,6 +78,18 @@ class FactUpdate(BaseModel):
     status: str = Field(pattern="^(confirmed|inferred|not_found|ambiguous|conflicting|superseded)$")
     user_verified: bool = True
 
+class ManualFactCreate(BaseModel):
+    fact_type:str=Field(pattern="^(contract_term|mortgage_term|linked_product|coverage_fact|investment_term)$")
+    key:str=Field(min_length=1,max_length=100)
+    value:str=Field(min_length=1,max_length=4000)
+    unit:str|None=Field(default=None,max_length=40)
+    coverage_type:str|None=Field(default=None,max_length=100)
+    limit_amount:str|None=Field(default=None,max_length=80)
+    deductible:str|None=Field(default=None,max_length=80)
+    conditions:str|None=Field(default=None,max_length=2000)
+    exclusions:str|None=Field(default=None,max_length=2000)
+    source_page:int|None=Field(default=None,ge=1)
+
 
 class ActionUpdate(BaseModel):
     status: str = Field(pattern="^(pending|in_progress|done|dismissed|snoozed)$")
