@@ -19,6 +19,7 @@ from .services.rag import index_document_chunks,search
 from .services.repair import repair,scan
 from .services.tax import estimate
 from .services.wealth import summary as wealth_summary
+from .services.financial_analytics import cash_flow
 from .providers.market import AlphaVantageProvider
 from .providers.news import GdeltNewsProvider
 router=APIRouter(prefix="/api/v1")
@@ -86,10 +87,8 @@ def coverage_compare(p:CoverageCompareRequest,db:Session=Depends(dbdep)):
 @router.post("/stress")
 def stress(p:StressRequest,db:Session=Depends(dbdep)):
     wealth=wealth_summary(db);today=date.today();month_start=today.replace(day=1)
-    from .models import Transaction
-    tx=db.scalars(select(Transaction).where(Transaction.booking_date>=month_start,Transaction.booking_date<=today)).all()
-    income=sum((t.amount for t in tx if t.amount>0 and not t.is_internal_transfer),Decimal("0"));expenses=sum((-t.amount for t in tx if t.amount<0 and not t.is_internal_transfer),Decimal("0"))
-    return run_stress(Decimal(wealth["accounts"]),income,expenses,Decimal(wealth["investments"]),p.income_reduction_pct,p.extraordinary_expense,p.portfolio_drop_pct,p.months)
+    flow=cash_flow(db,month_start,today)
+    return run_stress(Decimal(wealth["accounts"]),flow["income"],flow["expenses"],Decimal(wealth["investments"]),p.income_reduction_pct,p.extraordinary_expense,p.portfolio_drop_pct,p.months)
 
 @router.post("/rag/search")
 def rag(p:RagSearchRequest,db:Session=Depends(dbdep)):return {"results":search(db,p.query,p.limit)}
