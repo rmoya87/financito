@@ -20,6 +20,7 @@ from .schemas import AccountCreate, AccountOut, ActionUpdate, BudgetCreate, Comm
 from .security import LocalSecurityMiddleware, create_session
 from .routes_extended import router as extended_router
 from .routes_analytics import router as analytics_router
+from .routes_transactions import router as transactions_router
 from .services.vault_watcher import VaultWatcher
 from .services.categorization import ensure_categories
 from .services.documents import index_document
@@ -45,6 +46,7 @@ app = FastAPI(title="Financito Local API", version="0.3.0", docs_url="/api/docs"
 app.add_middleware(LocalSecurityMiddleware)
 app.include_router(extended_router)
 app.include_router(analytics_router)
+app.include_router(transactions_router)
 
 
 def get_db():
