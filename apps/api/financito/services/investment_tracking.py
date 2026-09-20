@@ -82,6 +82,14 @@ def security_summary(session: Session, security: Security) -> dict:
 
     tracking = session.scalar(select(TrackedAsset).where(TrackedAsset.security_id == security.id))
     provider_asset_id = tracking.provider_asset_id if tracking else None
+    price_age_minutes = None
+    price_stale = True
+    if latest is not None:
+        stamp = latest.fetched_at or latest.timestamp
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=timezone.utc)
+        price_age_minutes = max(0, int((datetime.now(timezone.utc) - stamp).total_seconds() // 60))
+        price_stale = price_age_minutes > 15
     owned = quantity > 0
     state = "owned" if owned else (tracking.tracking_state if tracking else "untracked")
 
@@ -111,6 +119,8 @@ def security_summary(session: Session, security: Security) -> dict:
         "price_as_of": None if latest is None else latest.timestamp.isoformat(),
         "price_fetched_at": None if latest is None else latest.fetched_at.isoformat(),
         "price_delayed": None if latest is None else latest.is_delayed,
+        "price_age_minutes": price_age_minutes,
+        "price_stale": price_stale,
     }
 
 
