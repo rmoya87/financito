@@ -28,6 +28,8 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 - presupuestos y compromisos.
 - análisis por categoría/comercio, fijo-variable, esencial-discrecional y series mensuales.
 - forecast con baseline comparable, accuracy histórica y Calendar.
+- previsión automática de cierre de mes con gasto, ahorro, saldo total y saldo estimado por cuenta, sin repartir compromisos sin evidencia.
+- gráficas multi-serie con colores semánticos distintos y navegación activa verde con texto blanco para contraste.
 - Laboratorio de decisiones alimentado por perfiles reales guardados, sin defaults financieros de ejemplo.
 - stress testing y cash runway.
 
