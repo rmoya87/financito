@@ -6,7 +6,7 @@ from decimal import Decimal
 import json
 from pathlib import Path
 
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import and_, func, select
@@ -76,8 +76,8 @@ def get_db():
 
 
 @app.get("/api/v1/session")
-def session(response: Response):
-    return create_session(response)
+def session(request: Request, response: Response):
+    return create_session(response, request.cookies.get("financito_session"))
 
 
 @app.get("/api/v1/health")
