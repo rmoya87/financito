@@ -1,68 +1,42 @@
 # Roadmap
 
-La mayor parte del runtime v1 está implementada. Este roadmap enumera trabajo restante; no repite módulos ya finalizados.
+Fecha de corte: **2026-09-20**.
 
-## Cerrado en v1
-- runtime local y seguridad;
-- SQLCipher/Keychain;
-- WebApp y API;
-- Vault, OCR, clasificación, RAG híbrido y chat local;
-- movimientos/imports/categorización/analytics/forecast;
-- Open Banking persistente;
-- patrimonio, portfolio, FIFO, mercado y riesgo;
-- contratos, seguros, hipoteca y optimización;
-- Decision Cases/Outcomes;
-- stress, cost centers, Action/Calendar/Repair;
-- backup/restore, export y privacidad.
+La lista que antes quedaba como “evolutivos/dependencias externas” se ha cerrado como gap de producto. A partir de ahora el roadmap solo debe contener extensiones de cobertura o activaciones que dependen de terceros.
 
-## Próxima prioridad: calidad y distribución
+## Cerrado en el runtime
 
-### Testing de experiencia
-- Playwright: ampliar desde los journeys core ya automatizados a importación, Vault/cita, banking mock, decisión y restore;
-- ampliar tests de componentes UI existentes;
-- mantener axe/accessibility en CI y extender cobertura a formularios complejos;
-- datasets RAG de answerable/unanswerable/contradicción.
+- normativa fiscal versionada por jurisdicción/ejercicio, con primer ruleset verificable **ES 2025 y ES 2026**, fuente legal y fecha de verificación;
+- integración/compensación corriente de la base del ahorro y escala progresiva; los datos fiscales que Financito no conoce siguen marcados como ausentes;
+- extracción FEIN/FIAE ampliada con tipo de documento, capital, cuota, fijo/variable/mixto, índice, diferencial, frecuencia de revisión, tramo fijo, suelo/techo, comisiones de apertura/reembolso/subrogación/novación, vinculaciones y fórmula temporal de reembolso cuando aparece en el texto;
+- motor hipotecario variable/mixto basado en curva explícita de índice, con revisiones contractuales, diferencial, tramo fijo, suelo/techo y bloqueo si falta una revisión;
+- contrato de provider comercial externo y matriz normalizada de evidencia/frescura/comparabilidad sin tratar condiciones desconocidas como cero;
+- Playwright E2E en CI para onboarding, navegación, importación, Vault/citas, banking mock, decisiones y backup/restore;
+- axe WCAG 2.0/2.1/2.2 A+AA sobre rutas principales, teclado, skip link y reflow a 320 px;
+- auditoría interna WCAG 2.2 AA documentada;
+- creación de `Financito.app`, firma Developer ID, hardened runtime, notarización con `notarytool`, stapling y verificación Gatekeeper automatizados.
 
-### Distribución macOS
-- bundle de frontend/backend/runtime;
-- detección/instalación guiada de Tesseract/Ollama cuando proceda;
-- firma Developer ID;
-- notarización;
-- updater seguro;
-- smoke tests sobre artefacto firmado.
+## Dependencias externas de activación
 
-Estas tareas requieren identidad/certificados Apple y no se pueden completar solo con código genérico.
+### Apple
+El código de distribución está terminado, pero un artefacto real solo puede firmarse/notarizarse al configurar un certificado Developer ID y credenciales de Apple. Véase [MACOS_DISTRIBUTION.md](MACOS_DISTRIBUTION.md).
 
-## Fiscalidad
-- motor normativo versionado por jurisdicción y ejercicio;
-- reglas de adquisición/transmisión y compensación verificadas;
-- trazabilidad de fuente legal/fecha;
-- nunca mezclar una estimación parametrizada con una declaración fiscal oficial.
+### Fuentes comerciales
+Financito ya puede normalizar y validar ofertas externas. Cada adapter en vivo requiere una fuente concreta con acceso permitido, condiciones de uso compatibles y una ruta gratuita/propia. No se añadirá scraping frágil ni un proveedor de pago obligatorio solo para “marcar” el punto como terminado.
 
-## Contratos/hipoteca avanzados
-- parser específico FEIN/FIAE;
-- formulas de comisión estructuradas;
-- tipos variables/mixtos con revisiones;
-- novación/subrogación;
-- vinculaciones derivadas automáticamente de evidencia confirmada.
+### Fiscalidad adicional
+Añadir otro país o ejercicio consiste en incorporar un ruleset versionado, fuentes oficiales y tests. No requiere cambiar la arquitectura del motor.
 
-## Mercado
-- más cobertura internacional de fundamentales;
-- corporate actions/dividendos;
-- benchmark/performance TWR/MWR;
-- importer de brokers;
-- news entity-linking e impacto con evaluación.
+## Evolutivos reales posteriores
 
-## Producto
-- auditoría WCAG AA completa de todas las rutas (las rutas core ya pasan axe en CI);
-- ampliar Developer Mode/freshness a latencias/cache hits por request;
-- extender as-of desde patrimonio/mercado a contratos, deuda y facts versionados;
-- perfiles/reglas multiusuario si se decide ampliar el modelo local single-user.
+- más jurisdicciones/ejercicios fiscales;
+- adapters comerciales concretos a medida que exista una fuente pública/autorizada estable;
+- importadores específicos de más brokers;
+- más corporate actions y fundamentales internacionales;
+- updater firmado de macOS;
+- pruebas con matriz física de VoiceOver/navegadores como validación complementaria;
+- reconstrucción “as-of” universal de todas las entidades.
 
 ## Regla permanente
-Cualquier nueva función debe:
-1. mantener privacidad local;
-2. usar motor determinista para cifras;
-3. conservar provenance/frescura;
-4. no introducir proveedor de pago obligatorio;
-5. añadir test y actualizar documentación en el mismo cambio.
+
+Cualquier nueva función debe mantener privacidad local, cálculos deterministas, provenance/frescura, ausencia de dependencia de pago obligatoria, tests y documentación en el mismo cambio.
