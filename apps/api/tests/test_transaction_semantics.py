@@ -2,6 +2,8 @@ from datetime import date
 from decimal import Decimal
 from uuid import uuid4
 
+from sqlalchemy import select
+
 from financito.db import SessionLocal
 from financito.models import Account, Transaction
 from financito.models_analytics import TransactionRule
@@ -35,7 +37,7 @@ def test_refund_category_reduces_expense_instead_of_counting_as_income():
         import_csv(db,account.id,_csv("01/01/2040","ABONO TEST","40,00","OTRO TEST"),"refund.csv")
         categories=ensure_categories(db)
         refund=db.scalar(
-            __import__("sqlalchemy").select(Transaction).where(
+            select(Transaction).where(
                 Transaction.account_id==account.id,
                 Transaction.amount>0,
             )
@@ -81,7 +83,7 @@ def test_rule_targeting_internal_transfer_uses_special_accounting_semantics():
         db.flush()
         assert apply_rules_to_unverified(db)>=1
         tx=db.scalar(
-            __import__("sqlalchemy").select(Transaction).where(
+            select(Transaction).where(
                 Transaction.account_id==account.id,
                 Transaction.booking_date==date(2040,1,3),
             )
