@@ -13,6 +13,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: '3.13' }
       - run: pip install -e 'apps/api[dev]'
+      - run: PYTHONPATH=apps/api FINANCITO_ALLOW_PLAINTEXT_SQLITE=1 FINANCITO_DATA_DIR=/tmp/financito-ci FINANCITO_VAULT_DIR=/tmp/financito-ci/vault python -m compileall -q apps/api/financito
       - run: PYTHONPATH=apps/api FINANCITO_ALLOW_PLAINTEXT_SQLITE=1 FINANCITO_DATA_DIR=/tmp/financito-ci FINANCITO_VAULT_DIR=/tmp/financito-ci/vault pytest apps/api/tests
   frontend:
     runs-on: ubuntu-latest
