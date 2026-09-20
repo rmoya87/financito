@@ -194,3 +194,18 @@ Benchmarks/regression tests locales para:
 - endpoints calientes.
 
 No convertir thresholds de desarrollo en tests frágiles dependientes de hardware; medir tendencias/regresiones.
+
+
+## Evidencia contractual
+
+Tests obligatorios:
+- condiciones particulares prevalecen sobre generales;
+- anexo posterior sustituye fact anterior;
+- penalización ausente no se convierte en cero;
+- fórmula porcentual se evalúa correctamente;
+- OCR de baja confianza bloquea cálculo material;
+- documentos contradictorios generan conflicto;
+- cálculo conserva source document/page;
+- cambio de vigencia selecciona la cláusula correcta;
+- cobertura no equivalente bloquea comparación simplificada;
+- calculation trace reproduce el resultado.
