@@ -241,3 +241,32 @@ Antes de crecer la UI:
 - chart tokens.
 
 Todo debe documentarse en Storybook o catálogo equivalente cuando se implemente.
+
+
+## Arquitectura de componentes
+
+La definición autoritativa de composición y reutilización está en:
+- FRONTEND_ARCHITECTURE.md
+- COMPONENT_CATALOG.md
+
+Regla:
+shadcn/ui → shared components → feature components.
+
+No duplicar componentes por feature si el patrón ya existe.
+
+## Rendimiento UI
+
+- static build en producción;
+- code splitting por ruta;
+- tablas grandes virtualizadas;
+- paginación cursor;
+- skeleton específico;
+- cada widget falla de forma aislada;
+- gráficas lazy;
+- TanStack Query para toda comunicación con API;
+- Zustand solo para estado visual efímero;
+- sin cálculos financieros en React.
+
+## Seguridad UI
+
+La WebApp no contiene secretos ni llama directamente a providers que requieran credenciales. No almacena datos financieros persistentes en browser storage. Assets y fuentes son locales.
