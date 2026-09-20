@@ -17,6 +17,7 @@ from financito.services.transaction_ops import (
     apply_rules_to_unverified,
     detect_internal_transfers,
     pair_internal_transfer_counterpart,
+    set_category_for_same_concept,
     synchronize_transaction_semantics,
 )
 
@@ -188,3 +189,36 @@ def test_manual_internal_transfer_category_pairs_the_opposite_account_movement()
         assert flow["income"]==Decimal("0.00")
         assert flow["expenses"]==Decimal("0.00")
         assert flow["savings"]==Decimal("0.00")
+
+
+def test_category_change_applies_to_same_concept_past_and_future():
+    with SessionLocal() as db:
+        account=_account(db)
+        import_csv(db,account.id,_csv("09/01/2040","CUOTA CLUB MISMO CONCEPTO","-30,00","CLUB A"),"concept-a.csv")
+        import_csv(db,account.id,_csv("10/01/2040","CUOTA CLUB MISMO CONCEPTO","-35,00","CLUB B"),"concept-b.csv")
+        categories=ensure_categories(db)
+        rows=db.scalars(select(Transaction).where(
+            Transaction.account_id==account.id,
+            Transaction.description_normalized=="cuota club mismo concepto",
+        ).order_by(Transaction.booking_date)).all()
+        assert len(rows)==2
+
+        changed=set_category_for_same_concept(db,rows[0],categories["sports"].id)
+        db.flush()
+        assert changed>=1
+        assert all(row.category_id==categories["sports"].id for row in rows)
+        assert all(row.user_verified for row in rows)
+        rule=db.scalar(select(TransactionRule).where(
+            TransactionRule.matcher_type=="description_exact",
+            TransactionRule.matcher_value=="cuota club mismo concepto",
+        ))
+        assert rule is not None
+        assert rule.category_id==categories["sports"].id
+
+        import_csv(db,account.id,_csv("11/01/2040","CUOTA CLUB MISMO CONCEPTO","-40,00","CLUB C"),"concept-future.csv")
+        future=db.scalar(select(Transaction).where(
+            Transaction.account_id==account.id,
+            Transaction.booking_date==date(2040,1,11),
+        ))
+        assert future.category_id==categories["sports"].id
+        assert future.categorization_method=="rule"
