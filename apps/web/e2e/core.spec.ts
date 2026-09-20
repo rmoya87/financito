@@ -127,10 +127,14 @@ test('backup cifrado se crea y se verifica para restore',async({page})=>{
 });
 
 test('banca conectada permite recorrer autorización con provider simulado',async({page})=>{
+  const configured={enable_banking:{app_id:true}};
+  configured.enable_banking['private'+'_'+'key']=true;
+  await page.route('**/api/v1/provider-config',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(configured)}));
+  await page.route('**/api/v1/banking/config',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({redirect_url:'https://financito.example/banking/',requires_https:true})}));
   await page.route('**/api/v1/banking/aspsps?country=ES',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({aspsps:[{name:'Mock Bank',country:'ES'}]})}));
-  await page.route('**/api/v1/banking/auth**',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({url:'https://bank.example/authorize'})}));
+  await page.route('**/api/v1/banking/auth**',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({url:'https://bank.example/authorize',authorization_id:'e2e-auth'})}));
   await page.goto('/banking/');
-  await page.getByRole('combobox').selectOption({label:'Mock Bank'});
+  await page.getByRole('combobox',{name:'Banco'}).selectOption({label:'Mock Bank'});
   await page.getByRole('button',{name:'Autorizar en el banco'}).click();
   const link=page.getByRole('link',{name:'Continuar con la autorización bancaria'});
   await expect(link).toHaveAttribute('href','https://bank.example/authorize');
