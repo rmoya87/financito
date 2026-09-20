@@ -209,3 +209,44 @@ Tests obligatorios:
 - cambio de vigencia selecciona la cláusula correcta;
 - cobertura no equivalente bloquea comparación simplificada;
 - calculation trace reproduce el resultado.
+
+
+## Forecasting
+
+Tests obligatorios:
+- mismo periodo del año anterior se alinea por fechas;
+- año bisiesto y rangos que cruzan año;
+- gasto extraordinario no se repite automáticamente;
+- compromiso conocido sustituye estimación residual;
+- recurrencias no se duplican con commitments;
+- forecast por categoría suma forecast total;
+- ahorro se calcula desde ingresos/gastos/componentes definidos;
+- rango procede de error histórico;
+- accuracy se recalcula con observaciones reales;
+- no se usa futuro para estimar pasado en backtesting.
+
+Métricas:
+- MAE;
+- WAPE;
+- bias;
+- interval coverage.
+
+## Stress tests
+
+Validar shocks, escenarios combinados, cash runway, liquidez mínima y objetivos afectados.
+
+## Coverage
+
+Validar duplicidades, pérdida de cobertura, franquicias/límites y evidencia documental.
+
+## Financial Graph
+
+Validar relaciones y ausencia de links huérfanos.
+
+## Repair
+
+Simular job interrumpido, reconstrucción FTS/vector, hash inconsistente y derivados huérfanos.
+
+## Model Evaluation
+
+Un modelo candidato no pasa gate si empeora métricas críticas fuera de tolerancia configurada.
