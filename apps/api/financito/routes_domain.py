@@ -16,7 +16,7 @@ from .providers.fundamentals import SecFundamentalsProvider
 from .providers.macro import EcbMacroProvider
 from .providers.news import GdeltNewsProvider
 from .services.market_data import history as market_history,portfolio_exposure,refresh_history,refresh_security,security_risk
-from .services.news_analysis import analyze_all,analyze_item,local_news
+from .services.news_analysis import analyze_all,analyze_item,local_news,portfolio_news_brief
 from .services.portfolio_analysis import portfolio_fit,portfolio_performance
 from .services.decision_context import live_decision_context
 
@@ -287,6 +287,13 @@ def coverage_gaps(db:Session=Depends(dbdep)):
             covered.append({"requirement_id":req.id,"coverage_type":req.coverage_type,"insurance_type":req.insurance_type,"matching_coverages":len(eligible),"best_verified_limit":None if not limits else str(max(limits))})
     return {"gaps":gaps,"covered":covered,"requirements":len(requirements)}
 
+
+@router.post("/news/research")
+def news_research(q:str,db:Session=Depends(dbdep)):
+    if len(q.strip())<2:raise HTTPException(400,"Escribe al menos dos caracteres")
+    ingest=ingest_news(q,db)
+    analyze_all(db,500);db.commit()
+    return {"query":q,"ingest":ingest,"brief":portfolio_news_brief(db,q)}
 
 @router.get("/news/local")
 def news_local(limit:int=100,db:Session=Depends(dbdep)):
