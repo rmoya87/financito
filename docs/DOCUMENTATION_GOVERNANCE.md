@@ -26,6 +26,10 @@ Evitar documentación obsoleta, duplicada o contradictoria.
 - rendimiento → PERFORMANCE
 - proceso → DEVELOPMENT_WORKFLOW
 - decisiones estructurales → ADR
+- temporalidad → TEMPORAL_MODEL
+- lotes/fiscalidad inversión → INVESTMENT_LOTS_AND_TAX
+- acciones → ACTION_CENTER
+- runtime local → LOCAL_RUNTIME_AND_LAUNCHER
 - terminología → GLOSSARY
 - reglas de agentes → AGENTS.md + AI_ENGINEERING_RULES
 - proceso de desarrollo → DEVELOPMENT_WORKFLOW
