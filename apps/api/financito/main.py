@@ -30,7 +30,7 @@ from .routes_privacy import router as privacy_router
 from .routes_observability import router as observability_router
 from .services.vault_watcher import VaultWatcher
 from .services.categorization import ensure_categories,propagate_verified_merchant
-from .services.transaction_ops import apply_category_semantics,detect_internal_transfers,detect_refunds,synchronize_transaction_semantics
+from .services.transaction_ops import apply_category_semantics,detect_internal_transfers,detect_refunds,pair_internal_transfer_counterpart,synchronize_transaction_semantics
 from .services.documents import index_document,reprocess_document,safe_path,store_uploaded_document
 from .services.evidence import review_summary,synchronize_all_document_evidence,synchronize_document_evidence
 from .services.document_ai import analyze_document_by_id,domain_insights,latest_analysis
@@ -134,7 +134,9 @@ def update_category(transaction_id:str,payload:TransactionCategoryUpdate,db:Sess
     if not tx: raise HTTPException(404,"Transaction not found")
     if not db.get(Category,payload.category_id): raise HTTPException(404,"Category not found")
     previous=tx.category_id; tx.category_id=payload.category_id; tx.categorization_method="manual"; tx.categorization_confidence=Decimal("1"); tx.user_verified=True
-    apply_category_semantics(db,tx)
+    key=apply_category_semantics(db,tx)
+    if key=="internal_transfer":
+        pair_internal_transfer_counterpart(db,tx)
     db.add(CategorizationAudit(transaction_id=tx.id,previous_category_id=previous,new_category_id=payload.category_id,method="manual",confidence=Decimal("1"),changed_by="user"))
     propagate_verified_merchant(db,tx)
     db.commit(); db.refresh(tx); return tx
