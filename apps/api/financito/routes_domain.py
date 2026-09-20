@@ -1,5 +1,5 @@
 from __future__ import annotations
-from datetime import date
+from datetime import date,timedelta
 from decimal import Decimal
 import json
 from pydantic import BaseModel,Field
@@ -8,7 +8,7 @@ from sqlalchemy import delete,select
 from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .domain.risk import risk_metrics
-from .models import Commitment,Contract,DecisionCase,Transaction
+from .models import Category,Commitment,Contract,DecisionCase,Transaction
 from .models_extended import Asset,CostCenter,CostCenterLink,CoverageFact,DecisionAlternative,DecisionOutcome,InsurancePolicy,Liability,NewsItem
 from .models_analytics import Benefit,CoverageRequirement,LinkedProduct,ModelEvaluationRun
 from .providers.crypto import CoinGeckoDemoProvider
@@ -19,6 +19,7 @@ from .services.market_data import history as market_history,portfolio_exposure,r
 from .services.news_analysis import analyze_all,analyze_item,local_news,portfolio_news_brief
 from .services.portfolio_analysis import portfolio_fit,portfolio_performance
 from .services.decision_context import live_decision_context
+from .services.financial_analytics import category_spending
 
 router=APIRouter(prefix="/api/v1")
 
@@ -61,22 +62,48 @@ class RiskIn(BaseModel):
 def cost_centers(db:Session=Depends(dbdep)):
     centers=db.scalars(select(CostCenter).order_by(CostCenter.name)).all()
     links=db.scalars(select(CostCenterLink)).all()
-    return [{"id":c.id,"name":c.name,"type":c.center_type,"parent_id":c.parent_id,"links":[{"entity_type":l.entity_type,"entity_id":l.entity_id,"allocation_percentage":str(l.allocation_percentage)} for l in links if l.cost_center_id==c.id]} for c in centers]
+    return [{
+        "id":center.id,
+        "name":center.name,
+        "type":center.center_type,
+        "parent_id":center.parent_id,
+        "links":[{
+            "id":link.id,
+            "entity_type":link.entity_type,
+            "entity_id":link.entity_id,
+            "allocation_percentage":str(link.allocation_percentage),
+        } for link in links if link.cost_center_id==center.id],
+    } for center in centers]
+
 @router.post("/cost-centers")
 def add_center(p:CostCenterIn,db:Session=Depends(dbdep)):
-    r=CostCenter(name=p.name,center_type=p.center_type,parent_id=p.parent_id,metadata_json=json.dumps(p.metadata));db.add(r);db.commit();return {"id":r.id}
+    r=CostCenter(name=p.name,center_type=p.center_type,parent_id=p.parent_id,metadata_json=json.dumps(p.metadata))
+    db.add(r);db.commit()
+    return {"id":r.id}
+
 @router.get("/cost-centers/{center_id}/summary")
 def cost_center_summary(center_id:str,db:Session=Depends(dbdep)):
     center=db.get(CostCenter,center_id)
     if not center:raise HTTPException(404,"Cost center not found")
     links=db.scalars(select(CostCenterLink).where(CostCenterLink.cost_center_id==center_id)).all()
+    period_end=date.today()
+    period_start=period_end-timedelta(days=365)
+    spending={row["category_id"]:row["amount"] for row in category_spending(db,period_start,period_end)}
     observed=Decimal("0");annual=Decimal("0");reference_assets=Decimal("0");reference_debt=Decimal("0");unpriced=[]
     for link in links:
         factor=link.allocation_percentage/Decimal("100")
-        if link.entity_type=="transaction":
+        if link.entity_type=="category":
+            row=db.get(Category,link.entity_id)
+            if row:
+                observed+=spending.get(row.id,Decimal("0"))*factor
+            else:
+                unpriced.append({"type":link.entity_type,"id":link.entity_id})
+        elif link.entity_type=="transaction":
             row=db.get(Transaction,link.entity_id)
-            if row:observed+=(-row.amount)*factor if row.amount<0 else row.amount*Decimal("-1")*factor
-            else:unpriced.append({"type":link.entity_type,"id":link.entity_id})
+            if row and period_start<=row.booking_date<=period_end and row.amount<0 and not row.is_internal_transfer:
+                observed+=(-row.amount)*factor
+            elif row is None:
+                unpriced.append({"type":link.entity_type,"id":link.entity_id})
         elif link.entity_type=="contract":
             row=db.get(Contract,link.entity_id)
             if row and row.annual_cost is not None:annual+=row.annual_cost*factor
@@ -97,13 +124,46 @@ def cost_center_summary(center_id:str,db:Session=Depends(dbdep)):
             row=db.get(Liability,link.entity_id)
             if row:reference_debt+=row.outstanding_amount*factor
             else:unpriced.append({"type":link.entity_type,"id":link.entity_id})
-        else:unpriced.append({"type":link.entity_type,"id":link.entity_id})
-    return {"id":center.id,"name":center.name,"observed_linked_spend":str(observed),"annual_linked_commitments":str(annual),"reference_asset_value":str(reference_assets),"reference_debt":str(reference_debt),"unpriced_links":unpriced}
+        else:
+            unpriced.append({"type":link.entity_type,"id":link.entity_id})
+    return {
+        "id":center.id,
+        "name":center.name,
+        "period_start":period_start,
+        "period_end":period_end,
+        "observed_linked_spend":str(observed),
+        "monthly_average_spend":str((observed/Decimal("12")).quantize(Decimal("0.01"))),
+        "annual_linked_commitments":str(annual),
+        "reference_asset_value":str(reference_assets),
+        "reference_debt":str(reference_debt),
+        "unpriced_links":unpriced,
+    }
 
 @router.post("/cost-center-links")
 def add_center_link(p:CostLinkIn,db:Session=Depends(dbdep)):
     if not db.get(CostCenter,p.cost_center_id):raise HTTPException(404,"Cost center not found")
-    r=CostCenterLink(**p.model_dump());db.add(r);db.commit();return {"id":r.id}
+    if p.allocation_percentage<=0 or p.allocation_percentage>100:
+        raise HTTPException(400,"La asignación debe estar entre 0 y 100%")
+    supported={"category","transaction","contract","insurance_policy","commitment","asset","liability"}
+    if p.entity_type not in supported:raise HTTPException(400,"Tipo de vínculo no soportado")
+    existing=db.scalar(select(CostCenterLink).where(
+        CostCenterLink.cost_center_id==p.cost_center_id,
+        CostCenterLink.entity_type==p.entity_type,
+        CostCenterLink.entity_id==p.entity_id,
+    ))
+    if existing:
+        existing.allocation_percentage=p.allocation_percentage
+        db.commit()
+        return {"id":existing.id,"updated":True}
+    r=CostCenterLink(**p.model_dump());db.add(r);db.commit()
+    return {"id":r.id,"updated":False}
+
+@router.delete("/cost-center-links/{link_id}")
+def delete_center_link(link_id:str,db:Session=Depends(dbdep)):
+    row=db.get(CostCenterLink,link_id)
+    if not row:raise HTTPException(404,"Cost center link not found")
+    db.delete(row);db.commit()
+    return {"deleted":link_id}
 
 @router.get("/benefits")
 def benefits(db:Session=Depends(dbdep)):
