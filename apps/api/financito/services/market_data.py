@@ -9,13 +9,34 @@ from sqlalchemy.orm import Session
 
 from ..domain.risk import risk_metrics
 from ..models import Portfolio,Position,Security
-from ..models_extended import MarketPrice
+from ..models_extended import MarketPrice,TrackedAsset
 from ..providers.market import AlphaVantageProvider
+from ..providers.crypto import CoinGeckoDemoProvider
 
 def refresh_security(session:Session,security_id:str,provider:AlphaVantageProvider|None=None)->dict:
     security=session.get(Security,security_id)
     if not security:raise ValueError("Security not found")
     if not security.symbol:raise ValueError("Security has no market symbol")
+
+    if security.asset_class=="crypto":
+        tracking=session.scalar(select(TrackedAsset).where(TrackedAsset.security_id==security.id))
+        coin_id=(tracking.provider_asset_id if tracking and tracking.provider_asset_id else security.symbol).strip().lower()
+        data=CoinGeckoDemoProvider().simple_price([coin_id],security.currency.lower())
+        row=data.get(coin_id)
+        if not row or security.currency.lower() not in row:
+            raise ValueError("Crypto price unavailable")
+        price=Decimal(str(row[security.currency.lower()]))
+        updated=row.get("last_updated_at")
+        try:stamp=datetime.fromtimestamp(int(updated),timezone.utc) if updated else datetime.now(timezone.utc)
+        except Exception:stamp=datetime.now(timezone.utc)
+        for pos in session.scalars(select(Position).where(Position.security_id==security.id)).all():
+            pos.current_price=price
+        existing=session.scalar(select(MarketPrice).where(MarketPrice.security_id==security.id,MarketPrice.timestamp==stamp,MarketPrice.provider=="coingecko"))
+        if existing:existing.close=price;existing.fetched_at=datetime.now(timezone.utc)
+        else:session.add(MarketPrice(security_id=security.id,timestamp=stamp,close=price,currency=security.currency,provider="coingecko",is_delayed=False))
+        session.flush()
+        return {"security_id":security.id,"symbol":security.symbol,"price":str(price),"provider":"CoinGecko","as_of":stamp.isoformat(),"delayed":False}
+
     provider=provider or AlphaVantageProvider()
     quote=provider.quote(security.symbol)
     price=Decimal(quote["price"])
@@ -34,6 +55,26 @@ def refresh_history(session:Session,security_id:str,provider:AlphaVantageProvide
     security=session.get(Security,security_id)
     if not security:raise ValueError("Security not found")
     if not security.symbol:raise ValueError("Security has no market symbol")
+
+    if security.asset_class=="crypto":
+        tracking=session.scalar(select(TrackedAsset).where(TrackedAsset.security_id==security.id))
+        coin_id=(tracking.provider_asset_id if tracking and tracking.provider_asset_id else security.symbol).strip().lower()
+        chart=CoinGeckoDemoProvider().market_chart(coin_id,security.currency.lower(),365)
+        rows=chart.get("prices",[]);inserted=updated=0
+        latest_price=None
+        latest_stamp=None
+        for raw in rows:
+            if len(raw)<2:continue
+            stamp=datetime.fromtimestamp(float(raw[0])/1000,timezone.utc)
+            price=Decimal(str(raw[1]))
+            existing=session.scalar(select(MarketPrice).where(MarketPrice.security_id==security.id,MarketPrice.timestamp==stamp,MarketPrice.provider=="coingecko"))
+            if existing:existing.close=price;existing.fetched_at=datetime.now(timezone.utc);updated+=1
+            else:session.add(MarketPrice(security_id=security.id,timestamp=stamp,close=price,currency=security.currency,provider="coingecko",is_delayed=False));inserted+=1
+            if latest_stamp is None or stamp>latest_stamp:latest_stamp=stamp;latest_price=price
+        if latest_price is not None:
+            for pos in session.scalars(select(Position).where(Position.security_id==security.id)).all():pos.current_price=latest_price
+        session.flush();return {"security_id":security.id,"inserted":inserted,"updated":updated,"provider":"coingecko"}
+
     provider=provider or AlphaVantageProvider()
     rows=provider.daily(security.symbol);inserted=updated=0
     for row in rows:
