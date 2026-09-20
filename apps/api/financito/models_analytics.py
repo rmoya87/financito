@@ -122,3 +122,16 @@ class EntitySnapshot(Base,TimestampMixin):
     values_json:Mapped[str]=mapped_column(Text,default="{}")
     source:Mapped[str]=mapped_column(String(60),default="manual")
     confidence:Mapped[Decimal]=mapped_column(Numeric(5,4),default=Decimal("1"))
+
+
+class NewsAnalysis(Base,TimestampMixin):
+    __tablename__="news_analysis"
+    id:Mapped[str]=mapped_column(String(36),primary_key=True,default=uuid_str)
+    news_item_id:Mapped[str]=mapped_column(ForeignKey("news_item.id",ondelete="CASCADE"),index=True)
+    security_id:Mapped[str|None]=mapped_column(ForeignKey("security.id",ondelete="SET NULL"),nullable=True,index=True)
+    event_type:Mapped[str]=mapped_column(String(60),default="general")
+    sentiment:Mapped[Decimal]=mapped_column(Numeric(6,5),default=Decimal("0"))
+    impact_level:Mapped[str]=mapped_column(String(20),default="low")
+    confidence:Mapped[Decimal]=mapped_column(Numeric(5,4),default=Decimal("0.5"))
+    method_version:Mapped[str]=mapped_column(String(40),default="heuristic-v1")
+    rationale:Mapped[str]=mapped_column(Text,default="")
