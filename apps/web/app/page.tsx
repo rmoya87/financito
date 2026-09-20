@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import {useQuery} from '@tanstack/react-query';
+import {useState} from 'react';
 import {ArrowRight,CalendarDays,CircleDollarSign,FileText,Sparkles,WalletCards} from 'lucide-react';
 import {apiGet} from '@/lib/api';
 import {categoryColor} from '@/lib/category-colors';
@@ -24,11 +25,40 @@ interface Dashboard{
 interface Wealth{net_worth:string}
 
 function actionDestination(action:Dashboard['actions'][number]){
-  if(action.related_entity_type==='document'&&action.related_entity_id)return {href:'/documents/?document='+encodeURIComponent(action.related_entity_id),label:'Revisar y confirmar los datos extraídos'};
+  if(action.related_entity_type==='document'&&action.related_entity_id){
+    const params=new URLSearchParams({document:action.related_entity_id,action:action.id});
+    const label=action.action_type==='review_document_ai_insights'
+      ?'Leer la conclusión y marcarla como revisada'
+      :'Confirmar en bloque los datos coherentes o revisar los conflictos';
+    return {href:'/documents/?'+params.toString(),label};
+  }
   if(action.related_entity_type==='contract'||action.action_type==='contract_notice')return {href:'/contracts/',label:'Revisar renovación, coste y condiciones'};
   if(action.related_entity_type==='banking_connection'||action.action_type==='banking_consent_renewal')return {href:'/banking/',label:'Renovar la autorización bancaria'};
   if(action.related_entity_type==='insurance_policy')return {href:'/insurance/',label:'Revisar la póliza y sus coberturas'};
   return {href:'/actions/?action='+encodeURIComponent(action.id),label:'Abrir la tarea y ver qué falta'};
+}
+
+const priorityLabel:Record<string,string>={high:'Alta',medium:'Media',low:'Baja'};
+
+type DashboardRange='month'|'30d'|'90d'|'year'|'12m'|'all';
+
+function isoDate(value:Date){
+  const y=value.getFullYear();
+  const m=String(value.getMonth()+1).padStart(2,'0');
+  const d=String(value.getDate()).padStart(2,'0');
+  return `${y}-${m}-${d}`;
+}
+
+function dashboardRange(range:DashboardRange){
+  const end=new Date();
+  const start=new Date(end);
+  if(range==='month')start.setDate(1);
+  if(range==='30d')start.setDate(start.getDate()-29);
+  if(range==='90d')start.setDate(start.getDate()-89);
+  if(range==='year'){start.setMonth(0);start.setDate(1)}
+  if(range==='12m')start.setFullYear(start.getFullYear()-1);
+  if(range==='all')return {start:'1900-01-01',end:isoDate(end)};
+  return {start:isoDate(start),end:isoDate(end)};
 }
 
 function Metric({label,value,detail}:{label:string;value:string;detail?:string}){
@@ -40,7 +70,9 @@ function Metric({label,value,detail}:{label:string;value:string;detail?:string})
 }
 
 export default function DashboardPage(){
-  const dashboard=useQuery({queryKey:['dashboard'],queryFn:()=>apiGet<Dashboard>('/api/v1/dashboard')});
+  const [range,setRange]=useState<DashboardRange>('month');
+  const dates=dashboardRange(range);
+  const dashboard=useQuery({queryKey:['dashboard',range,dates.start,dates.end],queryFn:()=>apiGet<Dashboard>('/api/v1/dashboard?start='+dates.start+'&end='+dates.end)});
   const wealth=useQuery({queryKey:['wealth'],queryFn:()=>apiGet<Wealth>('/api/v1/wealth'),retry:false});
 
   if(dashboard.isLoading)return <><PageHeader title="Inicio"/><Loading/></>;
@@ -54,13 +86,23 @@ export default function DashboardPage(){
     <PageHeader
       title="Inicio"
       description="Tu situación financiera, lo que ha cambiado y lo que merece atención ahora."
+      action={<label className="block text-xs font-medium text-[var(--muted)]">Periodo
+        <select className="fin-input mt-1 min-w-[180px]" aria-label="Periodo del resumen de Inicio" value={range} onChange={e=>setRange(e.target.value as DashboardRange)}>
+          <option value="month">Este mes</option>
+          <option value="30d">Últimos 30 días</option>
+          <option value="90d">Últimos 90 días</option>
+          <option value="year">Este año</option>
+          <option value="12m">Últimos 12 meses</option>
+          <option value="all">Todo el histórico</option>
+        </select>
+      </label>}
     />
 
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
       <Metric label="Disponible" value={d.liquidity} detail="Liquidez consolidada"/>
-      <Metric label="Ingresos este mes" value={d.income} detail={`${d.period.start} — ${d.period.end}`}/>
-      <Metric label="Gasto este mes" value={d.expenses} detail={`${d.period.start} — ${d.period.end}`}/>
-      <Metric label="Ahorro este mes" value={d.savings} detail={savingsRate}/>
+      <Metric label="Ingresos" value={d.income} detail={`${d.period.start} — ${d.period.end}`}/>
+      <Metric label="Gasto" value={d.expenses} detail={`${d.period.start} — ${d.period.end}`}/>
+      <Metric label="Ahorro" value={d.savings} detail={savingsRate}/>
       {wealth.data?<Metric label="Patrimonio neto" value={wealth.data.net_worth} detail="Activos menos deuda"/>:
         <Card><div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Patrimonio neto</div><div className="mt-2 text-2xl font-bold">—</div><div className="mt-1 text-xs text-[var(--muted)]">Calculando patrimonio</div></Card>}
     </div>
@@ -76,7 +118,7 @@ export default function DashboardPage(){
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {d.actions.slice(0,4).map(action=>{const destination=actionDestination(action);return <Link key={action.id} href={destination.href} className="fin-card block p-4 transition-transform hover:-translate-y-0.5">
             <div className="flex items-center justify-between gap-2">
-              <span className="rounded-full bg-[var(--brand-soft)] px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-[var(--brand)]">{action.priority}</span>
+              <span className="rounded-full bg-[var(--brand-soft)] px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-[var(--brand)]">{priorityLabel[action.priority]||action.priority}</span>
               <Sparkles size={16} className="text-[var(--brand)]"/>
             </div>
             <div className="mt-3 font-semibold">{action.title}</div>

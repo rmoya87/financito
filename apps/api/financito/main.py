@@ -17,9 +17,10 @@ from .db import SessionLocal
 from .migrations import migrate,MIGRATION_VERSION
 from .domain.engines import MortgageEngine, MortgagePrepaymentEngine, MortgageRatePathEngine, OptimizationEngine
 from .services.financial_analytics import cash_flow,category_spending
-from .models import Account, ActionItem, AuditEvent, Budget, CategorizationAudit, Category, Commitment, Document, ExtractedFact, Mortgage, Transaction
+from .models import Account, ActionItem, AuditEvent, Budget, CategorizationAudit, Category, Commitment, Contract, Document, ExtractedFact, Mortgage, Transaction
 from .models_analytics import EntityLink
-from .schemas import AccountCreate, AccountOut, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentIndexRequest, DocumentMortgageLinkUpdate, FactUpdate, ForecastRequest, ManualFactCreate, MortgageScenarioRequest, MortgagePrepaymentRequest, MortgageRatePathRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
+from .models_extended import InsurancePolicy
+from .schemas import AccountCreate, AccountOut, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentEntityLinkUpdate, DocumentIndexRequest, DocumentMortgageLinkUpdate, FactUpdate, ForecastRequest, ManualFactCreate, MortgageScenarioRequest, MortgagePrepaymentRequest, MortgageRatePathRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
 from .security import LocalSecurityMiddleware, create_session
 from .routes_extended import router as extended_router
 from .routes_analytics import router as analytics_router
@@ -30,9 +31,9 @@ from .routes_privacy import router as privacy_router
 from .routes_observability import router as observability_router
 from .services.vault_watcher import VaultWatcher
 from .services.categorization import ensure_categories,propagate_verified_merchant
-from .services.transaction_ops import apply_category_semantics,detect_internal_transfers,detect_refunds,pair_internal_transfer_counterpart,synchronize_transaction_semantics
+from .services.transaction_ops import apply_category_semantics,detect_internal_transfers,detect_refunds,pair_internal_transfer_counterpart,set_category_for_same_concept,synchronize_transaction_semantics
 from .services.documents import index_document,reprocess_document,safe_path,store_uploaded_document
-from .services.evidence import review_summary,synchronize_all_document_evidence,synchronize_document_evidence
+from .services.evidence import confirm_document_coherent_evidence,confirm_entity_coherent_evidence,create_document_evidence_group,link_document_to_entity,review_summary,synchronize_all_document_evidence,synchronize_document_evidence
 from .services.document_ai import analyze_document_by_id,domain_insights,latest_analysis
 from .services.forecast import forecast
 from .services.month_end import month_end_projection
@@ -133,25 +134,20 @@ def update_category(transaction_id:str,payload:TransactionCategoryUpdate,db:Sess
     tx=db.get(Transaction,transaction_id)
     if not tx: raise HTTPException(404,"Transaction not found")
     if not db.get(Category,payload.category_id): raise HTTPException(404,"Category not found")
-    previous=tx.category_id; tx.category_id=payload.category_id; tx.categorization_method="manual"; tx.categorization_confidence=Decimal("1"); tx.user_verified=True
-    key=apply_category_semantics(db,tx)
-    if key=="internal_transfer":
-        pair_internal_transfer_counterpart(db,tx)
-    db.add(CategorizationAudit(transaction_id=tx.id,previous_category_id=previous,new_category_id=payload.category_id,method="manual",confidence=Decimal("1"),changed_by="user"))
-    propagate_verified_merchant(db,tx)
+    set_category_for_same_concept(db,tx,payload.category_id)
     db.commit(); db.refresh(tx); return tx
 
 
 @app.get("/api/v1/dashboard")
-def dashboard(db:Session=Depends(get_db)):
-    today=date.today(); start=today.replace(day=1)
-    txs=db.scalars(select(Transaction).where(and_(Transaction.booking_date>=start,Transaction.booking_date<=today))).all()
-    flow_data=cash_flow(db,start,today)
+def dashboard(start:date|None=None,end:date|None=None,db:Session=Depends(get_db)):
+    today=date.today(); end=end or today; start=start or end.replace(day=1)
+    if end<start: raise HTTPException(400,"La fecha final debe ser igual o posterior a la inicial.")
+    flow_data=cash_flow(db,start,end)
     balances=sum((a.current_balance for a in db.scalars(select(Account)).all()),Decimal("0"))
     upcoming=db.scalars(select(Commitment).where(and_(Commitment.due_date>=today,Commitment.due_date<=today+timedelta(days=45),Commitment.status=="active")).order_by(Commitment.due_date)).all()
     actions=db.scalars(select(ActionItem).where(ActionItem.status.in_(["pending","in_progress"])).order_by(ActionItem.due_date.asc().nullslast()).limit(10)).all()
-    category_rows=category_spending(db,start,today)
-    return {"period":{"start":start,"end":today},"liquidity":str(balances),"income":str(flow_data["income"]),"expenses":str(flow_data["expenses"]),"savings":str(flow_data["savings"]),"savings_rate":str(flow_data["savings_rate"]) if flow_data["savings_rate"] is not None else None,"spending_by_category":[{"category":r["category"],"system_key":r["system_key"],"amount":str(r["amount"])} for r in category_rows],"upcoming_commitments":[{"id":c.id,"title":c.title,"amount":str(c.amount),"due_date":c.due_date} for c in upcoming],"actions":[{"id":a.id,"title":a.title,"action_type":a.action_type,"priority":a.priority,"due_date":a.due_date,"status":a.status,"notes":a.notes,"related_entity_type":a.related_entity_type,"related_entity_id":a.related_entity_id} for a in actions]}
+    category_rows=category_spending(db,start,end)
+    return {"period":{"start":start,"end":end},"liquidity":str(balances),"income":str(flow_data["income"]),"expenses":str(flow_data["expenses"]),"savings":str(flow_data["savings"]),"savings_rate":str(flow_data["savings_rate"]) if flow_data["savings_rate"] is not None else None,"spending_by_category":[{"category":r["category"],"system_key":r["system_key"],"amount":str(r["amount"])} for r in category_rows],"upcoming_commitments":[{"id":c.id,"title":c.title,"amount":str(c.amount),"due_date":c.due_date} for c in upcoming],"actions":[{"id":a.id,"title":a.title,"action_type":a.action_type,"priority":a.priority,"due_date":a.due_date,"status":a.status,"notes":a.notes,"related_entity_type":a.related_entity_type,"related_entity_id":a.related_entity_id} for a in actions]}
 
 
 @app.post("/api/v1/budgets")
@@ -269,14 +265,18 @@ def index_doc(payload:DocumentIndexRequest,db:Session=Depends(get_db)):
 @app.get("/api/v1/documents")
 def documents(db:Session=Depends(get_db)):
     rows=db.scalars(select(Document).order_by(Document.created_at.desc())).all()
-    mortgage_links={
-        link.from_id:link.to_id
-        for link in db.scalars(select(EntityLink).where(
-            EntityLink.from_type=="document",
-            EntityLink.relation_type=="evidence_for",
-            EntityLink.to_type=="mortgage",
-        )).all()
-    }
+    links=db.scalars(select(EntityLink).where(
+        EntityLink.from_type=="document",
+        EntityLink.relation_type=="evidence_for",
+    )).all()
+    by_document:dict[str,list[dict]]={}
+    for link in links:
+        by_document.setdefault(link.from_id,[]).append({
+            "entity_type":link.to_type,
+            "entity_id":link.to_id,
+            "confidence":str(link.confidence),
+            "source_type":link.source_type,
+        })
     return [
         {
             "id":r.id,
@@ -286,54 +286,132 @@ def documents(db:Session=Depends(get_db)):
             "page_count":r.page_count,
             "review":review_summary(db,r.id),
             "ai_analysis":"ready" if latest_analysis(db,r.id) is not None else "not_analyzed",
-            "mortgage_id":mortgage_links.get(r.id),
+            "mortgage_id":next((x["entity_id"] for x in by_document.get(r.id,[]) if x["entity_type"]=="mortgage"),None),
+            "evidence_links":by_document.get(r.id,[]),
         }
         for r in rows
     ]
+
+
+@app.get("/api/v1/evidence-groups")
+def evidence_groups(db:Session=Depends(get_db)):
+    documents={row.id:row for row in db.scalars(select(Document)).all()}
+    links=db.scalars(select(EntityLink).where(
+        EntityLink.from_type=="document",
+        EntityLink.relation_type=="evidence_for",
+    )).all()
+    grouped:dict[tuple[str,str],list[EntityLink]]={}
+    for link in links:
+        grouped.setdefault((link.to_type,link.to_id),[]).append(link)
+
+    contracts={row.id:row for row in db.scalars(select(Contract)).all()}
+    result=[]
+    for policy in db.scalars(select(InsurancePolicy)).all():
+        contract=contracts.get(policy.contract_id or "")
+        docs=grouped.get(("insurance_policy",policy.id),[])
+        provider=contract.provider_name if contract else "Aseguradora pendiente"
+        label=f"Seguro {policy.insurance_type} · {provider}"
+        result.append({
+            "entity_type":"insurance_policy","entity_id":policy.id,"kind":"insurance",
+            "label":label,"provider":provider,"document_count":len(docs),
+            "documents":[{"id":x.from_id,"file_name":documents[x.from_id].file_name} for x in docs if x.from_id in documents],
+        })
+    for mortgage in db.scalars(select(Mortgage).order_by(Mortgage.lender)).all():
+        docs=grouped.get(("mortgage",mortgage.id),[])
+        result.append({
+            "entity_type":"mortgage","entity_id":mortgage.id,"kind":"mortgage",
+            "label":f"Hipoteca · {mortgage.lender}","provider":mortgage.lender,
+            "document_count":len(docs),
+            "documents":[{"id":x.from_id,"file_name":documents[x.from_id].file_name} for x in docs if x.from_id in documents],
+        })
+    policy_contract_ids={row.contract_id for row in db.scalars(select(InsurancePolicy)).all() if row.contract_id}
+    for contract in contracts.values():
+        if contract.contract_type=="mortgage":
+            continue
+        docs=grouped.get(("contract",contract.id),[])
+        if contract.contract_type=="insurance":
+            if contract.id in policy_contract_ids:
+                continue
+            result.append({
+                "entity_type":"contract","entity_id":contract.id,"kind":"insurance_pending",
+                "label":f"Seguro pendiente · {contract.provider_name}",
+                "provider":contract.provider_name,"document_count":len(docs),
+                "documents":[{"id":x.from_id,"file_name":documents[x.from_id].file_name} for x in docs if x.from_id in documents],
+            })
+            continue
+        result.append({
+            "entity_type":"contract","entity_id":contract.id,"kind":contract.contract_type,
+            "label":f"{contract.provider_name} · {contract.contract_type}",
+            "provider":contract.provider_name,"document_count":len(docs),
+            "documents":[{"id":x.from_id,"file_name":documents[x.from_id].file_name} for x in docs if x.from_id in documents],
+        })
+    return sorted(result,key=lambda x:(x["kind"],x["label"].lower()))
+
+
+@app.post("/api/v1/documents/{document_id}/evidence-group")
+def create_evidence_group(document_id:str,db:Session=Depends(get_db)):
+    document=db.get(Document,document_id)
+    if not document: raise HTTPException(404,"Document not found")
+    try:
+        result=create_document_evidence_group(db,document)
+    except ValueError as exc:
+        raise HTTPException(400,str(exc))
+    db.add(AuditEvent(
+        event_type="document_evidence_group_created",
+        entity_type="document",
+        entity_id=document_id,
+        metadata_json=json.dumps(result),
+    ))
+    db.commit()
+    return result
+
+
+@app.put("/api/v1/documents/{document_id}/entity-link")
+def set_document_entity_link(document_id:str,payload:DocumentEntityLinkUpdate,db:Session=Depends(get_db)):
+    document=db.get(Document,document_id)
+    if not document: raise HTTPException(404,"Document not found")
+    try:
+        sync=link_document_to_entity(db,document,payload.entity_type,payload.entity_id)
+    except ValueError as exc:
+        raise HTTPException(400,str(exc))
+    db.add(AuditEvent(
+        event_type="document_entity_link_updated",
+        entity_type="document",
+        entity_id=document_id,
+        metadata_json=json.dumps({"entity_type":payload.entity_type,"entity_id":payload.entity_id}),
+    ))
+    db.commit()
+    return {"document_id":document_id,"entity_type":payload.entity_type,"entity_id":payload.entity_id,"evidence_sync":sync}
 
 
 @app.put("/api/v1/documents/{document_id}/mortgage-link")
 def set_document_mortgage_link(document_id:str,payload:DocumentMortgageLinkUpdate,db:Session=Depends(get_db)):
     document=db.get(Document,document_id)
     if not document: raise HTTPException(404,"Document not found")
-    if document.document_type!="mortgage":
-        raise HTTPException(409,"Solo los documentos hipotecarios pueden vincularse a una hipoteca")
-    links=db.scalars(select(EntityLink).where(
-        EntityLink.from_type=="document",
-        EntityLink.from_id==document_id,
-        EntityLink.relation_type=="evidence_for",
-        EntityLink.to_type=="mortgage",
-    )).all()
-    current_id=links[0].to_id if links else None
-    if payload.mortgage_id==current_id:
-        sync=synchronize_document_evidence(db,document)
-        db.commit()
-        return {"document_id":document_id,"mortgage_id":current_id,"evidence_sync":sync}
-    for link in links:
-        db.delete(link)
-    if payload.mortgage_id:
-        mortgage=db.get(Mortgage,payload.mortgage_id)
-        if not mortgage: raise HTTPException(404,"Mortgage not found")
-        db.add(EntityLink(
-            from_type="document",
-            from_id=document_id,
-            relation_type="evidence_for",
-            to_type="mortgage",
-            to_id=mortgage.id,
-            confidence=Decimal("1"),
-            source_type="user",
-            source_ref=document_id,
-        ))
-        db.flush()
-    sync=synchronize_document_evidence(db,document)
-    db.add(AuditEvent(
-        event_type="document_mortgage_link_updated",
-        entity_type="document",
-        entity_id=document_id,
-        metadata_json=json.dumps({"previous_mortgage_id":current_id,"mortgage_id":payload.mortgage_id}),
-    ))
+    try:
+        sync=link_document_to_entity(db,document,"mortgage",payload.mortgage_id)
+    except ValueError as exc:
+        raise HTTPException(400,str(exc))
     db.commit()
     return {"document_id":document_id,"mortgage_id":payload.mortgage_id,"evidence_sync":sync}
+
+
+@app.post("/api/v1/documents/{document_id}/confirm-coherent")
+def confirm_document_coherent(document_id:str,db:Session=Depends(get_db)):
+    if not db.get(Document,document_id): raise HTTPException(404,"Document not found")
+    result=confirm_document_coherent_evidence(db,document_id)
+    db.commit()
+    return result
+
+
+@app.post("/api/v1/evidence-groups/{entity_type}/{entity_id}/confirm-coherent")
+def confirm_group_coherent(entity_type:str,entity_id:str,db:Session=Depends(get_db)):
+    try:
+        result=confirm_entity_coherent_evidence(db,entity_type,entity_id)
+    except ValueError as exc:
+        raise HTTPException(400,str(exc))
+    db.commit()
+    return result
 
 
 @app.get("/api/v1/documents/{document_id}/facts")

@@ -48,6 +48,16 @@ def _document_sources(db:Session,to_type:str)->dict[str,str]:
     )).all()
     return {link.to_id:link.from_id for link in links}
 
+def _document_sources_multi(db:Session,to_type:str)->dict[str,list[str]]:
+    links=db.scalars(select(EntityLink).where(
+        EntityLink.from_type=="document",
+        EntityLink.relation_type=="evidence_for",
+        EntityLink.to_type==to_type,
+    )).all()
+    result:dict[str,list[str]]={}
+    for link in links:result.setdefault(link.to_id,[]).append(link.from_id)
+    return result
+
 @router.get("/decision-lab/market-scan")
 def decision_lab_market_scan(db:Session=Depends(dbdep)):
     return scan_public_market(db)
@@ -328,8 +338,11 @@ def add_liability(p:LiabilityCreate,db:Session=Depends(dbdep)):
 @router.get("/contracts")
 def contracts(db:Session=Depends(dbdep)):
     refresh_contract_actions(db);db.commit()
-    sources=_document_sources(db,"contract")
-    return [{"id":r.id,"provider_name":r.provider_name,"contract_type":r.contract_type,"renewal_date":r.renewal_date,"cancellation_notice_days":r.cancellation_notice_days,"early_exit_penalty":None if r.early_exit_penalty is None else str(r.early_exit_penalty),"annual_cost":None if r.annual_cost is None else str(r.annual_cost),"evidence_status":r.evidence_status,"source_document_id":sources.get(r.id)} for r in db.scalars(select(Contract).order_by(Contract.provider_name)).all()]
+    sources=_document_sources_multi(db,"contract")
+    rows=db.scalars(select(Contract).where(
+        Contract.contract_type.notin_(["insurance","mortgage"])
+    ).order_by(Contract.provider_name)).all()
+    return [{"id":r.id,"provider_name":r.provider_name,"contract_type":r.contract_type,"renewal_date":r.renewal_date,"cancellation_notice_days":r.cancellation_notice_days,"early_exit_penalty":None if r.early_exit_penalty is None else str(r.early_exit_penalty),"annual_cost":None if r.annual_cost is None else str(r.annual_cost),"evidence_status":r.evidence_status,"source_document_id":(sources.get(r.id) or [None])[0],"source_document_ids":sources.get(r.id,[]),"document_count":len(sources.get(r.id,[]))} for r in rows]
 @router.post("/contracts")
 def add_contract(p:ContractCreate,db:Session=Depends(dbdep)):r=Contract(**p.model_dump());db.add(r);db.flush();refresh_contract_actions(db);db.commit();return {"id":r.id}
 
@@ -417,8 +430,8 @@ def insurance_verdict_with_ai(db:Session=Depends(dbdep)):
 def add_insurance(p:InsuranceCreate,db:Session=Depends(dbdep)):r=InsurancePolicy(**p.model_dump(),insured_object_json="{}");db.add(r);db.commit();return {"id":r.id}
 @router.get("/insurance")
 def insurance(db:Session=Depends(dbdep)):
-    sources=_document_sources(db,"insurance_policy")
-    return [{"id":r.id,"insurance_type":r.insurance_type,"annual_premium":str(r.annual_premium),"deductible":None if r.deductible is None else str(r.deductible),"contract_id":r.contract_id,"source_document_id":sources.get(r.id)} for r in db.scalars(select(InsurancePolicy)).all()]
+    sources=_document_sources_multi(db,"insurance_policy")
+    return [{"id":r.id,"insurance_type":r.insurance_type,"annual_premium":str(r.annual_premium),"deductible":None if r.deductible is None else str(r.deductible),"contract_id":r.contract_id,"source_document_id":(sources.get(r.id) or [None])[0],"source_document_ids":sources.get(r.id,[]),"document_count":len(sources.get(r.id,[]))} for r in db.scalars(select(InsurancePolicy)).all()]
 @router.post("/coverage")
 def add_coverage(p:CoverageCreate,db:Session=Depends(dbdep)):r=CoverageFact(**p.model_dump(),conditions_json="{}",exclusions_json="{}");db.add(r);db.commit();return {"id":r.id}
 @router.post("/coverage/compare")

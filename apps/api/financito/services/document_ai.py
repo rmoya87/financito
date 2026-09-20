@@ -8,6 +8,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from ..models import ActionItem, Document, ExtractedFact
+from ..models_analytics import EntityLink
 from ..models_extended import DocumentChunk
 from .local_ai import generate_json, status as ai_status
 
@@ -19,7 +20,7 @@ MAX_CHUNKS = 18
 
 CONTRACT_FACT_KEYS = {
     "cancellation_notice_days","early_exit_penalty","annual_cost","monthly_cost","deductible",
-    "permanence_end_date","renewal_date","provider_name","insurance_type",
+    "permanence_end_date","renewal_date","provider_name","insurance_type","policy_number","contract_number","insured_object",
 }
 MORTGAGE_FACT_KEYS = {
     "nominal_rate","apr_rate","reference_index","interest_type","differential_rate",
@@ -359,23 +360,70 @@ def _normalize(result: dict, document: Document) -> dict:
     }
 
 
+def _document_group_ids(session: Session, document: Document) -> list[str]:
+    links = session.scalars(
+        select(EntityLink).where(
+            EntityLink.from_type == "document",
+            EntityLink.from_id == document.id,
+            EntityLink.relation_type == "evidence_for",
+        )
+    ).all()
+    preferred = next((x for x in links if x.to_type == "insurance_policy"), None)
+    preferred = preferred or next((x for x in links if x.to_type == "mortgage"), None)
+    preferred = preferred or next((x for x in links if x.to_type == "contract"), None)
+    if preferred is None:
+        return [document.id]
+    ids = list(session.scalars(
+        select(EntityLink.from_id).where(
+            EntityLink.from_type == "document",
+            EntityLink.relation_type == "evidence_for",
+            EntityLink.to_type == preferred.to_type,
+            EntityLink.to_id == preferred.to_id,
+        )
+    ).all())
+    return sorted(set(ids or [document.id]))
+
+
 def _upsert_action(session: Session, document: Document, analysis: dict) -> None:
     opportunities = analysis.get("optimization_opportunities") or []
     risks = analysis.get("risks") or []
+    group_ids = _document_group_ids(session, document)
+
+    if not opportunities and not risks:
+        existing = session.scalar(
+            select(ActionItem).where(
+                ActionItem.action_type == "review_document_ai_insights",
+                ActionItem.related_entity_type == "document",
+                ActionItem.related_entity_id == document.id,
+                ActionItem.status.in_(["pending", "in_progress"]),
+            )
+        )
+        if existing is not None:
+            existing.status = "done"
+        return
+
     existing = session.scalar(
         select(ActionItem).where(
             ActionItem.action_type == "review_document_ai_insights",
             ActionItem.related_entity_type == "document",
-            ActionItem.related_entity_id == document.id,
+            ActionItem.related_entity_id.in_(group_ids),
             ActionItem.status.in_(["pending", "in_progress"]),
         )
+        .order_by(ActionItem.created_at.asc())
     )
-    if not opportunities and not risks:
-        if existing is not None:
-            existing.status = "done"
-        return
-    title = f"Revisar conclusiones de {document.file_name}"
-    notes = analysis.get("summary") or "La IA local ha detectado elementos que pueden afectar a decisiones financieras."
+    if len(group_ids) > 1:
+        title = f"Revisar conclusiones de {len(group_ids)} documentos del mismo producto"
+        notes = (
+            "Financito ha detectado conclusiones que conviene revisar en la documentación agrupada. "
+            "Abre la evidencia, revisa el análisis y marca el aviso como revisado cuando hayas terminado."
+        )
+    else:
+        title = f"Revisar conclusiones de {document.file_name}"
+        notes = (
+            "Financito ha detectado conclusiones que conviene revisar. Abre la evidencia, "
+            "lee el análisis y marca el aviso como revisado cuando hayas terminado."
+        )
+
     if existing is None:
         session.add(ActionItem(
             action_type="review_document_ai_insights",
@@ -385,11 +433,13 @@ def _upsert_action(session: Session, document: Document, analysis: dict) -> None
             related_entity_id=document.id,
             source_type="document_ai",
             source_ref=document.id,
-            notes=notes[:2000],
+            notes=notes,
         ))
     else:
         existing.title = title
-        existing.notes = notes[:2000]
+        existing.notes = notes
+        existing.source_ref = document.id
+
 
 
 def analyze_document(session: Session, document: Document) -> dict:
@@ -474,6 +524,10 @@ SCHEMA JSON:
         user_verified=False,
     )
     session.add(row)
+    # Identity proposals must be grouped before creating "Para ti" actions so
+    # several files from one product produce one review item, not one per file.
+    from .evidence import synchronize_document_evidence
+    synchronize_document_evidence(session, document)
     _upsert_action(session, document, result)
     session.flush()
     return {"status": "ready", "analysis": result, "message": None}

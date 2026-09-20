@@ -7,7 +7,7 @@ from decimal import Decimal
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from ..models import Category, Transaction
+from ..models import CategorizationAudit, Category, Transaction
 from ..models_analytics import EntityLink, TransactionRule, TransactionSplit
 from .categorization import ensure_categories, normalize_text
 
@@ -145,6 +145,8 @@ def apply_rule(session: Session, tx: Transaction) -> bool:
             matched = value in text
         elif rule.matcher_type == "merchant_exact":
             matched = value == merchant
+        elif rule.matcher_type == "description_exact":
+            matched = value == normalize_text(tx.description_raw)
         elif rule.matcher_type == "regex":
             try:
                 matched = bool(re.search(rule.matcher_value, text, re.I))
@@ -159,6 +161,71 @@ def apply_rule(session: Session, tx: Transaction) -> bool:
                 pair_internal_transfer_counterpart(session,tx)
             return True
     return False
+
+
+def set_category_for_same_concept(
+    session: Session, source: Transaction, category_id: str
+) -> int:
+    """Apply an explicit category correction to the same normalized concept.
+
+    This is intentionally stronger than learned merchant categorization: when
+    the user changes a row in "Todos los movimientos", the exact bank concept
+    becomes a persistent rule for historical and future transactions.
+    """
+    concept = normalize_text(source.description_raw)
+    if not concept:
+        return 0
+
+    rule = session.scalar(
+        select(TransactionRule).where(
+            TransactionRule.matcher_type == "description_exact",
+            TransactionRule.matcher_value == concept,
+        )
+    )
+    if rule is None:
+        rule = TransactionRule(
+            matcher_type="description_exact",
+            matcher_value=concept,
+            category_id=category_id,
+            priority=10,
+            enabled=True,
+        )
+        session.add(rule)
+        session.flush()
+    else:
+        rule.category_id = category_id
+        rule.priority = min(rule.priority, 10)
+        rule.enabled = True
+
+    changed = 0
+    rows = session.scalars(
+        select(Transaction).where(Transaction.description_normalized == concept)
+    ).all()
+    for tx in rows:
+        previous = tx.category_id
+        if previous == category_id and tx.user_verified and tx.categorization_method == "manual_concept":
+            continue
+        tx.category_id = category_id
+        tx.categorization_method = "manual_concept"
+        tx.categorization_confidence = Decimal("1")
+        tx.user_verified = True
+        key = apply_category_semantics(session, tx)
+        if key == "internal_transfer":
+            pair_internal_transfer_counterpart(session, tx)
+        if previous != category_id:
+            session.add(
+                CategorizationAudit(
+                    transaction_id=tx.id,
+                    previous_category_id=previous,
+                    new_category_id=category_id,
+                    method="manual_concept",
+                    confidence=Decimal("1"),
+                    changed_by="user",
+                )
+            )
+            changed += 1
+    session.flush()
+    return changed
 
 
 def apply_rules_to_unverified(session: Session) -> int:
