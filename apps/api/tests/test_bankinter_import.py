@@ -1,4 +1,5 @@
 from io import BytesIO
+from datetime import date
 from decimal import Decimal
 
 from openpyxl import Workbook
@@ -7,6 +8,7 @@ from sqlalchemy import select
 from financito.db import SessionLocal
 from financito.models import Account, Transaction
 from financito.services.import_formats import import_statement
+from financito.services.financial_analytics import cash_flow
 
 
 def _bankinter_xlsx()->bytes:
@@ -45,6 +47,10 @@ def test_bankinter_xlsx_uses_booked_ledger_not_pending_section():
 
         assert result.inserted==3
         assert result.rejected==0
+        assert result.detected_inflows==1
+        assert result.detected_outflows==2
+        assert result.detected_inflow_amount=="11.00"
+        assert result.detected_outflow_amount=="135.96"
         rows=db.scalars(select(Transaction).where(Transaction.account_id==account.id).order_by(Transaction.booking_date.desc(),Transaction.amount.desc())).all()
         assert len(rows)==3
         assert {row.description_raw for row in rows}=={"PAGO BIZUM DE PERSONA","MERCADONA","RECIBO AGUA"}
@@ -53,6 +59,10 @@ def test_bankinter_xlsx_uses_booked_ledger_not_pending_section():
         bizum=next(row for row in rows if row.description_raw=="PAGO BIZUM DE PERSONA")
         assert bizum.booking_date.isoformat()=="2026-09-21"
         assert bizum.amount==Decimal("11")
+        flow=cash_flow(db,date(2026,9,17),date(2026,9,21))
+        assert flow["income"]==Decimal("11.00")
+        assert flow["expenses"]==Decimal("135.96")
+        assert flow["savings"]==Decimal("-124.96")
 
 
 def test_bankinter_xlsx_reimport_is_idempotent():
