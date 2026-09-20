@@ -128,7 +128,6 @@ def _year_data(session:Session,tax_year:int)->dict:
         salary=sum(session.scalars(select(Transaction.amount).where(
             Transaction.category_id==salary_category.id,
             Transaction.amount>0,
-            Transaction.is_internal_transfer.is_(False),
             Transaction.booking_date>=date(tax_year,1,1),
             Transaction.booking_date<=date(tax_year,12,31),
         )).all(),Decimal("0"))
