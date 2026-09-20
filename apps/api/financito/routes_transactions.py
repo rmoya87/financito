@@ -2,8 +2,8 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 from pydantic import BaseModel,Field
-from fastapi import APIRouter,Depends,HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter,Depends,HTTPException,Query
+from sqlalchemy import String,cast,func,or_,select
 from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .models_analytics import TransactionRule,TransactionSplit
@@ -96,6 +96,79 @@ def refunds(db:Session=Depends(dbdep)):
 @router.post("/transactions/ai-categorize")
 def ai_categorize(p:AICategorizeIn,db:Session=Depends(dbdep)):
     result=improve_categorization(db,p.limit,p.llm_limit);db.commit();return result
+
+def _transaction_payload(row:Transaction)->dict:
+    return {
+        "id":row.id,
+        "account_id":row.account_id,
+        "booking_date":row.booking_date,
+        "amount":str(row.amount),
+        "currency":row.currency,
+        "description_raw":row.description_raw,
+        "merchant_raw":row.merchant_raw,
+        "category_id":row.category_id,
+        "categorization_method":row.categorization_method,
+        "categorization_confidence":str(row.categorization_confidence),
+        "user_verified":row.user_verified,
+        "is_internal_transfer":row.is_internal_transfer,
+    }
+
+@router.get("/transactions/page")
+def transaction_page(
+    q:str|None=None,
+    category_id:str|None=None,
+    start:date|None=None,
+    end:date|None=None,
+    page:int=Query(default=1,ge=1),
+    page_size:int=Query(default=50,ge=10,le=100),
+    db:Session=Depends(dbdep),
+):
+    if start and end and end<start:
+        raise HTTPException(400,"La fecha final debe ser igual o posterior a la inicial.")
+
+    filters=[]
+    if category_id:
+        filters.append(Transaction.category_id==category_id)
+    if start:
+        filters.append(Transaction.booking_date>=start)
+    if end:
+        filters.append(Transaction.booking_date<=end)
+
+    query=(q or "").strip()
+    if query:
+        needle=f"%{query.lower()}%"
+        category_ids=list(db.scalars(
+            select(Category.id).where(func.lower(Category.name).like(needle))
+        ).all())
+        text_filters=[
+            func.lower(Transaction.description_raw).like(needle),
+            func.lower(func.coalesce(Transaction.merchant_raw,"")).like(needle),
+            cast(Transaction.booking_date,String).like(f"%{query}%"),
+            cast(Transaction.amount,String).like(f"%{query.replace(',','.')}%"),
+        ]
+        if category_ids:
+            text_filters.append(Transaction.category_id.in_(category_ids))
+        filters.append(or_(*text_filters))
+
+    total=int(db.scalar(
+        select(func.count()).select_from(Transaction).where(*filters)
+    ) or 0)
+    pages=max(1,(total+page_size-1)//page_size)
+    effective_page=min(page,pages)
+    rows=db.scalars(
+        select(Transaction)
+        .where(*filters)
+        .order_by(Transaction.booking_date.desc(),Transaction.created_at.desc())
+        .offset((effective_page-1)*page_size)
+        .limit(page_size)
+    ).all()
+    return {
+        "items":[_transaction_payload(row) for row in rows],
+        "total":total,
+        "page":effective_page,
+        "page_size":page_size,
+        "pages":pages,
+    }
 
 @router.get("/transactions/review-queue")
 def review_queue(limit:int=100,db:Session=Depends(dbdep)):
