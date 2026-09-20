@@ -1,106 +1,237 @@
 from __future__ import annotations
+
 import re
 from datetime import timedelta
 from decimal import Decimal
-from sqlalchemy import delete,select
-from sqlalchemy.orm import Session
-from ..models import Category,Transaction
-from ..models_analytics import EntityLink,TransactionRule,TransactionSplit
-from .categorization import ensure_categories,normalize_text
 
-def apply_rule(session:Session,tx:Transaction)->bool:
-    if tx.user_verified:return False
-    text=normalize_text((tx.merchant_raw or "")+" "+tx.description_raw)
-    merchant=normalize_text(tx.merchant_raw or "")
-    for rule in session.scalars(select(TransactionRule).where(TransactionRule.enabled.is_(True)).order_by(TransactionRule.priority,TransactionRule.id)).all():
-        value=normalize_text(rule.matcher_value);matched=False
-        if rule.matcher_type=="contains":matched=value in text
-        elif rule.matcher_type=="merchant_exact":matched=value==merchant
-        elif rule.matcher_type=="regex":
-            try:matched=bool(re.search(rule.matcher_value,text,re.I))
-            except re.error:matched=False
+from sqlalchemy import delete, select
+from sqlalchemy.orm import Session
+
+from ..models import Category, Transaction
+from ..models_analytics import EntityLink, TransactionRule, TransactionSplit
+from .categorization import ensure_categories, normalize_text
+
+
+def category_system_key(session: Session, category_id: str | None) -> str | None:
+    if not category_id:
+        return None
+    category = session.get(Category, category_id)
+    return None if category is None else category.system_key
+
+
+def apply_category_semantics(session: Session, tx: Transaction) -> str | None:
+    """Make special categories affect accounting, not only presentation.
+
+    - Movimiento entre cuentas is excluded from income/expense totals.
+    - Reembolsos remains a positive transaction that reduces expenses.
+      Its precise original expense is linked separately when it can be matched.
+    - An explicit/manual/rule category different from internal transfer clears
+      a stale internal-transfer flag so the user's correction is authoritative.
+    """
+    key = category_system_key(session, tx.category_id)
+    if key == "internal_transfer":
+        tx.is_internal_transfer = True
+    elif tx.categorization_method in {"manual", "rule"}:
+        tx.is_internal_transfer = False
+    return key
+
+
+def apply_rule(session: Session, tx: Transaction) -> bool:
+    if tx.user_verified:
+        return False
+    text = normalize_text((tx.merchant_raw or "") + " " + tx.description_raw)
+    merchant = normalize_text(tx.merchant_raw or "")
+    for rule in session.scalars(
+        select(TransactionRule)
+        .where(TransactionRule.enabled.is_(True))
+        .order_by(TransactionRule.priority, TransactionRule.id)
+    ).all():
+        value = normalize_text(rule.matcher_value)
+        matched = False
+        if rule.matcher_type == "contains":
+            matched = value in text
+        elif rule.matcher_type == "merchant_exact":
+            matched = value == merchant
+        elif rule.matcher_type == "regex":
+            try:
+                matched = bool(re.search(rule.matcher_value, text, re.I))
+            except re.error:
+                matched = False
         if matched:
-            tx.category_id=rule.category_id;tx.categorization_method="rule";tx.categorization_confidence=Decimal("1");return True
+            tx.category_id = rule.category_id
+            tx.categorization_method = "rule"
+            tx.categorization_confidence = Decimal("1")
+            apply_category_semantics(session, tx)
+            return True
     return False
 
-def apply_rules_to_unverified(session:Session)->int:
-    changed=0
-    for tx in session.scalars(select(Transaction).where(Transaction.user_verified.is_(False))).all():
-        if apply_rule(session,tx):changed+=1
+
+def apply_rules_to_unverified(session: Session) -> int:
+    changed = 0
+    for tx in session.scalars(
+        select(Transaction).where(Transaction.user_verified.is_(False))
+    ).all():
+        if apply_rule(session, tx):
+            changed += 1
+    session.flush()
     return changed
 
-def detect_internal_transfers(session:Session)->int:
-    categories=ensure_categories(session)
-    internal_category=categories["internal_transfer"]
-    txs=session.scalars(select(Transaction).where(Transaction.is_internal_transfer.is_(False)).order_by(Transaction.booking_date,Transaction.id)).all()
-    marked=set()
-    for i,left in enumerate(txs):
-        if left.id in marked:continue
-        for right in txs[i+1:]:
-            if right.booking_date>left.booking_date+timedelta(days=3):break
-            if right.id in marked or right.account_id==left.account_id:continue
-            if left.currency!=right.currency:continue
-            if left.amount+right.amount==0 and abs((right.booking_date-left.booking_date).days)<=3:
-                left.is_internal_transfer=True;right.is_internal_transfer=True
-                for tx in (left,right):
+
+def detect_internal_transfers(session: Session) -> int:
+    categories = ensure_categories(session)
+    internal_category = categories["internal_transfer"]
+    txs = session.scalars(
+        select(Transaction)
+        .where(Transaction.is_internal_transfer.is_(False))
+        .order_by(Transaction.booking_date, Transaction.id)
+    ).all()
+    marked: set[str] = set()
+    for i, left in enumerate(txs):
+        if left.id in marked:
+            continue
+        for right in txs[i + 1 :]:
+            if right.booking_date > left.booking_date + timedelta(days=3):
+                break
+            if right.id in marked or right.account_id == left.account_id:
+                continue
+            if left.currency != right.currency:
+                continue
+            if left.amount + right.amount == 0 and abs(
+                (right.booking_date - left.booking_date).days
+            ) <= 3:
+                left.is_internal_transfer = True
+                right.is_internal_transfer = True
+                for tx in (left, right):
                     if not tx.user_verified:
-                        tx.category_id=internal_category.id
-                        tx.categorization_method="internal_transfer_match"
-                        tx.categorization_confidence=Decimal("0.99")
-                existing=session.scalar(select(EntityLink.id).where(
-                    EntityLink.from_type=="transaction",
-                    EntityLink.from_id==left.id,
-                    EntityLink.relation_type=="internal_transfer_pair",
-                    EntityLink.to_type=="transaction",
-                    EntityLink.to_id==right.id,
-                ))
+                        tx.category_id = internal_category.id
+                        tx.categorization_method = "internal_transfer_match"
+                        tx.categorization_confidence = Decimal("0.99")
+                existing = session.scalar(
+                    select(EntityLink.id).where(
+                        EntityLink.from_type == "transaction",
+                        EntityLink.from_id == left.id,
+                        EntityLink.relation_type == "internal_transfer_pair",
+                        EntityLink.to_type == "transaction",
+                        EntityLink.to_id == right.id,
+                    )
+                )
                 if not existing:
-                    session.add(EntityLink(
-                        from_type="transaction",from_id=left.id,relation_type="internal_transfer_pair",
-                        to_type="transaction",to_id=right.id,confidence=Decimal("0.99"),
-                        source_type="deterministic_transfer_match",source_ref=right.id,
-                    ))
-                marked.update([left.id,right.id]);break
+                    session.add(
+                        EntityLink(
+                            from_type="transaction",
+                            from_id=left.id,
+                            relation_type="internal_transfer_pair",
+                            to_type="transaction",
+                            to_id=right.id,
+                            confidence=Decimal("0.99"),
+                            source_type="deterministic_transfer_match",
+                            source_ref=right.id,
+                        )
+                    )
+                marked.update([left.id, right.id])
+                break
     session.flush()
-    return len(marked)//2
+    return len(marked) // 2
 
-def set_splits(session:Session,transaction_id:str,splits:list[dict])->list[TransactionSplit]:
-    tx=session.get(Transaction,transaction_id)
-    if not tx:raise ValueError("Transaction not found")
-    total=sum((Decimal(str(x["amount"])) for x in splits),Decimal("0"))
-    if total!=abs(tx.amount):raise ValueError("Split total must exactly match absolute transaction amount")
+
+def set_splits(
+    session: Session, transaction_id: str, splits: list[dict]
+) -> list[TransactionSplit]:
+    tx = session.get(Transaction, transaction_id)
+    if not tx:
+        raise ValueError("Transaction not found")
+    total = sum((Decimal(str(x["amount"])) for x in splits), Decimal("0"))
+    if total != abs(tx.amount):
+        raise ValueError("Split total must exactly match absolute transaction amount")
     for item in splits:
-        if Decimal(str(item["amount"]))<=0:raise ValueError("Split amounts must be positive")
-        if not session.get(Category,item["category_id"]):raise ValueError("Category not found")
-    session.execute(delete(TransactionSplit).where(TransactionSplit.transaction_id==transaction_id))
-    rows=[TransactionSplit(transaction_id=transaction_id,amount=Decimal(str(x["amount"])),category_id=x["category_id"],note=x.get("note")) for x in splits]
-    session.add_all(rows);session.flush();return rows
+        if Decimal(str(item["amount"])) <= 0:
+            raise ValueError("Split amounts must be positive")
+        if not session.get(Category, item["category_id"]):
+            raise ValueError("Category not found")
+    session.execute(
+        delete(TransactionSplit).where(TransactionSplit.transaction_id == transaction_id)
+    )
+    rows = [
+        TransactionSplit(
+            transaction_id=transaction_id,
+            amount=Decimal(str(x["amount"])),
+            category_id=x["category_id"],
+            note=x.get("note"),
+        )
+        for x in splits
+    ]
+    session.add_all(rows)
+    session.flush()
+    return rows
 
 
-def detect_refunds(session:Session,lookback_days:int=90)->int:
-    positives=session.scalars(select(Transaction).where(Transaction.amount>0,Transaction.is_internal_transfer.is_(False)).order_by(Transaction.booking_date)).all()
-    negatives=session.scalars(select(Transaction).where(Transaction.amount<0,Transaction.is_internal_transfer.is_(False)).order_by(Transaction.booking_date)).all()
-    created=0
+def _refund_match(
+    session: Session, refund: Transaction, negatives: list[Transaction], lookback_days: int
+) -> Transaction | None:
+    merchant = refund.merchant_normalized or normalize_text(refund.merchant_raw or "")
+    if not merchant:
+        return None
+    matches = [
+        expense
+        for expense in negatives
+        if (expense.merchant_normalized or normalize_text(expense.merchant_raw or ""))
+        == merchant
+        and expense.booking_date <= refund.booking_date
+        and (refund.booking_date - expense.booking_date).days <= lookback_days
+        and abs((-expense.amount) - refund.amount) <= Decimal("0.01")
+    ]
+    return max(matches, key=lambda x: x.booking_date) if matches else None
+
+
+def detect_refunds(session: Session, lookback_days: int = 90) -> int:
+    categories = ensure_categories(session)
+    refund_category = categories["refunds"]
+    positives = session.scalars(
+        select(Transaction)
+        .where(Transaction.amount > 0, Transaction.is_internal_transfer.is_(False))
+        .order_by(Transaction.booking_date)
+    ).all()
+    negatives = session.scalars(
+        select(Transaction)
+        .where(Transaction.amount < 0, Transaction.is_internal_transfer.is_(False))
+        .order_by(Transaction.booking_date)
+    ).all()
+    created = 0
     for refund in positives:
-        if not refund.merchant_normalized:
-            continue
-        existing=session.scalar(select(EntityLink.id).where(EntityLink.from_type=="transaction",EntityLink.from_id==refund.id,EntityLink.relation_type=="refund_of"))
+        existing = session.scalar(
+            select(EntityLink.id).where(
+                EntityLink.from_type == "transaction",
+                EntityLink.from_id == refund.id,
+                EntityLink.relation_type == "refund_of",
+            )
+        )
         if existing:
+            # Keep the accounting category explicit even for links created by
+            # older versions that copied the original expense category.
+            if not refund.user_verified:
+                refund.category_id = refund_category.id
+                refund.categorization_method = "refund_match"
+                refund.categorization_confidence = Decimal("0.98")
             continue
-        matches=[
-            expense for expense in negatives
-            if expense.merchant_normalized==refund.merchant_normalized
-            and expense.booking_date<=refund.booking_date
-            and (refund.booking_date-expense.booking_date).days<=lookback_days
-            and abs((-expense.amount)-refund.amount)<=Decimal("0.01")
-        ]
-        if not matches:
+        expense = _refund_match(session, refund, negatives, lookback_days)
+        if expense is None:
             continue
-        expense=max(matches,key=lambda x:x.booking_date)
-        session.add(EntityLink(from_type="transaction",from_id=refund.id,relation_type="refund_of",to_type="transaction",to_id=expense.id,confidence=Decimal("0.98"),source_type="deterministic_refund_match",source_ref=expense.id))
-        refund.category_id=expense.category_id
-        refund.categorization_method="refund_match"
-        refund.categorization_confidence=Decimal("0.98")
-        created+=1
+        session.add(
+            EntityLink(
+                from_type="transaction",
+                from_id=refund.id,
+                relation_type="refund_of",
+                to_type="transaction",
+                to_id=expense.id,
+                confidence=Decimal("0.98"),
+                source_type="deterministic_refund_match",
+                source_ref=expense.id,
+            )
+        )
+        if not refund.user_verified:
+            refund.category_id = refund_category.id
+            refund.categorization_method = "refund_match"
+            refund.categorization_confidence = Decimal("0.98")
+        created += 1
     session.flush()
     return created
