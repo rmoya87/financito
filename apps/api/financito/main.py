@@ -19,7 +19,7 @@ from .domain.engines import MortgageEngine, MortgagePrepaymentEngine, MortgageRa
 from .services.financial_analytics import cash_flow,category_spending
 from .models import Account, ActionItem, AuditEvent, Budget, CategorizationAudit, Category, Commitment, Document, ExtractedFact, Mortgage, Transaction
 from .models_analytics import EntityLink
-from .schemas import AccountCreate, AccountOut, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentIndexRequest, DocumentMortgageLinkUpdate, FactUpdate, ForecastRequest, MortgageScenarioRequest, MortgagePrepaymentRequest, MortgageRatePathRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
+from .schemas import AccountCreate, AccountOut, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentIndexRequest, DocumentMortgageLinkUpdate, FactUpdate, ForecastRequest, ManualFactCreate, MortgageScenarioRequest, MortgagePrepaymentRequest, MortgageRatePathRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
 from .security import LocalSecurityMiddleware, create_session
 from .routes_extended import router as extended_router
 from .routes_analytics import router as analytics_router
@@ -218,7 +218,7 @@ async def upload_documents(
     for file in files[:20]:
         content=await file.read()
         try:
-            stored=store_uploaded_document(file.filename or "documento",content)
+            stored=store_uploaded_document(file.filename or "documento",content,file.content_type)
             indexed=index_document(db,str(stored),document_type)
             actual=Path(indexed.document.file_path).resolve()
             if actual!=stored.resolve():
@@ -288,7 +288,7 @@ def set_document_mortgage_link(document_id:str,payload:DocumentMortgageLinkUpdat
     document=db.get(Document,document_id)
     if not document: raise HTTPException(404,"Document not found")
     if document.document_type!="mortgage":
-        raise HTTPException(409,"Only mortgage documents can be linked to a mortgage profile")
+        raise HTTPException(409,"Solo los documentos hipotecarios pueden vincularse a una hipoteca")
     links=db.scalars(select(EntityLink).where(
         EntityLink.from_type=="document",
         EntityLink.from_id==document_id,
@@ -398,6 +398,37 @@ def document_file(document_id:str,db:Session=Depends(get_db)):
     return FileResponse(path,media_type=row.mime_type or "application/octet-stream",filename=row.file_name,content_disposition_type="inline")
 
 
+@app.post("/api/v1/documents/{document_id}/facts")
+def create_manual_document_fact(document_id:str,payload:ManualFactCreate,db:Session=Depends(get_db)):
+    document=db.get(Document,document_id)
+    if not document:raise HTTPException(404,"Document not found")
+    value={"value":payload.value,"source":"user_confirmed"}
+    if payload.unit:value["unit"]=payload.unit
+    if payload.fact_type=="coverage_fact":
+        value.update({
+            "coverage_type":payload.coverage_type or payload.value,
+            "limit_amount":payload.limit_amount,
+            "deductible":payload.deductible,
+            "conditions":payload.conditions or "",
+            "exclusions":payload.exclusions or "",
+        })
+    row=ExtractedFact(
+        document_id=document.id,
+        fact_type=payload.fact_type,
+        key=payload.key.strip(),
+        value_json=json.dumps(value,ensure_ascii=False),
+        confidence=Decimal("1"),
+        status="confirmed",
+        source_page=payload.source_page,
+        source_section="Introducido por el usuario",
+        user_verified=True,
+    )
+    db.add(row);db.flush()
+    sync=synchronize_document_evidence(db,document)
+    db.add(AuditEvent(event_type="document_fact_added_by_user",entity_type="document",entity_id=document.id,metadata_json=json.dumps({"fact_id":row.id,"key":row.key,"fact_type":row.fact_type})))
+    db.commit()
+    return {"id":row.id,"evidence_sync":sync}
+
 @app.patch("/api/v1/facts/{fact_id}")
 def update_fact(fact_id:str,payload:FactUpdate,db:Session=Depends(get_db)):
     row=db.get(ExtractedFact,fact_id)
@@ -497,12 +528,22 @@ def audit(limit:int=Query(100,ge=1,le=500),db:Session=Depends(get_db)):
 if settings.frontend_dir.exists():
     assets=settings.frontend_dir/"_next"
     if assets.exists(): app.mount("/_next",StaticFiles(directory=assets),name="next-assets")
+    def _frontend_response(path:str,head:bool=False):
+        candidate=settings.frontend_dir/path
+        if path and candidate.is_file():
+            return Response(status_code=200) if head else FileResponse(candidate)
+        html=candidate/"index.html" if path else settings.frontend_dir/"index.html"
+        if html.exists():
+            return Response(status_code=200,media_type="text/html") if head else FileResponse(html)
+        fallback=settings.frontend_dir/"404.html"
+        if fallback.exists():
+            return Response(status_code=404,media_type="text/html") if head else FileResponse(fallback,status_code=404)
+        raise HTTPException(404)
+
+    @app.head("/{path:path}",include_in_schema=False)
+    def frontend_head(path:str):
+        return _frontend_response(path,head=True)
+
     @app.get("/{path:path}",include_in_schema=False)
     def frontend(path:str):
-        candidate=settings.frontend_dir/path
-        if path and candidate.is_file(): return FileResponse(candidate)
-        html=candidate/"index.html" if path else settings.frontend_dir/"index.html"
-        if html.exists(): return FileResponse(html)
-        fallback=settings.frontend_dir/"404.html"
-        if fallback.exists(): return FileResponse(fallback,status_code=404)
-        raise HTTPException(404)
+        return _frontend_response(path)

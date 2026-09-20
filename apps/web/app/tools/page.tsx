@@ -1,7 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import {FormEvent,useEffect,useMemo,useState} from 'react';
-import {useMutation,useQuery,useQueryClient} from '@tanstack/react-query';
+import {useMutation,useQuery} from '@tanstack/react-query';
 import {apiGet,apiMutate} from '@/lib/api';
 import {PageHeader} from '@/components/page-header';
 import {Card} from '@/components/ui/card';
@@ -17,6 +18,7 @@ type Prepay={mortgage:MortgageProfile;original_monthly_payment:string;original_t
 type RatePath={mortgage:MortgageProfile;total_payments:string;total_interest:string;min_monthly_payment:string;max_monthly_payment:string;final_balance:string;notice:string;segments:{start_month:number;annual_rate:string;monthly_payment:string;end_balance:string}[]};
 type Contract={id:string;provider_name:string;contract_type:string;annual_cost:string|null;early_exit_penalty:string|null;evidence_status:string;renewal_date:string|null};
 type Opt={status:string;net_annual_benefit:string|null;break_even_months:string|null};
+type GlobalScenario={monthly_income_after_shock:string;monthly_net:string;ending_liquidity:string;cash_runway_months:string|null;portfolio_after_shock:string};
 type Context={generated_at:string;real_data_only:boolean;liquidity:string;cash_flow_current_month:{start:string;end:string;income:string;expenses:string;savings:string;savings_rate:string|null};cash_flow_last_90_days:{start:string;end:string;income:string;expenses:string;savings:string;savings_rate:string|null;average_monthly_income:string;average_monthly_expenses:string;average_monthly_savings:string};tracked_assets:any[];rules:string[]};
 type SwitchingReadiness={ready:boolean;missing:string[];mortgage:null|{id:string;lender:string;remaining_principal:string;nominal_rate:string;monthly_payment:string;remaining_months:number;subrogation_penalty:{status:string;amount:string|null;formula:string|null;source:any};linked_product_signals:string[];linked_product_rate_impacts:{product:string;fact_key:string;rate_penalty_pp:string;monthly_payment_at_current_rate:string;monthly_payment_without_product:string;monthly_payment_increase:string;remaining_interest_increase:string;source:any;assumption:string}[]};insurance:{policy_id:string;insurance_type:string;annual_premium:string;provider:string|null;renewal_date:string|null;cancellation_notice_days:number|null;exit_penalty:string|null;evidence_status:string|null;source_document_id:string|null}[];hypotheses:{key:string;label:string}[];rule:string};
 type MarketScan={generated_at:string;current_mortgage_rate_percent:string|null;leads:{source_id:string;provider:string;kind:string;status:string;public_tin_min:number|null;benchmark_difference_pp:number|null;promo_percent:string|null;claims:string[];url:string;retrieved_at:string;requires_personalized_quote:boolean}[];disclaimer:string};
@@ -34,50 +36,21 @@ function parseRatePath(raw:string){
   });
 }
 
-const EMPTY_MORTGAGE={lender:'',remaining_principal:'',currency:'EUR',interest_type:'fixed',nominal_rate:'',monthly_payment:'',remaining_months:'',early_repayment_fee:''};
 
 export default function ToolsPage(){
-  const qc=useQueryClient();
   const [selectedMortgage,setSelectedMortgage]=useState('');
-  const [mortgageForm,setMortgageForm]=useState(EMPTY_MORTGAGE);
   const mortgages=useQuery({queryKey:['mortgages'],queryFn:()=>apiGet<MortgageProfile[]>('/api/v1/mortgages')});
   const contracts=useQuery({queryKey:['contracts'],queryFn:()=>apiGet<Contract[]>('/api/v1/contracts')});
   const context=useQuery({queryKey:['decision-lab-context'],queryFn:()=>apiGet<Context>('/api/v1/decision-lab/context')});
   const readiness=useQuery({queryKey:['switching-readiness',selectedMortgage],queryFn:()=>apiGet<SwitchingReadiness>('/api/v1/decision-lab/switching-readiness'+(selectedMortgage?'?mortgage_id='+encodeURIComponent(selectedMortgage):''))});
   const marketScan=useMutation({mutationFn:()=>apiGet<MarketScan>('/api/v1/decision-lab/market-scan')});
+  const [globalShock,setGlobalShock]=useState({income_reduction_pct:'20',extraordinary_expense:'0',portfolio_drop_pct:'20',months:6});
+  const globalScenario=useMutation({mutationFn:()=>apiMutate<GlobalScenario>('/api/v1/stress','POST',globalShock)});
   const mortgageInsights=useQuery({queryKey:['document-insights','mortgage'],queryFn:()=>apiGet<DocInsight[]>('/api/v1/document-insights?document_type=mortgage')});
 
   useEffect(()=>{
     if(!selectedMortgage&&mortgages.data?.length)setSelectedMortgage(mortgages.data[0].id);
   },[mortgages.data,selectedMortgage]);
-
-  useEffect(()=>{
-    const m=mortgages.data?.find(x=>x.id===selectedMortgage);
-    if(m)setMortgageForm({
-      lender:m.lender,remaining_principal:m.remaining_principal,currency:m.currency,interest_type:m.interest_type,
-      nominal_rate:m.nominal_rate,monthly_payment:m.monthly_payment,remaining_months:String(m.remaining_months),
-      early_repayment_fee:m.early_repayment_fee??''
-    });
-    else if(!selectedMortgage)setMortgageForm(EMPTY_MORTGAGE);
-  },[selectedMortgage,mortgages.data]);
-
-  const saveMortgage=useMutation({
-    mutationFn:()=>apiMutate<MortgageProfile>(
-      selectedMortgage?'/api/v1/mortgages/'+selectedMortgage:'/api/v1/mortgages',
-      selectedMortgage?'PATCH':'POST',
-      {
-        lender:mortgageForm.lender,
-        remaining_principal:mortgageForm.remaining_principal,
-        currency:mortgageForm.currency,
-        interest_type:mortgageForm.interest_type,
-        nominal_rate:mortgageForm.nominal_rate,
-        monthly_payment:mortgageForm.monthly_payment,
-        remaining_months:Number(mortgageForm.remaining_months),
-        early_repayment_fee:mortgageForm.early_repayment_fee===''?null:mortgageForm.early_repayment_fee,
-      }
-    ),
-    onSuccess:(m)=>{setSelectedMortgage(m.id);qc.invalidateQueries({queryKey:['mortgages']});qc.invalidateQueries({queryKey:['decision-lab-context']})}
-  });
 
   const current=useMutation({mutationFn:()=>apiMutate<MortgageScenario>('/api/v1/decision-lab/mortgage/current','POST',{mortgage_id:selectedMortgage})});
   const [extra,setExtra]=useState('');
@@ -129,6 +102,27 @@ export default function ToolsPage(){
       </div>:null}
     </Card>
 
+    <Card className="mt-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><h2 className="font-bold">Escenario global</h2><p className="mt-1 text-sm text-[var(--muted)]">Combina liquidez, ingresos/gastos observados y cartera real para probar una caída de ingresos, un gasto extraordinario y una caída hipotética de inversiones en un mismo escenario.</p></div>
+        <div className="flex gap-2"><Link className="text-xs underline" href="/goals/">Ver objetivos</Link><Link className="text-xs underline" href="/markets/">Simular inversiones</Link></div>
+      </div>
+      <form className="mt-4 grid gap-3 md:grid-cols-4" onSubmit={(e:FormEvent)=>{e.preventDefault();globalScenario.mutate()}}>
+        <label className="text-sm">Caída de ingresos (%)<input className="fin-input mt-1" type="number" min="0" max="100" step=".1" value={globalShock.income_reduction_pct} onChange={e=>setGlobalShock({...globalShock,income_reduction_pct:e.target.value})}/></label>
+        <label className="text-sm">Gasto extraordinario<input className="fin-input mt-1" type="number" min="0" step=".01" value={globalShock.extraordinary_expense} onChange={e=>setGlobalShock({...globalShock,extraordinary_expense:e.target.value})}/></label>
+        <label className="text-sm">Caída de cartera (%)<input className="fin-input mt-1" type="number" min="0" max="100" step=".1" value={globalShock.portfolio_drop_pct} onChange={e=>setGlobalShock({...globalShock,portfolio_drop_pct:e.target.value})}/></label>
+        <label className="text-sm">Horizonte (meses)<input className="fin-input mt-1" type="number" min="1" max="60" value={globalShock.months} onChange={e=>setGlobalShock({...globalShock,months:Number(e.target.value)})}/></label>
+        <button className="fin-button md:col-span-4" disabled={globalScenario.isPending}>{globalScenario.isPending?'Calculando…':'Simular escenario completo'}</button>
+      </form>
+      {globalScenario.error&&<div className="mt-3"><ErrorState error={globalScenario.error}/></div>}
+      {globalScenario.data&&<div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4 text-sm">
+        <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Ingreso mensual tras shock</div><strong><Money value={globalScenario.data.monthly_income_after_shock}/></strong></div>
+        <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Flujo mensual resultante</div><strong><Money value={globalScenario.data.monthly_net}/></strong></div>
+        <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Liquidez al final</div><strong><Money value={globalScenario.data.ending_liquidity}/></strong></div>
+        <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Cartera tras shock</div><strong><Money value={globalScenario.data.portfolio_after_shock}/></strong><div className="text-[11px] text-[var(--muted)]">Runway {globalScenario.data.cash_runway_months===null?'sin consumo neto':globalScenario.data.cash_runway_months+' meses'}</div></div>
+      </div>}
+    </Card>
+
     <div className="mt-4 grid gap-4 xl:grid-cols-2">
       <Card className="xl:col-span-2">
         <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Conclusiones de tu documentación hipotecaria</h2><p className="mt-1 text-sm text-[var(--muted)]">La IA local interpreta cláusulas y relaciones entre hipoteca, seguros y vinculaciones. Los cálculos siguen usando únicamente hechos confirmados y datos reales.</p></div><a className="text-xs underline" href="/documents/">Añadir o revisar documentos</a></div>
@@ -165,26 +159,24 @@ export default function ToolsPage(){
       <Card className="xl:col-span-2">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="font-bold">Tu hipoteca actual</h2>
-            <p className="mt-1 text-sm text-[var(--muted)]">Mantén aquí el capital, TIN, cuota y plazo que realmente tienes ahora. Cada actualización queda registrada como snapshot.</p>
+            <h2 className="font-bold">Hipoteca utilizada en las simulaciones</h2>
+            <p className="mt-1 text-sm text-[var(--muted)]">Los datos contractuales proceden de la documentación confirmada. Si falta o cambia un dato, corrígelo en el documento origen para que se actualice en toda la aplicación.</p>
           </div>
           <select className="fin-input max-w-72" aria-label="Hipoteca guardada" value={selectedMortgage} onChange={e=>setSelectedMortgage(e.target.value)}>
-            <option value="">Nueva hipoteca</option>
-            {mortgages.data?.map(m=><option key={m.id} value={m.id}>{m.lender} · {m.remaining_principal} €</option>)}
+            <option value="">Selecciona una hipoteca…</option>
+            {mortgages.data?.map(m=><option key={m.id} value={m.id}>{m.lender} · {new Intl.NumberFormat('es-ES',{style:'currency',currency:m.currency}).format(Number(m.remaining_principal))}</option>)}
           </select>
         </div>
-        <form className="mt-4 grid gap-3 md:grid-cols-4" onSubmit={(e:FormEvent)=>{e.preventDefault();saveMortgage.mutate()}}>
-          <label className="text-sm">Entidad<input className="fin-input mt-1" value={mortgageForm.lender} onChange={e=>setMortgageForm({...mortgageForm,lender:e.target.value})} required/></label>
-          <label className="text-sm">Capital pendiente<input className="fin-input mt-1" type="number" step=".01" value={mortgageForm.remaining_principal} onChange={e=>setMortgageForm({...mortgageForm,remaining_principal:e.target.value})} required/></label>
-          <label className="text-sm">Tipo<select className="fin-input mt-1" value={mortgageForm.interest_type} onChange={e=>setMortgageForm({...mortgageForm,interest_type:e.target.value})}><option value="fixed">Fija</option><option value="variable">Variable</option><option value="mixed">Mixta</option></select></label>
-          <label className="text-sm">TIN actual decimal<input className="fin-input mt-1" value={mortgageForm.nominal_rate} onChange={e=>setMortgageForm({...mortgageForm,nominal_rate:e.target.value})} placeholder="0.025 = 2,5%" required/></label>
-          <label className="text-sm">Cuota real actual<input className="fin-input mt-1" type="number" step=".01" value={mortgageForm.monthly_payment} onChange={e=>setMortgageForm({...mortgageForm,monthly_payment:e.target.value})} required/></label>
-          <label className="text-sm">Meses restantes<input className="fin-input mt-1" type="number" value={mortgageForm.remaining_months} onChange={e=>setMortgageForm({...mortgageForm,remaining_months:e.target.value})} required/></label>
-          <label className="text-sm">Comisión total de amortización<input className="fin-input mt-1" type="number" step=".01" value={mortgageForm.early_repayment_fee} onChange={e=>setMortgageForm({...mortgageForm,early_repayment_fee:e.target.value})} placeholder="Vacío si no consta"/></label>
-          <button className="fin-button self-end" disabled={saveMortgage.isPending}>{selectedMortgage?'Actualizar datos reales':'Guardar hipoteca'}</button>
-        </form>
-        {saveMortgage.error&&<div className="mt-3"><ErrorState error={saveMortgage.error}/></div>}
-        {activeMortgage?.source_document_id&&<a className="mt-3 inline-block text-xs underline" href={'/documents/?document='+encodeURIComponent(activeMortgage.source_document_id)}>Ver documento que alimenta esta hipoteca</a>}
+        {activeMortgage?<div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4 text-sm">
+          <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Capital pendiente</div><strong><Money value={activeMortgage.remaining_principal} currency={activeMortgage.currency}/></strong></div>
+          <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">TIN</div><strong>{(Number(activeMortgage.nominal_rate)*100).toLocaleString('es-ES',{maximumFractionDigits:3})}%</strong></div>
+          <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Cuota</div><strong><Money value={activeMortgage.monthly_payment} currency={activeMortgage.currency}/></strong></div>
+          <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Plazo restante</div><strong>{activeMortgage.remaining_months.toLocaleString('es-ES')} meses</strong></div>
+        </div>:<EmptyState>Añade y confirma la FEIN, escritura o condiciones hipotecarias en Documentos para poder simular con una fuente única y trazable.</EmptyState>}
+        <div className="mt-3 flex flex-wrap gap-2">
+          {activeMortgage?.source_document_id?<Link className="fin-button secondary py-2 text-xs" href={'/documents/?document='+encodeURIComponent(activeMortgage.source_document_id)}>Ver o completar documento origen</Link>:activeMortgage?<Link className="fin-button secondary py-2 text-xs" href="/documents/">Vincular la hipoteca a documentación</Link>:<Link className="fin-button py-2 text-xs" href="/documents/">Añadir documentación hipotecaria</Link>}
+          {activeMortgage&&!activeMortgage.source_document_id&&<span className="self-center text-xs text-[var(--muted)]">Este registro procede de una versión anterior/manual y todavía no tiene documento canónico asociado.</span>}
+        </div>
       </Card>
 
       <Card>

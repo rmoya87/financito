@@ -6,7 +6,7 @@ from sqlalchemy import delete,select
 from sqlalchemy.orm import Session
 from ..models import Category,Transaction
 from ..models_analytics import EntityLink,TransactionRule,TransactionSplit
-from .categorization import normalize_text
+from .categorization import ensure_categories,normalize_text
 
 def apply_rule(session:Session,tx:Transaction)->bool:
     if tx.user_verified:return False
@@ -30,15 +30,38 @@ def apply_rules_to_unverified(session:Session)->int:
     return changed
 
 def detect_internal_transfers(session:Session)->int:
-    txs=session.scalars(select(Transaction).where(Transaction.is_internal_transfer.is_(False)).order_by(Transaction.booking_date)).all()
+    categories=ensure_categories(session)
+    internal_category=categories["internal_transfer"]
+    txs=session.scalars(select(Transaction).where(Transaction.is_internal_transfer.is_(False)).order_by(Transaction.booking_date,Transaction.id)).all()
     marked=set()
     for i,left in enumerate(txs):
         if left.id in marked:continue
         for right in txs[i+1:]:
             if right.booking_date>left.booking_date+timedelta(days=3):break
             if right.id in marked or right.account_id==left.account_id:continue
+            if left.currency!=right.currency:continue
             if left.amount+right.amount==0 and abs((right.booking_date-left.booking_date).days)<=3:
-                left.is_internal_transfer=True;right.is_internal_transfer=True;marked.update([left.id,right.id]);break
+                left.is_internal_transfer=True;right.is_internal_transfer=True
+                for tx in (left,right):
+                    if not tx.user_verified:
+                        tx.category_id=internal_category.id
+                        tx.categorization_method="internal_transfer_match"
+                        tx.categorization_confidence=Decimal("0.99")
+                existing=session.scalar(select(EntityLink.id).where(
+                    EntityLink.from_type=="transaction",
+                    EntityLink.from_id==left.id,
+                    EntityLink.relation_type=="internal_transfer_pair",
+                    EntityLink.to_type=="transaction",
+                    EntityLink.to_id==right.id,
+                ))
+                if not existing:
+                    session.add(EntityLink(
+                        from_type="transaction",from_id=left.id,relation_type="internal_transfer_pair",
+                        to_type="transaction",to_id=right.id,confidence=Decimal("0.99"),
+                        source_type="deterministic_transfer_match",source_ref=right.id,
+                    ))
+                marked.update([left.id,right.id]);break
+    session.flush()
     return len(marked)//2
 
 def set_splits(session:Session,transaction_id:str,splits:list[dict])->list[TransactionSplit]:

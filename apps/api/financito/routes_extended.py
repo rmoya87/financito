@@ -1,6 +1,6 @@
 from __future__ import annotations
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal,ROUND_CEILING
 import json
 from fastapi import APIRouter,Depends,File,HTTPException,UploadFile
 from sqlalchemy import select
@@ -9,7 +9,7 @@ from .db import SessionLocal
 from .models import Account,Contract,FinancialGoal,Mortgage,Portfolio,Security
 from .models_extended import Asset,BackupRecord,CoverageFact,InsurancePolicy,Liability,RepairIssue,Trade,TrackedAsset
 from .models_analytics import EntityLink
-from .schemas_extended import AssetCreate,BackupCreate,BackupRestore,ChatRequest,ContractCreate,CoverageCompareRequest,CoverageCreate,CorporateActionCreate,GoalCreate,GoalProgressUpdate,InsuranceCreate,LiabilityCreate,MortgageProfileCreate,MortgageProfileUpdate,PortfolioCreate,RagSearchRequest,SecurityCreate,StoredMortgagePrepaymentRequest,StoredMortgageRatePathRequest,StoredMortgageScenarioRequest,StressRequest,TaxEstimateRequest,TrackedAssetCreate,TradeCreate
+from .schemas_extended import AssetCreate,AssetSimulationStart,BackupCreate,BackupRestore,ChatRequest,ContractCreate,CoverageCompareRequest,CoverageCreate,CorporateActionCreate,GoalCreate,GoalProgressUpdate,InsuranceCreate,LiabilityCreate,MortgageProfileCreate,MortgageProfileUpdate,PortfolioCreate,RagSearchRequest,SecurityCreate,StoredMortgagePrepaymentRequest,StoredMortgageRatePathRequest,StoredMortgageScenarioRequest,StressRequest,TaxEstimateRequest,TaxProfileUpdate,TrackedAssetCreate,TradeCreate
 from .domain.portfolio import apply_trade,portfolio_summary
 from .domain.engines import MortgageEngine,MortgagePrepaymentEngine,MortgageRatePathEngine
 from .domain.stress import run_stress
@@ -17,16 +17,17 @@ from .services.backup import create_backup,stage_restore
 from .services.chat import answer
 from .services.contracts import compare_coverages,refresh_contract_actions,scan_coverage_overlaps
 from .services.import_formats import import_statement
+from .services.insurance_analysis import insurance_verdict
 from .services.rag import index_document_chunks,search
 from .services.repair import repair,scan
-from .services.tax import estimate
+from .services.tax import estimate,get_profile,profile_dict,upsert_profile
 from .services.wealth import summary as wealth_summary
 from .services.financial_analytics import cash_flow
 from .services.snapshots import record_snapshot
 from .services.decision_context import live_decision_context,mortgage_row
 from .services.contractual_costs import resolve_prepayment_penalty,switching_readiness
 from .services.market_research import scan_public_market
-from .services.investment_tracking import save_tracked_asset,tracked_assets
+from .services.investment_tracking import remove_tracking,save_tracked_asset,simulation_history,start_simulation,tracked_assets
 from .services.broker_import import import_broker_csv
 from .services.corporate_actions import add_action,list_actions
 from .providers.market import AlphaVantageProvider
@@ -182,6 +183,30 @@ def tracked_asset_add(p:TrackedAssetCreate,db:Session=Depends(dbdep)):
     except ValueError as exc:
         db.rollback();raise HTTPException(409,str(exc))
 
+@router.post("/tracked-assets/{security_id}/simulation")
+def tracked_asset_simulation(security_id:str,p:AssetSimulationStart,db:Session=Depends(dbdep)):
+    from .services.market_data import refresh_history,refresh_security
+    if not db.get(Security,security_id):raise HTTPException(404,"Security not found")
+    try:
+        refresh_security(db,security_id)
+        refresh_history(db,security_id)
+        result=start_simulation(db,security_id,p.amount)
+        db.commit();return result
+    except ValueError as exc:
+        db.rollback();raise HTTPException(400,str(exc))
+    except Exception as exc:
+        db.rollback();raise HTTPException(503,str(exc))
+
+@router.get("/tracked-assets/{security_id}/simulation-history")
+def tracked_asset_simulation_history(security_id:str,db:Session=Depends(dbdep)):
+    if not db.get(Security,security_id):raise HTTPException(404,"Security not found")
+    return simulation_history(db,security_id)
+
+@router.delete("/tracked-assets/{security_id}")
+def tracked_asset_delete(security_id:str,db:Session=Depends(dbdep)):
+    if not db.get(Security,security_id):raise HTTPException(404,"Security not found")
+    result=remove_tracking(db,security_id);db.commit();return result
+
 @router.post("/tracked-assets/refresh-all")
 def tracked_assets_refresh_all(db:Session=Depends(dbdep)):
     from .services.market_data import refresh_security
@@ -239,17 +264,32 @@ def contracts(db:Session=Depends(dbdep)):
 @router.post("/contracts")
 def add_contract(p:ContractCreate,db:Session=Depends(dbdep)):r=Contract(**p.model_dump());db.add(r);db.flush();refresh_contract_actions(db);db.commit();return {"id":r.id}
 
+def _goal_row(r:FinancialGoal)->dict:
+    remaining=max(Decimal("0"),r.target_amount-r.current_amount)
+    months_left=None;monthly_required=None
+    if r.target_date:
+        today=date.today()
+        months_left=max(1,(r.target_date.year-today.year)*12+r.target_date.month-today.month+(1 if r.target_date.day>today.day else 0))
+        monthly_required=(remaining/Decimal(months_left)).quantize(Decimal("0.01"))
+    planned=r.planned_monthly_contribution or Decimal("0")
+    projected_months=None
+    if remaining==0:projected_months=0
+    elif planned>0:projected_months=int((remaining/planned).to_integral_value(rounding=ROUND_CEILING))
+    return {"id":r.id,"type":r.goal_type,"name":r.name,"target_amount":str(r.target_amount),"current_amount":str(r.current_amount),"target_date":r.target_date,"priority":r.priority,"status":r.status,"planned_monthly_contribution":str(planned),"remaining_amount":str(remaining),"months_left":months_left,"monthly_required":None if monthly_required is None else str(monthly_required),"projected_months":projected_months}
+
 @router.get("/goals")
-def goals(db:Session=Depends(dbdep)):return [{"id":r.id,"type":r.goal_type,"name":r.name,"target_amount":str(r.target_amount),"current_amount":str(r.current_amount),"target_date":r.target_date,"priority":r.priority,"status":r.status} for r in db.scalars(select(FinancialGoal)).all()]
+def goals(db:Session=Depends(dbdep)):return [_goal_row(r) for r in db.scalars(select(FinancialGoal).order_by(FinancialGoal.created_at.desc())).all()]
 @router.post("/goals")
-def add_goal(p:GoalCreate,db:Session=Depends(dbdep)):r=FinancialGoal(**p.model_dump());db.add(r);db.commit();return {"id":r.id}
+def add_goal(p:GoalCreate,db:Session=Depends(dbdep)):
+    r=FinancialGoal(**p.model_dump());db.add(r);db.commit();return _goal_row(r)
 @router.patch("/goals/{goal_id}")
 def progress(goal_id:str,p:GoalProgressUpdate,db:Session=Depends(dbdep)):
     r=db.get(FinancialGoal,goal_id)
     if not r:raise HTTPException(404,"Goal not found")
     r.current_amount=p.current_amount
-    if r.current_amount>=r.target_amount:r.status="completed"
-    db.commit();return {"id":r.id,"status":r.status}
+    if p.planned_monthly_contribution is not None:r.planned_monthly_contribution=p.planned_monthly_contribution
+    r.status="completed" if r.current_amount>=r.target_amount else "active"
+    db.commit();return _goal_row(r)
 
 @router.get("/portfolios")
 def portfolios(db:Session=Depends(dbdep)):return [{"id":p.id,"name":p.name,"base_currency":p.base_currency,**portfolio_summary(db,p.id)} for p in db.scalars(select(Portfolio)).all()]
@@ -295,6 +335,14 @@ async def broker_import(portfolio_id:str,file:UploadFile=File(...),db:Session=De
     except ValueError as exc:
         db.rollback()
         raise HTTPException(400,str(exc))
+
+@router.get("/insurance/verdict")
+def insurance_verdict_view(db:Session=Depends(dbdep)):
+    result=insurance_verdict(db,use_ai=False);db.commit();return result
+
+@router.post("/insurance/verdict/analyze")
+def insurance_verdict_with_ai(db:Session=Depends(dbdep)):
+    result=insurance_verdict(db,use_ai=True);db.commit();return result
 
 @router.post("/insurance")
 def add_insurance(p:InsuranceCreate,db:Session=Depends(dbdep)):r=InsurancePolicy(**p.model_dump(),insured_object_json="{}");db.add(r);db.commit();return {"id":r.id}
@@ -344,8 +392,20 @@ def repair_run(issue_id:str,db:Session=Depends(dbdep)):
     except ValueError as e:raise HTTPException(400,str(e))
     db.commit();return result
 
+@router.get("/tax/profile")
+def tax_profile(jurisdiction:str="ES",tax_year:int=date.today().year,db:Session=Depends(dbdep)):
+    return profile_dict(get_profile(db,jurisdiction.upper(),tax_year),jurisdiction.upper(),tax_year)
+
+@router.put("/tax/profile")
+def save_tax_profile(p:TaxProfileUpdate,db:Session=Depends(dbdep)):
+    if p.children_under_three>p.dependent_children:
+        raise HTTPException(400,"Los menores de tres años no pueden superar el número total de descendientes.")
+    row=upsert_profile(db,p.model_dump());db.commit()
+    return profile_dict(row,row.jurisdiction,row.tax_year)
+
 @router.post("/tax/estimate")
-def tax(p:TaxEstimateRequest,db:Session=Depends(dbdep)):return estimate(db,p.jurisdiction,p.tax_year,p.assumed_rate)
+def tax(p:TaxEstimateRequest,db:Session=Depends(dbdep)):
+    return estimate(db,p.jurisdiction,p.tax_year)
 @router.get("/market/quote/{symbol}")
 def quote(symbol:str):
     try:return AlphaVantageProvider().quote(symbol)

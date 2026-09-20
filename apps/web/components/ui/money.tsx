@@ -1,1 +1,6 @@
-export function Money({value,currency='EUR'}:{value:string|number;currency?:string}){const n=typeof value==='number'?value:Number(value);return <>{new Intl.NumberFormat('es-ES',{style:'currency',currency,maximumFractionDigits:2}).format(Number.isFinite(n)?n:0)}</>}
+export function Money({value,currency='EUR',fallback='—'}:{value:string|number|null|undefined;currency?:string;fallback?:string}){
+  if(value===null||value===undefined||value==='')return <>{fallback}</>;
+  const n=typeof value==='number'?value:Number(value);
+  if(!Number.isFinite(n))return <>{fallback}</>;
+  return <>{new Intl.NumberFormat('es-ES',{style:'currency',currency,minimumFractionDigits:2,maximumFractionDigits:2}).format(n)}</>;
+}

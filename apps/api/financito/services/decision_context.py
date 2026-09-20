@@ -11,6 +11,7 @@ from .investment_tracking import tracked_assets
 from .wealth import summary as wealth_summary
 from .evidence import structured_evidence_context
 from .financial_analytics import cash_flow
+from .insurance_analysis import insurance_verdict
 from ..domain.portfolio import portfolio_summary
 
 
@@ -99,6 +100,7 @@ def live_decision_context(session: Session) -> dict:
         "portfolios": portfolios,
         "tracked_assets": tracked_assets(session),
         "document_evidence": structured_evidence_context(session),
+        "insurance": insurance_verdict(session,use_ai=False),
         "rules": [
             "Los cálculos deterministas usan registros guardados en Financito; no valores de ejemplo.",
             "Los precios de mercado se identifican con proveedor y fecha. Si falta precio real, el valor se marca como no disponible.",

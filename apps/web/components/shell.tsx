@@ -44,6 +44,7 @@ const areas:Area[]=[
       {href:'/wealth/',label:'Resumen'},
       {href:'/investments/',label:'Inversiones'},
       {href:'/markets/',label:'Mercado'},
+      {href:'/tax/',label:'Fiscalidad'},
       {href:'/history/',label:'Histórico'},
     ],
   },

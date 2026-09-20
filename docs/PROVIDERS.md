@@ -89,3 +89,17 @@ La sincronización actualiza saldo disponible/contable expuesto por el ASPSP y m
 El provider de investigación de mercado se ejecuta bajo demanda. Consulta una lista acotada de páginas oficiales de entidades y extrae únicamente señales explícitas (TIN/TAE visibles, subrogación, comisiones, vinculaciones, promociones).
 
 El resultado es descubrimiento de candidatos. No sustituye una FEIN, estudio de riesgo, tarificación de seguro ni oferta vinculante.
+
+## Diagnóstico Ollama y modelos Qwen
+
+La detección de modelos usa `GET /api/tags`, pero el estado listo solo se considera operativo tras una prueba de generación cuando el usuario pulsa **Probar IA ahora**.
+
+Las llamadas de chat usan `POST /api/generate` con:
+- `stream=false`;
+- `think=false` cuando es aceptado por la versión/modelo;
+- `keep_alive` para evitar recargas innecesarias;
+- reintento sin `think` en respuestas 400/404/422 compatibles con versiones antiguas.
+
+Si Ollama devuelve solo contenido de razonamiento y no `response`, Financito lo reporta como error de compatibilidad en vez de aparentar una respuesta vacía.
+
+La UI lista los nombres/tags realmente devueltos por Ollama; por tanto el nombre configurado debe coincidir con el instalado (por ejemplo un tag concreto como `qwen3.5:4b` si ese es el nombre local).

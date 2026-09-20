@@ -323,8 +323,6 @@ def test_mortgage_context_does_not_mix_linked_documents_across_profiles():
         assert ctx_a["by_key"]["nominal_rate"]["value"]=="2.00"
         assert "nominal_rate" not in ctx_b["by_key"]
 
-
-
 def test_unlinked_mortgage_offer_does_not_change_current_mortgage():
     suffix=uuid4().hex[:8]
     path=settings.vault_dir/f"oferta-hipoteca-{suffix}.txt"
@@ -368,3 +366,4 @@ def test_unlinked_mortgage_offer_does_not_change_current_mortgage():
             EntityLink.to_type=="mortgage",
         ))
         assert link is None
+

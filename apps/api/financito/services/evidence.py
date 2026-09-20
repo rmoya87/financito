@@ -14,7 +14,7 @@ from ..models_analytics import EntityLink
 from ..models_extended import CoverageFact,InsurancePolicy
 from .document_ai import latest_analysis
 
-MATERIAL_FACT_TYPES = {"contract_term", "mortgage_term", "linked_product", "coverage_fact"}
+MATERIAL_FACT_TYPES = {"contract_term", "mortgage_term", "linked_product", "coverage_fact", "investment_term"}
 CONTRACT_DOCUMENT_TYPES = {"mortgage", "insurance", "loan", "contract", "energy", "telecom"}
 REVIEWED_STATUSES = {"confirmed", "ambiguous", "conflicting", "not_found", "superseded"}
 
@@ -257,10 +257,10 @@ def _ensure_mortgage_projection(
     document: Document,
     values: dict[str, dict],
 ) -> Mortgage | None:
-    if document.document_type!="mortgage":
-        return None
-
     link=_entity_link(session,document.id,"mortgage")
+    # Solo un vínculo explícito elegido por el usuario permite que un documento
+    # hipotecario modifique la hipoteca actual. Las ofertas/FEIN comparativas
+    # siguen siendo evidencia consultable pero no alteran el estado vigente.
     if link is None:
         return None
     mortgage=session.get(Mortgage,link.to_id)
@@ -292,6 +292,10 @@ def _ensure_mortgage_projection(
         kind=_interest_type(values["interest_type"].get("value"))
         if kind and mortgage.interest_type!=kind:
             mortgage.interest_type=kind;changed=True
+    if "early_repayment_fee" in values:
+        fee=_decimal(values["early_repayment_fee"].get("value"))
+        if fee is not None and mortgage.early_repayment_fee!=fee:
+            mortgage.early_repayment_fee=fee;changed=True
 
     session.flush()
     if changed:
@@ -469,6 +473,7 @@ def structured_evidence_context(
             payload = _payload(fact)
             items.append(
                 {
+                    "fact_type": fact.fact_type,
                     "key": fact.key,
                     "value": payload.get("value"),
                     "unit": payload.get("unit"),
@@ -476,6 +481,8 @@ def structured_evidence_context(
                     "user_verified": fact.user_verified,
                     "confidence": str(fact.confidence),
                     "page": fact.source_page,
+                    "source_section": fact.source_section,
+                    "manual": fact.source_section=="Introducido por el usuario",
                 }
             )
             used += 1

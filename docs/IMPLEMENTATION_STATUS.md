@@ -70,6 +70,8 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 - backtest MA y escenario amortizar-vs-invertir.
 
 ### Contratos, seguros, hipoteca y decisiones
+- fuente de verdad documental compartida: los campos que no se reconozcan se completan como hechos confirmados dentro del documento, evitando fichas paralelas.
+- veredicto transversal de seguros: cruza pólizas/coberturas documentadas con pagos reales, ingresos/ahorro, huecos, duplicidades y productos vinculados; la IA local solo explica el análisis.
 - contratos y Action Center de renovación/preaviso.
 - pólizas y hechos de cobertura.
 - duplicidades solo entre coberturas verificadas.
@@ -82,6 +84,8 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 - centros de coste con asignaciones porcentuales y agregación de contratos/pólizas/activos/deuda.
 
 ### Operación
+- Configuración de IA local con prueba de generación real de Ollama, diagnóstico de modelo/tag y compatibilidad con Qwen mediante `think=false` con fallback.
+- las rutas estáticas de la WebApp responden HEAD correctamente para prefetch/health checks, evitando falsos 405.
 - backup cifrado AES-256-GCM, clave derivada con scrypt, manifest SHA-256 y extracción TAR segura.
 - restore a staging, verificación y aplicación al siguiente arranque.
 - Repair Center.

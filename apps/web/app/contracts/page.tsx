@@ -1,6 +1,69 @@
 'use client';
 import Link from 'next/link';
-import {FormEvent,useState} from 'react';import {useMutation,useQuery,useQueryClient} from '@tanstack/react-query';import {apiGet,apiMutate} from '@/lib/api';import {PageHeader} from '@/components/page-header';import {Card} from '@/components/ui/card';import {Money} from '@/components/ui/money';import {EmptyState} from '@/components/ui/states';
+import {useQuery} from '@tanstack/react-query';
+import {apiGet} from '@/lib/api';
+import {PageHeader} from '@/components/page-header';
+import {Card} from '@/components/ui/card';
+import {Money} from '@/components/ui/money';
+import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
+
 type Contract={id:string;provider_name:string;contract_type:string;renewal_date:string|null;cancellation_notice_days:number|null;early_exit_penalty:string|null;annual_cost:string|null;evidence_status:string;source_document_id:string|null};
-type InsightItem={title:string;detail:string;pages:number[];impact?:string};type DocInsight={document_id:string;file_name:string;document_type:string;analysis:{summary:string;confidence:string;penalties:InsightItem[];risks:InsightItem[];optimization_opportunities:InsightItem[];negotiation_points:InsightItem[];comparison_requirements:InsightItem[];cross_area_impacts:InsightItem[]}};
-export default function ContractsPage(){const qc=useQueryClient();const q=useQuery({queryKey:['contracts'],queryFn:()=>apiGet<Contract[]>('/api/v1/contracts')});const insights=useQuery({queryKey:['document-insights','contracts'],queryFn:()=>apiGet<DocInsight[]>('/api/v1/document-insights')});const [f,setF]=useState({provider_name:'',contract_type:'service',renewal_date:'',cancellation_notice_days:'',annual_cost:'',early_exit_penalty:''});const add=useMutation({mutationFn:()=>apiMutate('/api/v1/contracts','POST',{provider_name:f.provider_name,contract_type:f.contract_type,renewal_date:f.renewal_date||null,cancellation_notice_days:f.cancellation_notice_days===''?null:Number(f.cancellation_notice_days),annual_cost:f.annual_cost||null,early_exit_penalty:f.early_exit_penalty===''?null:f.early_exit_penalty,currency:'EUR',evidence_status:f.early_exit_penalty===''?'needs_more_data':'manual'}),onSuccess:()=>qc.invalidateQueries({queryKey:['contracts']})});return <><PageHeader title="Contratos" description="Renovaciones, preavisos y costes. Un dato contractual desconocido nunca se convierte automáticamente en cero."/><Card><form className="grid gap-2 md:grid-cols-3" onSubmit={(e:FormEvent)=>{e.preventDefault();add.mutate()}}><input className="fin-input" placeholder="Proveedor" value={f.provider_name} onChange={e=>setF({...f,provider_name:e.target.value})}/><select className="fin-input" aria-label="Tipo de contrato" value={f.contract_type} onChange={e=>setF({...f,contract_type:e.target.value})}><option value="service">Servicio</option><option value="insurance">Seguro</option><option value="mortgage">Hipoteca</option><option value="loan">Préstamo</option><option value="telecom">Telecom</option><option value="energy">Energía</option></select><input className="fin-input" aria-label="Fecha de renovación" type="date" value={f.renewal_date} onChange={e=>setF({...f,renewal_date:e.target.value})}/><input className="fin-input" placeholder="Preaviso (días)" type="number" value={f.cancellation_notice_days} onChange={e=>setF({...f,cancellation_notice_days:e.target.value})}/><input className="fin-input" placeholder="Coste anual" type="number" step=".01" value={f.annual_cost} onChange={e=>setF({...f,annual_cost:e.target.value})}/><input className="fin-input" placeholder="Penalización (vacío = desconocida)" type="number" step=".01" value={f.early_exit_penalty} onChange={e=>setF({...f,early_exit_penalty:e.target.value})}/><button className="fin-button md:col-span-3">Guardar contrato</button></form></Card><Card className="mt-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Conclusiones de contratos</h2><p className="mt-1 text-sm text-[var(--muted)]">Permanencias, penalizaciones, riesgos y oportunidades detectados por IA local en préstamos, energía, telecomunicaciones y otros contratos.</p></div><Link className="text-xs underline" href="/documents/">Añadir documentos</Link></div><div className="mt-4 grid gap-3 md:grid-cols-2">{insights.data?.filter(x=>['contract','loan','energy','telecom'].includes(x.document_type)).length?insights.data?.filter(x=>['contract','loan','energy','telecom'].includes(x.document_type)).map(x=><div key={x.document_id} className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="flex items-start justify-between gap-3"><strong>{x.file_name}</strong><Link className="text-xs underline" href={'/documents/?document='+encodeURIComponent(x.document_id)}>Evidencia</Link></div><p className="mt-2 text-xs">{x.analysis.summary}</p>{x.analysis.penalties.length>0&&<div className="mt-2 text-xs"><strong>Salida:</strong> {x.analysis.penalties.slice(0,2).map(i=>i.title||i.detail).join(' · ')}</div>}{x.analysis.optimization_opportunities.length>0&&<div className="mt-2 rounded-lg bg-[var(--brand-soft)] p-2 text-xs"><strong>Oportunidad:</strong> {x.analysis.optimization_opportunities.slice(0,2).map(i=>i.title||i.detail).join(' · ')}</div>}{x.analysis.negotiation_points?.length>0&&<div className="mt-2 text-xs"><strong>Para negociar:</strong> {x.analysis.negotiation_points.slice(0,2).map(i=>i.title||i.detail).join(' · ')}</div>}{x.analysis.comparison_requirements?.length>0&&<div className="mt-2 text-xs"><strong>Comparar manteniendo:</strong> {x.analysis.comparison_requirements.slice(0,2).map(i=>i.title||i.detail).join(' · ')}</div>}</div>):<EmptyState>Añade contratos para analizarlos automáticamente.</EmptyState>}</div></Card><div className="mt-4 grid gap-3">{q.data?.length?q.data.map(c=><Card key={c.id}><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="font-bold">{c.provider_name}</div><div className="text-sm text-[var(--muted)]">{c.contract_type} · evidencia: {c.evidence_status}</div>{c.source_document_id&&<Link className="mt-1 inline-block text-xs underline" href={'/documents/?document='+encodeURIComponent(c.source_document_id)}>Ver documento y evidencia</Link>}</div><div className="text-right text-sm">{c.annual_cost&&<div><Money value={c.annual_cost}/>/año</div>}<div>{c.renewal_date?'Renueva '+c.renewal_date:'Sin renovación registrada'}</div><div>{c.early_exit_penalty===null?'Penalización desconocida':'Penalización '+c.early_exit_penalty+' €'}</div></div></div></Card>):<EmptyState>No hay contratos registrados.</EmptyState>}</div></>}
+type InsightItem={title:string;detail:string;pages:number[];impact?:string};
+type DocInsight={document_id:string;file_name:string;document_type:string;analysis:{summary:string;confidence:string;penalties:InsightItem[];risks:InsightItem[];optimization_opportunities:InsightItem[];negotiation_points:InsightItem[];comparison_requirements:InsightItem[];cross_area_impacts:InsightItem[];missing_information?:InsightItem[]}};
+
+const typeLabel:Record<string,string>={contract:'Contrato',loan:'Préstamo',energy:'Energía',telecom:'Telecomunicaciones',insurance:'Seguro',mortgage:'Hipoteca',service:'Servicio'};
+const evidenceLabel:Record<string,string>={confirmed:'Evidencia confirmada',needs_more_data:'Faltan datos',manual:'Registro antiguo/manual'};
+
+export default function ContractsPage(){
+  const q=useQuery({queryKey:['contracts'],queryFn:()=>apiGet<Contract[]>('/api/v1/contracts')});
+  const insights=useQuery({queryKey:['document-insights','contracts'],queryFn:()=>apiGet<DocInsight[]>('/api/v1/document-insights')});
+  const contractInsights=insights.data?.filter(x=>['contract','loan','energy','telecom'].includes(x.document_type))||[];
+
+  return <>
+    <PageHeader title="Contratos" description="Una sola fuente de verdad: las condiciones contractuales se extraen y confirman en Documentos; desde ahí alimentan renovaciones, costes, decisiones y simulaciones."/>
+
+    <Card>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><h2 className="font-bold">Contratos estructurados desde documentación</h2><p className="mt-1 text-sm text-[var(--muted)]">Si un importe, fecha, preaviso o penalización no aparece, complétalo dentro del documento origen. No se mantiene una ficha paralela que pueda quedar desactualizada.</p></div>
+        <Link className="fin-button" href="/documents/">Añadir o revisar documentos</Link>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        {q.isLoading?<Loading/>:q.error?<ErrorState error={q.error}/>:q.data?.length?q.data.map(c=><div key={c.id} className="rounded-xl bg-[var(--surface-2)] p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div><div className="font-bold">{c.provider_name}</div><div className="text-sm text-[var(--muted)]">{typeLabel[c.contract_type]||c.contract_type} · {evidenceLabel[c.evidence_status]||'Requiere revisión'}</div></div>
+            <div className="text-right text-sm">{c.annual_cost!==null?<div className="font-semibold"><Money value={c.annual_cost}/>/año</div>:<div className="text-[var(--muted)]">Coste pendiente</div>}</div>
+          </div>
+          <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+            <div className="rounded-lg bg-white p-3"><span className="text-[var(--muted)]">Renovación</span><div className="mt-1 font-medium">{c.renewal_date?new Date(c.renewal_date).toLocaleDateString('es-ES'):'Sin dato confirmado'}</div></div>
+            <div className="rounded-lg bg-white p-3"><span className="text-[var(--muted)]">Preaviso</span><div className="mt-1 font-medium">{c.cancellation_notice_days===null?'Sin dato confirmado':c.cancellation_notice_days+' días'}</div></div>
+            <div className="rounded-lg bg-white p-3"><span className="text-[var(--muted)]">Penalización de salida</span><div className="mt-1 font-medium"><Money value={c.early_exit_penalty}/></div></div>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {c.source_document_id?<Link className="fin-button secondary py-2 text-xs" href={'/documents/?document='+encodeURIComponent(c.source_document_id)}>Ver o completar evidencia</Link>:<Link className="fin-button secondary py-2 text-xs" href="/documents/">Vincular a documentación</Link>}
+            {!c.source_document_id&&<span className="self-center text-xs text-[var(--muted)]">Registro anterior sin documento canónico asociado.</span>}
+          </div>
+        </div>):<EmptyState>No hay contratos estructurados. Añade la documentación para que Financito extraiga y reutilice sus condiciones.</EmptyState>}
+      </div>
+    </Card>
+
+    <Card className="mt-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><h2 className="font-bold">Conclusiones de contratos</h2><p className="mt-1 text-sm text-[var(--muted)]">La IA local interpreta permanencias, penalizaciones, riesgos y relaciones. Los cálculos materiales siguen usando únicamente hechos confirmados.</p></div>
+        <Link className="text-xs underline" href="/documents/">Revisar evidencia</Link>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        {insights.isLoading?<Loading/>:insights.error?<ErrorState error={insights.error}/>:contractInsights.length?contractInsights.map(x=><div key={x.document_id} className="rounded-xl bg-[var(--surface-2)] p-4 text-sm">
+          <div className="flex items-start justify-between gap-3"><div><strong>{x.file_name}</strong><div className="mt-1 text-xs text-[var(--muted)]">Confianza interpretativa {Math.round(Number(x.analysis.confidence)*100)}%</div></div><Link className="text-xs underline" href={'/documents/?document='+encodeURIComponent(x.document_id)}>Evidencia</Link></div>
+          <p className="mt-3 text-xs">{x.analysis.summary}</p>
+          {x.analysis.penalties.length>0&&<div className="mt-3 text-xs"><strong>Salida:</strong> {x.analysis.penalties.slice(0,3).map(i=>i.title||i.detail).join(' · ')}</div>}
+          {x.analysis.optimization_opportunities.length>0&&<div className="mt-3 rounded-lg bg-[var(--brand-soft)] p-2 text-xs"><strong>Oportunidad a revisar:</strong> {x.analysis.optimization_opportunities.slice(0,3).map(i=>i.title||i.detail).join(' · ')}</div>}
+          {x.analysis.negotiation_points?.length>0&&<div className="mt-3 text-xs"><strong>Para negociar:</strong> {x.analysis.negotiation_points.slice(0,3).map(i=>i.title||i.detail).join(' · ')}</div>}
+          {x.analysis.comparison_requirements?.length>0&&<div className="mt-3 text-xs"><strong>Una alternativa debería mantener:</strong> {x.analysis.comparison_requirements.slice(0,3).map(i=>i.title||i.detail).join(' · ')}</div>}
+          {x.analysis.cross_area_impacts?.length>0&&<div className="mt-3 text-xs text-[var(--muted)]"><strong>Impacto en otras áreas:</strong> {x.analysis.cross_area_impacts.slice(0,3).map(i=>i.title||i.detail).join(' · ')}</div>}
+          {(x.analysis.missing_information?.length??0)>0&&<div className="mt-3 text-xs"><strong>Falta confirmar:</strong> {(x.analysis.missing_information??[]).slice(0,3).map(i=>i.title||i.detail).join(' · ')}</div>}
+        </div>):<EmptyState>Añade contratos para analizarlos automáticamente.</EmptyState>}
+      </div>
+    </Card>
+  </>;
+}

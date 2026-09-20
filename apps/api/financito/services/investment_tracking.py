@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..domain.portfolio import apply_trade
 from ..models import Portfolio, Position, Security
-from ..models_extended import CorporateAction, LotDisposal, MarketPrice, TrackedAsset, Trade
+from ..models_extended import AssetSimulation, CorporateAction, LotDisposal, MarketPrice, TrackedAsset, Trade
 
 
 def ensure_default_portfolio(session: Session) -> Portfolio:
@@ -79,6 +79,7 @@ def security_summary(session: Session, security: Security) -> dict:
     total_result = None if unrealized is None else unrealized + realized + dividends
 
     tracking = session.scalar(select(TrackedAsset).where(TrackedAsset.security_id == security.id))
+    simulation = session.scalar(select(AssetSimulation).where(AssetSimulation.security_id == security.id,AssetSimulation.active.is_(True)))
     provider_asset_id = tracking.provider_asset_id if tracking else None
     price_age_minutes = None
     price_stale = True
@@ -119,6 +120,15 @@ def security_summary(session: Session, security: Security) -> dict:
         "price_delayed": None if latest is None else latest.is_delayed,
         "price_age_minutes": price_age_minutes,
         "price_stale": price_stale,
+        "simulation": None if simulation is None else {
+            "started_at": simulation.started_at.isoformat(),
+            "invested_amount": str(simulation.invested_amount),
+            "entry_price": str(simulation.entry_price),
+            "quantity": str(simulation.quantity),
+            "current_value": None if current_price is None else str(simulation.quantity*current_price),
+            "pnl": None if current_price is None else str(simulation.quantity*current_price-simulation.invested_amount),
+            "return": None if current_price is None or simulation.invested_amount<=0 else str((simulation.quantity*current_price-simulation.invested_amount)/simulation.invested_amount),
+        },
     }
 
 
@@ -237,3 +247,41 @@ def save_tracked_asset(
 
     session.flush()
     return security_summary(session, security)
+
+
+def start_simulation(session:Session,security_id:str,amount:Decimal)->dict:
+    if amount<=0:raise ValueError("Simulation amount must be positive")
+    security=session.get(Security,security_id)
+    if not security:raise ValueError("Security not found")
+    latest=_latest_market_price(session,security_id)
+    if latest is None or latest.close<=0:raise ValueError("No hay un precio de mercado disponible para iniciar la simulación")
+    row=session.scalar(select(AssetSimulation).where(AssetSimulation.security_id==security_id))
+    quantity=amount/latest.close
+    if row is None:
+        row=AssetSimulation(security_id=security_id,started_at=datetime.now(timezone.utc),invested_amount=amount,entry_price=latest.close,quantity=quantity,currency=security.currency,active=True)
+        session.add(row)
+    else:
+        row.started_at=datetime.now(timezone.utc);row.invested_amount=amount;row.entry_price=latest.close;row.quantity=quantity;row.currency=security.currency;row.active=True
+    session.flush()
+    return security_summary(session,security)
+
+def simulation_history(session:Session,security_id:str)->dict:
+    simulation=session.scalar(select(AssetSimulation).where(AssetSimulation.security_id==security_id,AssetSimulation.active.is_(True)))
+    if simulation is None:return {"security_id":security_id,"simulation":None,"rows":[]}
+    prices=session.scalars(select(MarketPrice).where(MarketPrice.security_id==security_id,MarketPrice.timestamp>=simulation.started_at).order_by(MarketPrice.timestamp)).all()
+    # El primer punto siempre representa la compra simulada aunque el proveedor no tenga una observación exacta en ese instante.
+    rows=[{"timestamp":simulation.started_at,"price":str(simulation.entry_price),"value":str(simulation.invested_amount),"pnl":"0","return":"0","provider":"simulation_entry"}]
+    for price in prices:
+        value=simulation.quantity*price.close;pnl=value-simulation.invested_amount
+        rows.append({"timestamp":price.timestamp,"price":str(price.close),"value":str(value),"pnl":str(pnl),"return":str(pnl/simulation.invested_amount if simulation.invested_amount else Decimal("0")),"provider":price.provider})
+    return {"security_id":security_id,"simulation":{"started_at":simulation.started_at,"invested_amount":str(simulation.invested_amount),"entry_price":str(simulation.entry_price),"quantity":str(simulation.quantity),"currency":simulation.currency},"rows":rows}
+
+def remove_tracking(session:Session,security_id:str)->dict:
+    tracking=session.scalar(select(TrackedAsset).where(TrackedAsset.security_id==security_id))
+    simulation=session.scalar(select(AssetSimulation).where(AssetSimulation.security_id==security_id))
+    positions=_position_rows(session,security_id)
+    owned=any(p.quantity>0 for p in positions)
+    if simulation:session.delete(simulation)
+    if tracking:session.delete(tracking)
+    session.flush()
+    return {"security_id":security_id,"tracking_removed":tracking is not None,"simulation_removed":simulation is not None,"owned_position_kept":owned}

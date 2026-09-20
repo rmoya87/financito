@@ -4,7 +4,7 @@ from decimal import Decimal
 import json
 from pydantic import BaseModel,Field
 from fastapi import APIRouter,Depends,HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete,select
 from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .domain.risk import risk_metrics
@@ -16,7 +16,7 @@ from .providers.fundamentals import SecFundamentalsProvider
 from .providers.macro import EcbMacroProvider
 from .providers.news import GdeltNewsProvider
 from .services.market_data import history as market_history,portfolio_exposure,refresh_history,refresh_security,security_risk
-from .services.news_analysis import analyze_all,analyze_item,local_news
+from .services.news_analysis import analyze_all,analyze_item,local_news,portfolio_news_brief
 from .services.portfolio_analysis import portfolio_fit,portfolio_performance
 from .services.decision_context import live_decision_context
 
@@ -141,6 +141,15 @@ def add_decision(p:DecisionIn,db:Session=Depends(dbdep)):
     snapshot={"captured_from":"live_financito_data","context":live}
     if p.current_state:snapshot["user_input"]=p.current_state
     r=DecisionCase(decision_type=p.decision_type,question=p.question,current_state_json=json.dumps(snapshot),assumptions_json=json.dumps(p.assumptions),constraints_json=json.dumps(p.constraints),calculation_version="real-context-v1",status="draft");db.add(r);db.commit();return {"id":r.id}
+@router.delete("/decisions/{decision_id}")
+def delete_decision(decision_id:str,db:Session=Depends(dbdep)):
+    row=db.get(DecisionCase,decision_id)
+    if not row:raise HTTPException(404,"Decision not found")
+    db.execute(delete(DecisionOutcome).where(DecisionOutcome.decision_case_id==decision_id))
+    db.execute(delete(DecisionAlternative).where(DecisionAlternative.decision_case_id==decision_id))
+    db.delete(row);db.commit()
+    return {"deleted":decision_id}
+
 @router.post("/decisions/{decision_id}/alternatives")
 def add_alt(decision_id:str,p:AlternativeIn,db:Session=Depends(dbdep)):
     if not db.get(DecisionCase,decision_id):raise HTTPException(404,"Decision not found")
@@ -177,7 +186,22 @@ def ecb_series(flow:str,key:str,start:str|None=None,end:str|None=None,last_n:int
     except Exception as e:raise HTTPException(503,str(e))
 @router.get("/crypto/price")
 def crypto_price(ids:str,vs_currency:str="eur"):
-    try:return {"provider":"CoinGecko","data":CoinGeckoDemoProvider().simple_price([x.strip() for x in ids.split(",") if x.strip()],vs_currency)}
+    try:
+        requested=[x.strip() for x in ids.split(",") if x.strip()]
+        raw=CoinGeckoDemoProvider().simple_price(requested,vs_currency)
+        assets=[]
+        for coin_id in requested:
+            row=raw.get(coin_id) or {}
+            assets.append({
+                "id":coin_id,
+                "currency":vs_currency.upper(),
+                "price":row.get(vs_currency),
+                "market_cap":row.get(f"{vs_currency}_market_cap"),
+                "volume_24h":row.get(f"{vs_currency}_24h_vol"),
+                "change_24h_pct":row.get(f"{vs_currency}_24h_change"),
+                "last_updated_at":row.get("last_updated_at"),
+            })
+        return {"provider":"CoinGecko","assets":assets}
     except Exception as e:raise HTTPException(503,str(e))
 
 @router.post("/news/ingest")
@@ -278,6 +302,13 @@ def coverage_gaps(db:Session=Depends(dbdep)):
             covered.append({"requirement_id":req.id,"coverage_type":req.coverage_type,"insurance_type":req.insurance_type,"matching_coverages":len(eligible),"best_verified_limit":None if not limits else str(max(limits))})
     return {"gaps":gaps,"covered":covered,"requirements":len(requirements)}
 
+
+@router.post("/news/research")
+def news_research(q:str,db:Session=Depends(dbdep)):
+    if len(q.strip())<2:raise HTTPException(400,"Escribe al menos dos caracteres")
+    ingest=ingest_news(q,db)
+    analyze_all(db,500);db.commit()
+    return {"query":q,"ingest":ingest,"brief":portfolio_news_brief(db,q)}
 
 @router.get("/news/local")
 def news_local(limit:int=100,db:Session=Depends(dbdep)):

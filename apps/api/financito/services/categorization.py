@@ -42,6 +42,7 @@ DEFAULT_CATEGORIES={
     "investments":"Inversión",
     "savings":"Ahorro",
     "transfers":"Transferencias",
+    "internal_transfer":"Movimiento entre cuentas",
     "other":"Otros",
 }
 

@@ -76,7 +76,7 @@ def complete_authorization(session:Session,code:str,provider:EnableBankingProvid
                 iban_masked=_masked_iban(resource),
                 current_balance=Decimal("0"),
                 source="enable_banking",
-                sync_status="connected",
+                sync_status="pending_sync",
             )
             session.add(account);session.flush()
         link=BankingAccountLink(

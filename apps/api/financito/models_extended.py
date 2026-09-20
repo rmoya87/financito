@@ -57,6 +57,39 @@ class TrackedAsset(Base, TimestampMixin):
     preferred_currency:Mapped[str]=mapped_column(String(3),default="EUR")
     notes:Mapped[str|None]=mapped_column(Text,nullable=True)
 
+class AssetSimulation(Base, TimestampMixin):
+    __tablename__="asset_simulation"
+    __table_args__=(UniqueConstraint("security_id",name="uq_asset_simulation_security"),)
+    id:Mapped[str]=mapped_column(String(36),primary_key=True,default=uuid_str)
+    security_id:Mapped[str]=mapped_column(ForeignKey("security.id",ondelete="CASCADE"),index=True)
+    started_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=utcnow,index=True)
+    invested_amount:Mapped[Decimal]=mapped_column(Numeric(18,4))
+    entry_price:Mapped[Decimal]=mapped_column(Numeric(18,8))
+    quantity:Mapped[Decimal]=mapped_column(Numeric(24,10))
+    currency:Mapped[str]=mapped_column(String(3),default="EUR")
+    active:Mapped[bool]=mapped_column(Boolean,default=True)
+
+class TaxProfile(Base, TimestampMixin):
+    __tablename__="tax_profile"
+    __table_args__=(UniqueConstraint("jurisdiction","tax_year",name="uq_tax_profile_year"),)
+    id:Mapped[str]=mapped_column(String(36),primary_key=True,default=uuid_str)
+    jurisdiction:Mapped[str]=mapped_column(String(8),default="ES",index=True)
+    tax_year:Mapped[int]=mapped_column(Integer,index=True)
+    autonomous_community:Mapped[str|None]=mapped_column(String(80),nullable=True)
+    filing_status:Mapped[str|None]=mapped_column(String(30),nullable=True)
+    adults:Mapped[int]=mapped_column(Integer,default=1)
+    dependent_children:Mapped[int]=mapped_column(Integer,default=0)
+    children_under_three:Mapped[int]=mapped_column(Integer,default=0)
+    primary_residence:Mapped[bool|None]=mapped_column(Boolean,nullable=True)
+    employment_income:Mapped[Decimal|None]=mapped_column(Numeric(18,4),nullable=True)
+    social_security_contributions:Mapped[Decimal|None]=mapped_column(Numeric(18,4),nullable=True)
+    employment_deductible_expenses:Mapped[Decimal|None]=mapped_column(Numeric(18,4),nullable=True)
+    tax_withholdings:Mapped[Decimal|None]=mapped_column(Numeric(18,4),nullable=True)
+    interest_income:Mapped[Decimal]=mapped_column(Numeric(18,4),default=Decimal("0"))
+    other_general_income:Mapped[Decimal]=mapped_column(Numeric(18,4),default=Decimal("0"))
+    carried_forward_savings_losses:Mapped[Decimal]=mapped_column(Numeric(18,4),default=Decimal("0"))
+    pension_contributions:Mapped[Decimal]=mapped_column(Numeric(18,4),default=Decimal("0"))
+
 class TaxLot(Base):
     __tablename__="tax_lot"
     id:Mapped[str]=mapped_column(String(36),primary_key=True,default=uuid_str)
