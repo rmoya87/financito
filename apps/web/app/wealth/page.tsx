@@ -96,6 +96,65 @@ export default function WealthPage(){
     onSuccess:()=>{setDebt({...debt,name:'',outstanding_amount:''});refresh()},
   });
 
+  const saveMortgage=useMutation({
+    mutationFn:()=>{
+      const payload={
+        lender:mortgageForm.lender.trim(),
+        remaining_principal:mortgageForm.remaining_principal,
+        currency:'EUR',
+        interest_type:mortgageForm.interest_type,
+        nominal_rate:String(Number(mortgageForm.nominal_rate_pct||0)/100),
+        monthly_payment:mortgageForm.monthly_payment,
+        remaining_months:Number(mortgageForm.remaining_months),
+        early_repayment_fee:mortgageForm.early_repayment_fee||null,
+      };
+      return home.data?.mortgage
+        ?apiMutate('/api/v1/mortgages/'+home.data.mortgage.id,'PATCH',payload)
+        :apiMutate('/api/v1/mortgages','POST',payload);
+    },
+    onSuccess:refresh,
+  });
+  const saveExtra=useMutation({
+    mutationFn:()=>{
+      const mortgageId=home.data?.mortgage?.id;
+      if(!mortgageId)throw new Error('Guarda primero los datos principales de la hipoteca');
+      const nullable=(v:string)=>v.trim()===''?null:v.trim();
+      return apiMutate('/api/v1/mortgages/'+mortgageId+'/profile-extra','PATCH',{
+        original_principal:nullable(extraForm.original_principal),
+        original_term_months:extraForm.original_term_months?Number(extraForm.original_term_months):null,
+        start_date:nullable(extraForm.start_date),maturity_date:nullable(extraForm.maturity_date),
+        apr_rate:extraForm.apr_rate_pct?String(Number(extraForm.apr_rate_pct)/100):null,
+        reference_index:nullable(extraForm.reference_index),
+        differential_rate:extraForm.differential_rate_pct?String(Number(extraForm.differential_rate_pct)/100):null,
+        rate_review_months:extraForm.rate_review_months?Number(extraForm.rate_review_months):null,
+        next_review_date:nullable(extraForm.next_review_date),
+        opening_fee_percent:nullable(extraForm.opening_fee_percent),
+        early_repayment_fee_percent:nullable(extraForm.early_repayment_fee_percent),
+        subrogation_fee_percent:nullable(extraForm.subrogation_fee_percent),
+        cancellation_fee_percent:nullable(extraForm.cancellation_fee_percent),
+        notes:nullable(extraForm.notes),
+      });
+    },
+    onSuccess:refresh,
+  });
+  const saveHomeValue=useMutation({
+    mutationFn:()=>{
+      const h=home.data;
+      const payload={
+        asset_type:'property',name:h?.property?.name||'Vivienda habitual',current_value:homeValue,
+        currency:'EUR',valuation_date:new Date().toISOString().slice(0,10),valuation_source:'manual',
+        ownership_type:'personal',ownership_percentage:h?.property?.ownership_percentage||'100',
+      };
+      return h?.property
+        ?apiMutate('/api/v1/assets/'+h.property.id,'PATCH',payload)
+        :apiMutate('/api/v1/assets','POST',payload);
+    },
+    onSuccess:refresh,
+  });
+  const marketScan=useMutation({
+    mutationFn:()=>apiGet<MarketScan>('/api/v1/decision-lab/market-scan'),
+  });
+
   const d=details.data;
   const properties=useMemo(()=>d?sumAssets(d.assets,['property','home','house','real_estate']):0,[d]);
   const vehicles=useMemo(()=>d?sumAssets(d.assets,['vehicle','car','motorcycle']):0,[d]);
