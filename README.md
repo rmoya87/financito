@@ -98,13 +98,12 @@ ECB y GDELT no requieren credenciales en la implementación actual.
 
 ## Límites explícitos
 
-No se declara como terminado:
-
-- Tax Center normativo por jurisdicción/ejercicio: existen lotes FIFO y estimación parametrizada, pero no reglas fiscales legales versionadas;
-- firma/notarización y distribución final macOS: requieren certificados/identidad Apple;
-- comparadores comerciales de hipoteca/seguros/energía/telecom: necesitan fuentes/ofertas externas;
-- FEIN/FIAE y cláusulas complejas: la extracción actual es conservadora y requiere revisión humana para hechos materiales;
-- recomendación de inversión: existen scoring/riesgo/backtest, pero no se presenta como asesoramiento ni predicción.
+- Tax Center dispone de normativa versionada para la base del ahorro en España 2025/2026; otros países/ejercicios requieren un ruleset oficial nuevo y los inputs que no estén registrados siguen marcándose como ausentes.
+- La firma/notarización de macOS está automatizada, pero un artefacto real solo puede enviarse a Apple con un certificado Developer ID y credenciales de notarización válidas.
+- El contrato de comparadores y la matriz de evidencia/frescura están implementados; cada fuente comercial en vivo exige un adapter concreto con acceso autorizado y sin dependencia obligatoria de pago.
+- FEIN/FIAE se extrae con mucha más profundidad, pero los hechos materiales inferidos siguen requiriendo revisión humana antes de alimentar una decisión de alto impacto.
+- La auditoría interna WCAG 2.2 AA y los gates automatizados están documentados en [docs/WCAG_AA_AUDIT.md](docs/WCAG_AA_AUDIT.md); no equivalen a una certificación de un tercero.
+- Recomendación de inversión: existen scoring/riesgo/backtest, pero no se presenta como asesoramiento ni predicción.
 
 ## Fuente de verdad
 
