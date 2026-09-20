@@ -312,19 +312,28 @@ def analyze_document_now(document_id:str,db:Session=Depends(get_db)):
     return result
 
 
+@app.post("/api/v1/documents/analyze-all")
+def analyze_all_documents(background_tasks:BackgroundTasks,db:Session=Depends(get_db)):
+    ids=list(db.scalars(select(Document.id).order_by(Document.updated_at.desc())).all())
+    for document_id in ids:
+        background_tasks.add_task(_analyze_document_background,document_id)
+    return {"scheduled":len(ids)}
+
+
 @app.get("/api/v1/document-insights")
 def document_insights(document_type:str|None=None,db:Session=Depends(get_db)):
     return domain_insights(db,document_type)
 
 
 @app.post("/api/v1/documents/{document_id}/reprocess")
-def reprocess_doc(document_id:str,db:Session=Depends(get_db)):
+def reprocess_doc(document_id:str,background_tasks:BackgroundTasks,db:Session=Depends(get_db)):
     row=db.get(Document,document_id)
     if not row: raise HTTPException(404,"Document not found")
     try: indexed=reprocess_document(db,row)
     except (FileNotFoundError,ValueError) as exc: raise HTTPException(400,str(exc))
     db.add(AuditEvent(event_type="document_reprocessed",entity_type="document",entity_id=row.id));db.commit()
-    return {"id":row.id,"document_type":row.document_type,"facts_created":indexed.facts_created,"chunks_created":indexed.chunks_created}
+    background_tasks.add_task(_analyze_document_background,row.id)
+    return {"id":row.id,"document_type":row.document_type,"facts_created":indexed.facts_created,"chunks_created":indexed.chunks_created,"ai_analysis_scheduled":True}
 
 @app.get("/api/v1/documents/{document_id}/file")
 def document_file(document_id:str,db:Session=Depends(get_db)):
