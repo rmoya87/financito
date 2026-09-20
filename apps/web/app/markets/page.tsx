@@ -23,7 +23,7 @@ export default function MarketsPage(){
   const [coin,setCoin]=useState('bitcoin');
   const [newsQ,setNewsQ]=useState('markets');
   const [cik,setCik]=useState('0000320193');
-  const [trackedForm,setTrackedForm]=useState({asset_class:'stock',name:'',identifier:'',owned:'no',portfolio_id:'',quantity:'',purchase_price:'',purchase_date:new Date().toISOString().slice(0,10),fees:'0'});
+  const [trackedForm,setTrackedForm]=useState({asset_class:'stock',name:'',identifier:'',owned:'no',portfolio_id:'',quantity:'',purchase_price:'',purchase_date:new Date().toISOString().slice(0,10),fees:'0',currency:'EUR',fx_rate:'1'});
   const portfolios=useQuery({queryKey:['portfolios'],queryFn:()=>apiGet<Portfolio[]>('/api/v1/portfolios')});
   const tracked=useQuery({queryKey:['tracked-assets'],queryFn:()=>apiGet<TrackedAsset[]>('/api/v1/tracked-assets')});
   const quote=useMutation({mutationFn:()=>apiGet<Quote>('/api/v1/market/quote/'+encodeURIComponent(symbol))});
@@ -33,7 +33,7 @@ export default function MarketsPage(){
   const ingest=useMutation({mutationFn:()=>apiMutate<{inserted:number;discovered:number}>('/api/v1/news/ingest?q='+encodeURIComponent(newsQ),'POST'),onSuccess:()=>qc.invalidateQueries({queryKey:['local-news']})});
   const local=useQuery({queryKey:['local-news'],queryFn:()=>apiGet<LocalNews>('/api/v1/news/local?limit=30')});
   const sec=useMutation({mutationFn:()=>apiGet<any>('/api/v1/fundamentals/sec/'+encodeURIComponent(cik))});
-  const saveTracked=useMutation({mutationFn:()=>apiMutate<TrackedAsset>('/api/v1/tracked-assets','POST',{asset_class:trackedForm.asset_class,name:trackedForm.name,identifier:trackedForm.identifier,owned:trackedForm.owned==='yes',portfolio_id:trackedForm.portfolio_id||null,quantity:trackedForm.owned==='yes'?trackedForm.quantity:null,purchase_price:trackedForm.owned==='yes'?trackedForm.purchase_price:null,purchase_date:trackedForm.owned==='yes'?trackedForm.purchase_date:null,fees:trackedForm.fees||'0',currency:'EUR',provider_asset_id:trackedForm.asset_class==='crypto'?trackedForm.identifier:null,notes:null}),onSuccess:()=>{setTrackedForm({...trackedForm,name:'',identifier:'',quantity:'',purchase_price:'',fees:'0'});qc.invalidateQueries({queryKey:['tracked-assets']});qc.invalidateQueries({queryKey:['portfolios']});qc.invalidateQueries({queryKey:['securities']})}});
+  const saveTracked=useMutation({mutationFn:()=>apiMutate<TrackedAsset>('/api/v1/tracked-assets','POST',{asset_class:trackedForm.asset_class,name:trackedForm.name,identifier:trackedForm.identifier,owned:trackedForm.owned==='yes',portfolio_id:trackedForm.portfolio_id||null,quantity:trackedForm.owned==='yes'?trackedForm.quantity:null,purchase_price:trackedForm.owned==='yes'?trackedForm.purchase_price:null,purchase_date:trackedForm.owned==='yes'?trackedForm.purchase_date:null,fees:trackedForm.fees||'0',fx_rate:trackedForm.fx_rate||'1',currency:trackedForm.currency,provider_asset_id:trackedForm.asset_class==='crypto'?trackedForm.identifier:null,notes:null}),onSuccess:()=>{setTrackedForm({...trackedForm,name:'',identifier:'',quantity:'',purchase_price:'',fees:'0',fx_rate:'1'});qc.invalidateQueries({queryKey:['tracked-assets']});qc.invalidateQueries({queryKey:['portfolios']});qc.invalidateQueries({queryKey:['securities']})}});
   const refreshTracked=useMutation({mutationFn:(id:string)=>apiMutate('/api/v1/tracked-assets/'+id+'/refresh?include_history=false','POST'),onSuccess:()=>{qc.invalidateQueries({queryKey:['tracked-assets']});qc.invalidateQueries({queryKey:['portfolios']})}});
   return <>
     <PageHeader title="Mercados y fuentes" description="Datos externos bajo demanda, con proveedor visible. Los análisis derivados se calculan localmente y no son predicciones."/>
@@ -45,12 +45,14 @@ export default function MarketsPage(){
         <input aria-label="Nombre del activo" className="fin-input" placeholder="Nombre" value={trackedForm.name} onChange={e=>setTrackedForm({...trackedForm,name:e.target.value})} required/>
         <input aria-label="Identificador del activo" className="fin-input" placeholder={trackedForm.asset_class==='crypto'?'CoinGecko ID, ej. bitcoin':'Ticker, ej. AAPL'} value={trackedForm.identifier} onChange={e=>setTrackedForm({...trackedForm,identifier:e.target.value})} required/>
         <select aria-label="Tenencia del activo" className="fin-input" value={trackedForm.owned} onChange={e=>setTrackedForm({...trackedForm,owned:e.target.value})}><option value="no">No lo tengo · solo seguir</option><option value="yes">Sí, lo tengo</option></select>
+        <select aria-label="Divisa del activo" className="fin-input" value={trackedForm.currency} onChange={e=>setTrackedForm({...trackedForm,currency:e.target.value})}><option value="EUR">EUR</option><option value="USD">USD</option><option value="GBP">GBP</option><option value="CHF">CHF</option></select>
         {trackedForm.owned==='yes'&&<>
           <select aria-label="Cartera del activo" className="fin-input" value={trackedForm.portfolio_id} onChange={e=>setTrackedForm({...trackedForm,portfolio_id:e.target.value})}><option value="">Cartera Principal automática</option>{portfolios.data?.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select>
           <input aria-label="Cantidad comprada" className="fin-input" type="number" step="any" placeholder="Cantidad" value={trackedForm.quantity} onChange={e=>setTrackedForm({...trackedForm,quantity:e.target.value})} required/>
           <input aria-label="Precio de compra" className="fin-input" type="number" step="any" placeholder="Precio de compra" value={trackedForm.purchase_price} onChange={e=>setTrackedForm({...trackedForm,purchase_price:e.target.value})} required/>
           <input aria-label="Fecha de compra" className="fin-input" type="date" value={trackedForm.purchase_date} onChange={e=>setTrackedForm({...trackedForm,purchase_date:e.target.value})} required/>
           <input aria-label="Comisiones de compra" className="fin-input" type="number" step=".01" placeholder="Comisiones" value={trackedForm.fees} onChange={e=>setTrackedForm({...trackedForm,fees:e.target.value})}/>
+          <input aria-label="Tipo de cambio a EUR en la compra" className="fin-input" type="number" step="any" placeholder="FX compra (1 si EUR)" value={trackedForm.fx_rate} onChange={e=>setTrackedForm({...trackedForm,fx_rate:e.target.value})}/>
         </>}
         <button className="fin-button md:col-span-4" disabled={saveTracked.isPending}>{saveTracked.isPending?'Guardando…':'Guardar activo'}</button>
       </form>
@@ -63,15 +65,15 @@ export default function MarketsPage(){
             <button className="fin-button secondary py-1.5 text-xs" disabled={refreshTracked.isPending} onClick={()=>refreshTracked.mutate(a.security_id)}>Actualizar precio</button>
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2">
-            <div><span className="text-[var(--muted)]">Precio actual</span><div className="font-semibold">{a.current_price===null?'n/d':a.current_price+' €'}</div></div>
-            <div><span className="text-[var(--muted)]">Precio medio compra</span><div className="font-semibold">{a.owned?a.average_cost+' €':'—'}</div></div>
+            <div><span className="text-[var(--muted)]">Precio actual</span><div className="font-semibold">{a.current_price===null?'n/d':a.current_price+' '+a.currency}</div></div>
+            <div><span className="text-[var(--muted)]">Precio medio compra</span><div className="font-semibold">{a.owned?a.average_cost+' '+a.currency:'—'}</div></div>
             {a.owned&&<>
               <div><span className="text-[var(--muted)]">Cantidad</span><div className="font-semibold">{a.quantity}</div></div>
-              <div><span className="text-[var(--muted)]">Valor actual</span><div className="font-semibold">{a.current_value===null?'n/d':a.current_value+' €'}</div></div>
-              <div><span className="text-[var(--muted)]">Resultado no realizado</span><div className="font-semibold">{a.unrealized_pnl===null?'n/d':a.unrealized_pnl+' €'}{a.unrealized_return!==null?' · '+(Number(a.unrealized_return)*100).toFixed(2)+'%':''}</div></div>
-              <div><span className="text-[var(--muted)]">Resultado total registrado</span><div className="font-semibold">{a.total_result===null?'n/d':a.total_result+' €'}</div></div>
-              <div><span className="text-[var(--muted)]">Realizado</span><div className="font-semibold">{a.realized_pnl} €</div></div>
-              <div><span className="text-[var(--muted)]">Dividendos</span><div className="font-semibold">{a.dividends} €</div></div>
+              <div><span className="text-[var(--muted)]">Valor actual</span><div className="font-semibold">{a.current_value===null?'n/d':a.current_value+' '+a.currency}</div></div>
+              <div><span className="text-[var(--muted)]">Resultado no realizado</span><div className="font-semibold">{a.unrealized_pnl===null?'n/d':a.unrealized_pnl+' '+a.currency}{a.unrealized_return!==null?' · '+(Number(a.unrealized_return)*100).toFixed(2)+'%':''}</div></div>
+              <div><span className="text-[var(--muted)]">Resultado total registrado</span><div className="font-semibold">{a.total_result===null?'n/d':a.total_result+' '+a.currency}</div></div>
+              <div><span className="text-[var(--muted)]">Realizado</span><div className="font-semibold">{a.realized_pnl} {a.currency}</div></div>
+              <div><span className="text-[var(--muted)]">Dividendos</span><div className="font-semibold">{a.dividends} {a.currency}</div></div>
             </>}
           </div>
           <div className="mt-3 text-xs text-[var(--muted)]">{a.price_provider?(a.price_provider+' · precio '+(a.price_as_of?new Date(a.price_as_of).toLocaleString():'sin fecha')):'Aún no hay precio de mercado guardado. Pulsa Actualizar precio.'}</div>
