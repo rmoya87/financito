@@ -198,7 +198,7 @@ export default function DocumentsPage(){
   );
   const visibleFacts=facts.data?.filter(f=>f.fact_type!=='ai_insight')||[];
   const materialFacts=visibleFacts.filter(f=>MATERIAL_FACT_TYPES.has(f.fact_type));
-  const pending=materialFacts.filter(f=>!f.user_verified&&f.status==='inferred').length;
+  const pending=materialFacts.filter(f=>!f.user_verified&&['inferred','ambiguous','conflicting'].includes(f.status)).length;
   const confirmed=materialFacts.filter(f=>f.user_verified&&f.status==='confirmed').length;
   const ambiguous=materialFacts.filter(f=>f.status==='ambiguous'||f.status==='conflicting').length;
 
@@ -436,17 +436,20 @@ export default function DocumentsPage(){
                 <span className="text-xs">{f.status}</span>
               </div>
 
-              {material&&!f.user_verified&&f.status==='inferred'&&<div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  className="fin-button py-1.5 text-xs"
-                  onClick={()=>update.mutate({id:f.id,status:'confirmed'})}
-                  disabled={update.isPending}
-                >Confirmar</button>
-                <button
-                  className="fin-button secondary py-1.5 text-xs"
-                  onClick={()=>update.mutate({id:f.id,status:'ambiguous'})}
-                  disabled={update.isPending}
-                >Marcar dudoso</button>
+              {material&&!f.user_verified&&['inferred','ambiguous','conflicting'].includes(f.status)&&<div className="mt-3">
+                {f.status==='conflicting'&&<div className="mb-2 text-xs font-medium">Este valor entra en conflicto con otro documento del mismo producto. Confirma este valor solo si has comprobado que es el vigente/correcto.</div>}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    className="fin-button py-1.5 text-xs"
+                    onClick={()=>update.mutate({id:f.id,status:'confirmed'})}
+                    disabled={update.isPending}
+                  >{f.status==='conflicting'?'Confirmar este valor':'Confirmar'}</button>
+                  <button
+                    className="fin-button secondary py-1.5 text-xs"
+                    onClick={()=>update.mutate({id:f.id,status:'ambiguous'})}
+                    disabled={update.isPending}
+                  >Mantener como dudoso</button>
+                </div>
               </div>}
 
               {material&&f.user_verified&&<div className="mt-3 text-xs font-medium text-[var(--muted)]">
