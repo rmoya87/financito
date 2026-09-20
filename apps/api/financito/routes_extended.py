@@ -214,8 +214,6 @@ def tracked_assets_refresh_all(db:Session=Depends(dbdep)):
     rows=tracked_assets(db)
     refreshed=[];failed=[]
     for item in rows:
-        if not item.get("price_stale"):
-            continue
         try:
             quote=refresh_security(db,item["security_id"])
             refreshed.append({"security_id":item["security_id"],"quote":quote})
