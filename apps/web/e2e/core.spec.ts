@@ -115,3 +115,19 @@ test('banca conectada permite recorrer autorización con provider simulado',asyn
   const link=page.getByRole('link',{name:'Continuar con la autorización bancaria'});
   await expect(link).toHaveAttribute('href','https://bank.example/authorize');
 });
+
+
+test('todas las rutas principales pasan auditoría WCAG AA automatizada',async({page})=>{
+  await page.route('**/api/v1/banking/aspsps?country=ES',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({aspsps:[]})}));
+  const routes=[
+    '/','/search/','/accounts/','/transactions/','/forecast/','/analytics/','/wealth/','/history/',
+    '/cost-centers/','/investments/','/markets/','/documents/','/contracts/','/insurance/','/tools/',
+    '/decisions/','/chat/','/banking/','/actions/','/system/','/settings/','/developer/','/onboarding/'
+  ];
+  for(const route of routes){
+    await page.goto(route);
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('h1')).toBeVisible();
+    await expectAccessible(page);
+  }
+});
