@@ -7,7 +7,7 @@ from sqlalchemy import String,cast,func,or_,select
 from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .models_analytics import TransactionRule,TransactionSplit
-from .services.transaction_ops import apply_category_semantics,apply_rules_to_unverified,detect_internal_transfers,detect_refunds,pair_internal_transfer_counterpart,set_splits
+from .services.transaction_ops import apply_category_semantics,apply_rules_to_unverified,detect_internal_transfers,detect_refunds,pair_internal_transfer_counterpart,set_category_for_same_concept,set_splits
 from .services.forecast_accuracy import evaluate as forecast_evaluate
 from .services.financial_analytics import overview as analytics_overview
 from .services.ai_categorization import improve_categorization
@@ -19,7 +19,7 @@ def dbdep():
     try:yield s
     finally:s.close()
 class RuleIn(BaseModel):
-    matcher_type:str=Field(pattern="^(contains|merchant_exact|regex)$");matcher_value:str=Field(min_length=1,max_length=255);category_id:str;priority:int=100;enabled:bool=True
+    matcher_type:str=Field(pattern="^(contains|merchant_exact|description_exact|regex)$");matcher_value:str=Field(min_length=1,max_length=255);category_id:str;priority:int=100;enabled:bool=True
 class ReviewDecisionIn(BaseModel):
     category_id:str
     create_rule:bool=True
@@ -58,25 +58,19 @@ def review_transaction(transaction_id:str,p:ReviewDecisionIn,db:Session=Depends(
     tx=db.get(Transaction,transaction_id)
     if not tx:raise HTTPException(404,"Transaction not found")
     if not db.get(Category,p.category_id):raise HTTPException(404,"Category not found")
-    previous=tx.category_id
-    tx.category_id=p.category_id;tx.categorization_method="manual";tx.categorization_confidence=Decimal("1");tx.user_verified=True
-    key=apply_category_semantics(db,tx)
-    if key=="internal_transfer":
-        pair_internal_transfer_counterpart(db,tx)
-    db.add(CategorizationAudit(transaction_id=tx.id,previous_category_id=previous,new_category_id=p.category_id,method="manual",confidence=Decimal("1"),changed_by="user"))
-    learned=propagate_verified_merchant(db,tx) if p.apply_to_existing else 0
-    rule_id=None;reclassified=0
-    merchant=normalize_text(tx.merchant_raw or "")
-    if p.create_rule and merchant:
-        rule=db.scalar(select(TransactionRule).where(TransactionRule.matcher_type=="merchant_exact",TransactionRule.matcher_value==merchant))
-        if rule is None:
-            rule=TransactionRule(matcher_type="merchant_exact",matcher_value=merchant,category_id=p.category_id,priority=50,enabled=True);db.add(rule);db.flush()
-        else:
-            rule.category_id=p.category_id;rule.enabled=True;rule.priority=min(rule.priority,50)
-        rule_id=rule.id
-        if p.apply_to_existing:reclassified=apply_rules_to_unverified(db)
+    reclassified=set_category_for_same_concept(db,tx,p.category_id) if p.apply_to_existing else 0
+    if not p.apply_to_existing:
+        previous=tx.category_id
+        tx.category_id=p.category_id;tx.categorization_method="manual";tx.categorization_confidence=Decimal("1");tx.user_verified=True
+        key=apply_category_semantics(db,tx)
+        if key=="internal_transfer":pair_internal_transfer_counterpart(db,tx)
+        db.add(CategorizationAudit(transaction_id=tx.id,previous_category_id=previous,new_category_id=p.category_id,method="manual",confidence=Decimal("1"),changed_by="user"))
+    concept=normalize_text(tx.description_raw)
+    rule=db.scalar(select(TransactionRule).where(TransactionRule.matcher_type=="description_exact",TransactionRule.matcher_value==concept)) if concept else None
+    rule_id=None if rule is None else rule.id
+    learned=0
     db.commit()
-    return {"id":tx.id,"rule_id":rule_id,"learned":learned,"reclassified":reclassified,"merchant_rule_available":bool(merchant)}
+    return {"id":tx.id,"rule_id":rule_id,"learned":learned,"reclassified":reclassified,"concept_rule_available":bool(concept)}
 @router.post("/transactions/detect-transfers")
 def transfers(db:Session=Depends(dbdep)):n=detect_internal_transfers(db);db.commit();return {"matched_pairs":n}
 @router.get("/transactions/{transaction_id}/splits")
