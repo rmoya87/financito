@@ -137,3 +137,10 @@ Un elemento de esta sección no se sustituirá con datos ficticios ni supuestos 
 - Cambiar la categoría desde Todos los movimientos crea/actualiza una regla persistente `description_exact`.
 - La corrección se aplica al histórico completo con el mismo concepto normalizado y a los futuros movimientos iguales.
 - Las semánticas especiales (movimiento entre cuentas, reembolsos, ingresos) siguen aplicándose después de la propagación.
+
+
+### Agrupación provisional y avisos
+
+Cuando un seguro/servicio todavía no tiene datos suficientes para materializar su ficha financiera, un número de póliza/contrato fiable puede crear una agrupación provisional sin inventar prima, fechas ni condiciones. Si no existe identificador fiable, el usuario puede crear explícitamente la ficha de agrupación desde Documentos y enlazar a ella los demás archivos.
+
+Las conclusiones de IA de varios documentos vinculados al mismo producto comparten un único aviso pendiente en `Para ti`. El Dashboard muestra una instrucción breve; el análisis completo permanece en Documentos y el aviso se puede marcar como revisado o descartar allí.
