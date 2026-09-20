@@ -175,6 +175,14 @@ Fuentes:
 - comparadores gratuitos accesibles al usuario;
 - ofertas manuales cargadas por documento.
 
+Implementación base:
+- `CommercialComparisonProvider` define el contrato común para adapters externos;
+- `comparison_matrix` normaliza procedencia, frescura, vigencia, divisa, categoría y campos materiales;
+- `POST /api/v1/comparisons/evaluate` expone esa validación sin elegir automáticamente una oferta;
+- un campo ausente permanece desconocido y nunca se transforma en 0.
+
+Para activar una fuente en vivo debe existir acceso permitido por sus términos, una ruta de coste cero o aportada por el usuario y un adapter específico con timeout, errores y frescura. No se implementará scraping de login ni un proveedor comercial obligatorio solo para aumentar cobertura.
+
 Regla:
 una oferta pública es una referencia, no una oferta personalizada.
 
