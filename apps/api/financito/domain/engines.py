@@ -144,3 +144,72 @@ class MortgagePrepaymentEngine:
             interest_saved_reduce_payment=money(original.total_interest-reduce_payment.total_interest-prepayment_fee),
             interest_saved_reduce_term=money(original.total_interest-term_interest-prepayment_fee),
         )
+
+
+@dataclass(frozen=True)
+class MortgageRatePathSegment:
+    start_month:int
+    annual_rate:Decimal
+    monthly_payment:Decimal
+    end_balance:Decimal
+
+@dataclass(frozen=True)
+class MortgageRatePathResult:
+    total_payments:Decimal
+    total_interest:Decimal
+    min_monthly_payment:Decimal
+    max_monthly_payment:Decimal
+    final_balance:Decimal
+    segments:tuple[MortgageRatePathSegment,...]
+
+class MortgageRatePathEngine:
+    @staticmethod
+    def simulate(principal:Decimal,months:int,initial_annual_rate:Decimal,rate_steps:list[tuple[int,Decimal]])->MortgageRatePathResult:
+        if principal<=0 or months<=0 or initial_annual_rate<0:
+            raise ValueError("Invalid mortgage inputs")
+        normalized={1:initial_annual_rate}
+        for month,rate in rate_steps:
+            if month<1 or month>months or rate<0:
+                raise ValueError("Invalid rate step")
+            normalized[int(month)]=rate
+        changes=sorted(normalized.items())
+        balance=principal
+        total_interest=Decimal("0")
+        total_payments=Decimal("0")
+        payments=[]
+        segments=[]
+        current_rate=initial_annual_rate
+        change_map=dict(changes)
+        segment_start=1
+        segment_payment=MortgageEngine.amortization(balance,current_rate,months).monthly_payment
+        for month in range(1,months+1):
+            if month in change_map and month!=segment_start:
+                segments.append(MortgageRatePathSegment(segment_start,current_rate,segment_payment,money(balance)))
+                current_rate=change_map[month]
+                segment_start=month
+                remaining=months-month+1
+                segment_payment=MortgageEngine.amortization(balance,current_rate,remaining).monthly_payment
+            elif month==1 and 1 in change_map:
+                current_rate=change_map[1]
+                segment_payment=MortgageEngine.amortization(balance,current_rate,months).monthly_payment
+            monthly_rate=current_rate/Decimal("12")
+            interest=balance*monthly_rate
+            principal_paid=segment_payment-interest
+            if month==months or principal_paid>=balance:
+                payment=balance+interest
+                principal_paid=balance
+            else:
+                payment=segment_payment
+            balance=max(Decimal("0"),balance-principal_paid)
+            total_interest+=interest
+            total_payments+=payment
+            payments.append(payment)
+        segments.append(MortgageRatePathSegment(segment_start,current_rate,segment_payment,money(balance)))
+        return MortgageRatePathResult(
+            total_payments=money(total_payments),
+            total_interest=money(total_interest),
+            min_monthly_payment=money(min(payments)),
+            max_monthly_payment=money(max(payments)),
+            final_balance=money(balance),
+            segments=tuple(segments),
+        )
