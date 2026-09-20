@@ -183,75 +183,100 @@ def _add_evidence_link(
 def auto_link_document_entity(session: Session, document: Document) -> dict | None:
     """Group documents by strong product identifiers without confirming facts.
 
-    A policy/contract number may create a lightweight Contract shell used only
-    as an evidence group. It does not confirm premium, dates or conditions.
+    Strong identifiers can correct an initial classifier mismatch. A document
+    is never attached from provider/type alone; policy/contract numbers are
+    required for automatic grouping.
     """
-    if document.document_type not in {"insurance", "contract", "loan", "energy", "telecom"}:
-        return None
-
-    policy_link = _entity_link(session, document.id, "insurance_policy")
+    policy_link=_entity_link(session,document.id,"insurance_policy")
     if policy_link is not None:
-        return {"entity_type": "insurance_policy", "entity_id": policy_link.to_id, "matched_by": "existing_link"}
-    contract_link = _entity_link(session, document.id, "contract")
+        return {"entity_type":"insurance_policy","entity_id":policy_link.to_id,"matched_by":"existing_link"}
+    mortgage_link=_entity_link(session,document.id,"mortgage")
+    if mortgage_link is not None:
+        return {"entity_type":"mortgage","entity_id":mortgage_link.to_id,"matched_by":"existing_link"}
+    contract_link=_entity_link(session,document.id,"contract")
     if contract_link is not None:
-        return {"entity_type": "contract", "entity_id": contract_link.to_id, "matched_by": "existing_link"}
+        return {"entity_type":"contract","entity_id":contract_link.to_id,"matched_by":"existing_link"}
 
-    identities = _identity_values(session, document.id)
-    strong_key = "policy_number" if document.document_type == "insurance" else "contract_number"
-    value = identities.get(strong_key)
-    if not value:
-        return None
+    identities=_identity_values(session,document.id)
 
-    other_facts = session.scalars(
-        select(ExtractedFact).where(
-            ExtractedFact.document_id != document.id,
-            ExtractedFact.key == strong_key,
-        )
-    ).all()
-    for fact in other_facts:
-        if _normalize_identity(_payload(fact).get("value")) != value:
-            continue
-        if document.document_type == "insurance":
-            link = _entity_link(session, fact.document_id, "insurance_policy")
+    policy_number=identities.get("policy_number")
+    if policy_number:
+        other_facts=session.scalars(select(ExtractedFact).where(
+            ExtractedFact.document_id!=document.id,
+            ExtractedFact.key=="policy_number",
+        )).all()
+        for fact in other_facts:
+            if _normalize_identity(_payload(fact).get("value"))!=policy_number:
+                continue
+            link=_entity_link(session,fact.document_id,"insurance_policy")
             if link is not None:
-                _add_evidence_link(
-                    session, document.id, "insurance_policy", link.to_id,
-                    confidence=Decimal("0.98"), source_type="document_identity",
-                )
-                policy = session.get(InsurancePolicy, link.to_id)
+                document.document_type="insurance"
+                _add_evidence_link(session,document.id,"insurance_policy",link.to_id,confidence=Decimal("0.98"),source_type="document_identity")
+                policy=session.get(InsurancePolicy,link.to_id)
                 if policy and policy.contract_id:
-                    _add_evidence_link(
-                        session, document.id, "contract", policy.contract_id,
-                        confidence=Decimal("0.98"), source_type="document_identity",
-                    )
-                return {"entity_type": "insurance_policy", "entity_id": link.to_id, "matched_by": strong_key}
+                    _add_evidence_link(session,document.id,"contract",policy.contract_id,confidence=Decimal("0.98"),source_type="document_identity")
+                return {"entity_type":"insurance_policy","entity_id":link.to_id,"matched_by":"policy_number"}
 
-        link = _entity_link(session, fact.document_id, "contract")
-        if link is not None:
-            contract = session.get(Contract, link.to_id)
-            if contract is not None and (
-                document.document_type != "insurance" or contract.contract_type == "insurance"
-            ):
-                _add_evidence_link(
-                    session, document.id, "contract", contract.id,
-                    confidence=Decimal("0.98"), source_type="document_identity",
-                )
-                return {"entity_type": "contract", "entity_id": contract.id, "matched_by": strong_key}
+            link=_entity_link(session,fact.document_id,"contract")
+            contract=session.get(Contract,link.to_id) if link else None
+            if contract is not None and contract.contract_type=="insurance":
+                document.document_type="insurance"
+                _add_evidence_link(session,document.id,"contract",contract.id,confidence=Decimal("0.96"),source_type="document_identity")
+                return {"entity_type":"contract","entity_id":contract.id,"matched_by":"policy_number"}
 
-    contract = Contract(
-        provider_name=_label(document),
-        contract_type=document.document_type,
-        currency="EUR",
-        evidence_status="needs_more_data",
-    )
-    session.add(contract)
-    session.flush()
-    _add_evidence_link(
-        session, document.id, "contract", contract.id,
-        confidence=Decimal("0.90"), source_type="document_identity_group",
-    )
-    return {"entity_type": "contract", "entity_id": contract.id, "matched_by": strong_key}
+        # A clear policy number is enough to create a provisional insurance
+        # evidence group, but not enough to invent premium/coverage/renewal.
+        document.document_type="insurance"
+        contract=Contract(
+            provider_name=_label(document),
+            contract_type="insurance",
+            currency="EUR",
+            evidence_status="needs_more_data",
+        )
+        session.add(contract);session.flush()
+        _add_evidence_link(session,document.id,"contract",contract.id,confidence=Decimal("0.90"),source_type="document_identity_group")
+        return {"entity_type":"contract","entity_id":contract.id,"matched_by":"policy_number"}
 
+    contract_number=identities.get("contract_number")
+    if contract_number:
+        other_facts=session.scalars(select(ExtractedFact).where(
+            ExtractedFact.document_id!=document.id,
+            ExtractedFact.key=="contract_number",
+        )).all()
+        for fact in other_facts:
+            if _normalize_identity(_payload(fact).get("value"))!=contract_number:
+                continue
+            mlink=_entity_link(session,fact.document_id,"mortgage")
+            if mlink is not None:
+                document.document_type="mortgage"
+                _add_evidence_link(session,document.id,"mortgage",mlink.to_id,confidence=Decimal("0.98"),source_type="document_identity")
+                return {"entity_type":"mortgage","entity_id":mlink.to_id,"matched_by":"contract_number"}
+
+            link=_entity_link(session,fact.document_id,"contract")
+            contract=session.get(Contract,link.to_id) if link else None
+            if contract is not None:
+                if contract.contract_type=="insurance":
+                    document.document_type="insurance"
+                    policy=session.scalar(select(InsurancePolicy).where(InsurancePolicy.contract_id==contract.id))
+                    if policy is not None:
+                        _add_evidence_link(session,document.id,"insurance_policy",policy.id,confidence=Decimal("0.96"),source_type="document_identity")
+                elif contract.contract_type!="mortgage":
+                    document.document_type=contract.contract_type
+                _add_evidence_link(session,document.id,"contract",contract.id,confidence=Decimal("0.98"),source_type="document_identity")
+                return {"entity_type":"contract","entity_id":contract.id,"matched_by":"contract_number"}
+
+        if document.document_type in {"contract","loan","energy","telecom","insurance"}:
+            contract=Contract(
+                provider_name=_label(document),
+                contract_type=document.document_type,
+                currency="EUR",
+                evidence_status="needs_more_data",
+            )
+            session.add(contract);session.flush()
+            _add_evidence_link(session,document.id,"contract",contract.id,confidence=Decimal("0.90"),source_type="document_identity_group")
+            return {"entity_type":"contract","entity_id":contract.id,"matched_by":"contract_number"}
+
+    return None
 
 
 def create_document_evidence_group(session: Session, document: Document) -> dict:
@@ -816,7 +841,33 @@ def _ensure_coverage_projection(
     return created
 
 
-def synchronize_document_evidence(session: Session, document: Document) -> dict:
+def _reconcile_identity_siblings(session: Session, document: Document) -> int:
+    identities=_identity_values(session,document.id)
+    strong=[(key,identities.get(key)) for key in ("policy_number","contract_number") if identities.get(key)]
+    if not strong:
+        return 0
+    changed=0
+    for sibling in session.scalars(select(Document).where(Document.id!=document.id)).all():
+        sibling_identities=_identity_values(session,sibling.id)
+        if not any(sibling_identities.get(key)==value for key,value in strong):
+            continue
+        before={
+            "insurance_policy":_entity_link(session,sibling.id,"insurance_policy"),
+            "mortgage":_entity_link(session,sibling.id,"mortgage"),
+            "contract":_entity_link(session,sibling.id,"contract"),
+        }
+        result=auto_link_document_entity(session,sibling)
+        if result is None:
+            continue
+        if before.get(result["entity_type"]) is None:
+            synchronize_document_evidence(session,sibling,reconcile_group=False)
+            changed+=1
+    return changed
+
+
+def synchronize_document_evidence(
+    session: Session, document: Document, reconcile_group: bool = True
+) -> dict:
     auto_link_document_entity(session, document)
     summary = sync_review_action(session, document)
     values = _confirmed_values(session, document.id)
@@ -830,6 +881,9 @@ def synchronize_document_evidence(session: Session, document: Document) -> dict:
     if coverage_count:
         from .contracts import scan_coverage_overlaps
         scan_coverage_overlaps(session)
+    grouped_documents=0
+    if reconcile_group and (policy is not None or contract is not None or mortgage is not None):
+        grouped_documents=_reconcile_identity_siblings(session,document)
     session.flush()
     return {
         **summary,
@@ -837,6 +891,7 @@ def synchronize_document_evidence(session: Session, document: Document) -> dict:
         "mortgage_id": None if mortgage is None else mortgage.id,
         "insurance_policy_id": None if policy is None else policy.id,
         "coverage_count": coverage_count,
+        "grouped_documents": grouped_documents,
     }
 
 
