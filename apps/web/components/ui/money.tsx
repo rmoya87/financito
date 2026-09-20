@@ -1,0 +1,1 @@
+export function Money({value,currency='EUR'}:{value:string|number;currency?:string}){const n=typeof value==='number'?value:Number(value);return <>{new Intl.NumberFormat('es-ES',{style:'currency',currency,maximumFractionDigits:2}).format(Number.isFinite(n)?n:0)}</>}
