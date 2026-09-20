@@ -329,3 +329,27 @@ Respuesta:
 - GET /model-evaluations
 - POST /model-evaluations/run
 - GET /model-evaluations/{id}
+
+
+## Investment lots
+
+- GET /portfolios/{id}/lots
+- GET /positions/{id}/lots
+- POST /portfolios/{id}/simulate-disposal
+
+## Action Center
+
+- GET /actions
+- POST /actions
+- PATCH /actions/{id}
+- POST /actions/{id}/complete
+- POST /actions/{id}/snooze
+- POST /actions/{id}/dismiss
+
+## Runtime local
+
+- GET /runtime/status
+- POST /runtime/check
+- POST /runtime/recover
+
+Los endpoints de runtime no pueden habilitar ejecución arbitraria de procesos o comandos.
