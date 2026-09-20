@@ -191,7 +191,7 @@ export default function DocumentsPage(){
   )||selectedDoc?.evidence_links?.find(link=>['insurance_policy','mortgage','contract'].includes(link.entity_type));
   const currentGroup=groups.data?.find(g=>g.entity_type===currentLink?.entity_type&&g.entity_id===currentLink?.entity_id)||null;
   const compatibleGroups=(groups.data||[]).filter(g=>
-    selectedDoc?.document_type==='insurance'?g.entity_type==='insurance_policy':
+    selectedDoc?.document_type==='insurance'?(g.entity_type==='insurance_policy'||g.kind==='insurance_pending'):
     selectedDoc?.document_type==='mortgage'?g.entity_type==='mortgage':
     ['contract','loan','energy','telecom'].includes(selectedDoc?.document_type||'')?g.entity_type==='contract':
     true
@@ -340,7 +340,8 @@ export default function DocumentsPage(){
             onChange={e=>{
               const raw=e.target.value;
               const defaultType:'insurance_policy'|'contract'|'mortgage'=selectedDoc.document_type==='insurance'?'insurance_policy':selectedDoc.document_type==='mortgage'?'mortgage':'contract';
-              if(!raw){linkEntity.mutate({documentId:selectedDoc.id,entityType:defaultType,entityId:null});return}
+              const unlinkType=(currentGroup?.entity_type||defaultType) as 'insurance_policy'|'contract'|'mortgage';
+              if(!raw){linkEntity.mutate({documentId:selectedDoc.id,entityType:unlinkType,entityId:null});return}
               const [entityType,entityId]=raw.split(':');
               linkEntity.mutate({documentId:selectedDoc.id,entityType:entityType as 'insurance_policy'|'contract'|'mortgage',entityId});
             }} disabled={linkEntity.isPending}>
@@ -352,7 +353,7 @@ export default function DocumentsPage(){
             <div className="mt-1 text-[var(--muted)]">{currentGroup.document_count} documento(s) forman esta única ficha.</div>
             {currentGroup.documents.length>1&&<div className="mt-2">{currentGroup.documents.map(d=><div key={d.id}>• {d.file_name}</div>)}</div>}
           </div>}
-          {!currentGroup&&selectedDoc.document_type==='insurance'&&<div className="mt-2 text-xs text-[var(--muted)]">Si la póliza contiene un número identificador claro, Financito intentará agrupar automáticamente los siguientes documentos que compartan ese número.</div>}
+          {!currentGroup&&selectedDoc.document_type==='insurance'&&<div className="mt-2 text-xs text-[var(--muted)]">Si la póliza contiene un número identificador claro, Financito crea una agrupación provisional y reúne automáticamente los siguientes documentos que compartan ese número, aunque todavía falte confirmar la prima.</div>}
           {linkEntity.error&&<div className="mt-3"><ErrorState error={linkEntity.error}/></div>}
         </div>}
 
