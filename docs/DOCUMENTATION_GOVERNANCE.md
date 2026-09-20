@@ -26,6 +26,9 @@ Evitar documentación obsoleta, duplicada o contradictoria.
 - rendimiento → PERFORMANCE
 - proceso → DEVELOPMENT_WORKFLOW
 - decisiones estructurales → ADR
+- terminología → GLOSSARY
+- reglas de agentes → AGENTS.md + AI_ENGINEERING_RULES
+- proceso de desarrollo → DEVELOPMENT_WORKFLOW
 
 ## Regla de no duplicación
 
