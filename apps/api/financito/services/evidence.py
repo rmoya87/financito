@@ -14,7 +14,7 @@ from ..models_analytics import EntityLink
 from ..models_extended import CoverageFact,InsurancePolicy
 from .document_ai import latest_analysis
 
-MATERIAL_FACT_TYPES = {"contract_term", "mortgage_term", "linked_product", "coverage_fact"}
+MATERIAL_FACT_TYPES = {"contract_term", "mortgage_term", "linked_product", "coverage_fact", "investment_term"}
 CONTRACT_DOCUMENT_TYPES = {"mortgage", "insurance", "loan", "contract", "energy", "telecom"}
 REVIEWED_STATUSES = {"confirmed", "ambiguous", "conflicting", "not_found", "superseded"}
 
@@ -506,6 +506,7 @@ def structured_evidence_context(
             payload = _payload(fact)
             items.append(
                 {
+                    "fact_type": fact.fact_type,
                     "key": fact.key,
                     "value": payload.get("value"),
                     "unit": payload.get("unit"),
@@ -513,6 +514,8 @@ def structured_evidence_context(
                     "user_verified": fact.user_verified,
                     "confidence": str(fact.confidence),
                     "page": fact.source_page,
+                    "source_section": fact.source_section,
+                    "manual": fact.source_section=="Introducido por el usuario",
                 }
             )
             used += 1
