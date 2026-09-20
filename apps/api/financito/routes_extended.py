@@ -20,7 +20,8 @@ from .services.rag import index_document_chunks,search
 from .services.repair import repair,scan
 from .services.tax import estimate
 from .services.wealth import summary as wealth_summary
-from .providers.market import AlphaVantageProvider\nfrom .providers.enable_banking import EnableBankingProvider
+from .providers.market import AlphaVantageProvider
+from .providers.enable_banking import EnableBankingProvider
 from .providers.news import GdeltNewsProvider
 router=APIRouter(prefix="/api/v1")
 
