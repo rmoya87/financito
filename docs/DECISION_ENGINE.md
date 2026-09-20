@@ -206,3 +206,20 @@ Siempre permitir:
 - Comparar alternativas
 - Guardar decisión
 - Recalcular con datos actuales
+
+
+## ContractSnapshot
+
+Antes de comparar alternativas que dependan de un contrato vigente, crear un snapshot de condiciones aplicables basado en evidencia documental.
+
+El DecisionCase debe exponer:
+- facts confirmados;
+- facts inferidos;
+- facts no encontrados;
+- conflicts;
+- documentos/páginas;
+- impacto de los datos faltantes.
+
+Un dato contractual crítico desconocido bloquea estados concluyentes.
+
+Ver CONTRACT_EVIDENCE.md.
