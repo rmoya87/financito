@@ -127,7 +127,7 @@ test('backup cifrado se crea y se verifica para restore',async({page})=>{
 });
 
 test('banca conectada permite recorrer autorización con provider simulado',async({page})=>{
-  const configured={enable_banking:{app_id:true}};
+  const configured:{enable_banking:Record<string,boolean>}={enable_banking:{app_id:true}};
   configured.enable_banking['private'+'_'+'key']=true;
   await page.route('**/api/v1/provider-config',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(configured)}));
   await page.route('**/api/v1/banking/config',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({redirect_url:'https://financito.example/banking/',requires_https:true})}));
