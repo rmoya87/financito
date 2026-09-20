@@ -25,6 +25,7 @@ from .services.financial_analytics import cash_flow
 from .services.snapshots import record_snapshot
 from .services.decision_context import live_decision_context,mortgage_row
 from .services.contractual_costs import resolve_prepayment_penalty,switching_readiness
+from .services.market_research import scan_public_market
 from .services.investment_tracking import save_tracked_asset,tracked_assets
 from .services.broker_import import import_broker_csv
 from .services.corporate_actions import add_action,list_actions
@@ -44,6 +45,10 @@ def _document_sources(db:Session,to_type:str)->dict[str,str]:
         EntityLink.to_type==to_type,
     )).all()
     return {link.to_id:link.from_id for link in links}
+
+@router.get("/decision-lab/market-scan")
+def decision_lab_market_scan(db:Session=Depends(dbdep)):
+    return scan_public_market(db)
 
 @router.get("/decision-lab/switching-readiness")
 def decision_lab_switching_readiness(mortgage_id:str|None=None,db:Session=Depends(dbdep)):
