@@ -52,8 +52,14 @@ def _xlsx(content:bytes)->bytes:
     wb=load_workbook(BytesIO(content),read_only=True,data_only=True)
     best=None
     for ws in wb.worksheets:
-        for row_index,row in enumerate(ws.iter_rows(min_row=1,max_row=min(ws.max_row or 1,100),values_only=True),start=1):
+        preview=list(ws.iter_rows(min_row=1,max_row=min(ws.max_row or 1,100),values_only=True))
+        for row_index,row in enumerate(preview,start=1):
             score=_xlsx_header_score(row)
+            if score<0:continue
+            previous=preview[max(0,row_index-4):row_index-1]
+            context="".join(canonical_key(str(value or "")) for ctx_row in previous for value in ctx_row if value not in (None,""))
+            if "movimientospendientes" in context:
+                score-=20
             if score<0:continue
             candidate=(score,-row_index,ws,row_index,row)
             if best is None or candidate[:2]>best[:2]:best=candidate
