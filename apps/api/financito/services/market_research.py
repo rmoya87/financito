@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal
 import html
 import re
 
@@ -9,7 +10,26 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import Mortgage
+from ..domain.engines import MortgageEngine
+from .contractual_costs import resolve_subrogation_penalty
 
+
+OFFICIAL_SOURCES = (
+    {
+        "id": "bde_mortgage_reference",
+        "provider": "Banco de España",
+        "kind": "official_mortgage_reference",
+        "url": "https://clientebancario.bde.es/pcb/es/menu-horizontal/podemosayudarte/tiposinteres/guia_textual/tiposinteresreferenciaotrostiposfrecuentes/tabla_tipos_referencia_oficiales_mercado_hipotecario.html",
+        "description": "Tipos de referencia oficiales del mercado hipotecario, incluido Euríbor e IRPH.",
+    },
+    {
+        "id": "bde_mfi_rates",
+        "provider": "Banco de España",
+        "kind": "official_market_statistics",
+        "url": "https://datos.bde.es/datos/es/datasets/000/007.html",
+        "description": "Tipos de interés mensuales aplicados por las entidades a nuevas operaciones de vivienda.",
+    },
+)
 
 SOURCES = (
     {
@@ -174,6 +194,10 @@ def scan_public_market(session: Session) -> dict:
         sources = [_scan_source(source, client) for source in SOURCES]
 
     current_rate = None if mortgage is None else mortgage.nominal_rate * 100
+    current_scenario = None if mortgage is None else MortgageEngine.amortization(
+        mortgage.remaining_principal, mortgage.nominal_rate, mortgage.remaining_months
+    )
+    exit_penalty = None if mortgage is None else resolve_subrogation_penalty(session, mortgage)
     leads = []
     for source in sources:
         tins = [float(x["value_percent"]) for x in source["rates"] if x["type"] == "TIN"]
@@ -181,6 +205,29 @@ def scan_public_market(session: Session) -> dict:
         benchmark_delta = None
         if current_rate is not None and min_tin is not None:
             benchmark_delta = float(current_rate) - min_tin
+        scenario = None
+        if mortgage is not None and min_tin is not None:
+            candidate = MortgageEngine.amortization(
+                mortgage.remaining_principal,
+                Decimal(str(min_tin)) / Decimal("100"),
+                mortgage.remaining_months,
+            )
+            monthly_delta = (mortgage.monthly_payment - candidate.monthly_payment).quantize(Decimal("0.01"))
+            interest_delta = (
+                current_scenario.total_interest - candidate.total_interest
+            ).quantize(Decimal("0.01")) if current_scenario is not None else None
+            known_penalty = None if not exit_penalty or exit_penalty["amount"] is None else exit_penalty["amount"]
+            break_even = None
+            if known_penalty is not None and monthly_delta > 0:
+                break_even = (known_penalty / monthly_delta).quantize(Decimal("0.1"))
+            scenario = {
+                "estimated_payment": str(candidate.monthly_payment),
+                "monthly_payment_difference": str(monthly_delta),
+                "remaining_interest_difference": None if interest_delta is None else str(interest_delta),
+                "known_exit_penalty": None if known_penalty is None else str(known_penalty),
+                "break_even_months_known_penalty_only": None if break_even is None else str(break_even),
+                "comparison_scope": "same_remaining_principal_and_term",
+            }
         leads.append({
             "source_id": source["id"],
             "provider": source["provider"],
@@ -193,14 +240,19 @@ def scan_public_market(session: Session) -> dict:
             "url": source["url"],
             "retrieved_at": source["retrieved_at"],
             "requires_personalized_quote": True,
+            "scenario": scenario,
         })
 
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "current_mortgage_rate_percent": None if current_rate is None else str(current_rate),
+        "current_monthly_payment": None if mortgage is None else str(mortgage.monthly_payment),
+        "official_sources": list(OFFICIAL_SOURCES),
         "leads": leads,
         "disclaimer": (
-            "Los datos públicos son referencias de mercado y pueden no ser aplicables a una subrogación concreta. "
-            "Financito no calcula ahorro neto hasta disponer de una oferta personalizada/FEIN y de los costes contractuales actuales confirmados."
+            "Los tipos publicados son referencias comerciales/estadísticas y no una oferta personalizada. "
+            "Las simulaciones mantienen capital pendiente y plazo actuales para hacer comparable la cuota. "
+            "El punto de equilibrio, cuando aparece, solo descuenta la penalización de salida confirmada; seguros vinculados, "
+            "tasación, otros costes y condiciones de una FEIN deben incorporarse antes de calcular el ahorro neto."
         ),
     }
