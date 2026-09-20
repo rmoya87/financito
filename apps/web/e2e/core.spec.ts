@@ -70,8 +70,9 @@ test('Documentos permite subir y procesar un archivo desde la aplicación',async
     buffer:Buffer.from('Póliza de seguro de hogar. Prima anual 480 euros. Franquicia 100 euros. Preaviso de 30 días.'),
   });
   await expect(page.getByText(/1 documento\(s\) añadido\(s\)/)).toBeVisible();
-  await expect(page.getByText('e2e-upload-policy.txt',{exact:true})).toBeVisible();
-  await page.getByRole('button',{name:/e2e-upload-policy\.txt/}).click();
+  const uploaded=page.getByRole('button',{name:/e2e-upload-policy\.txt/});
+  await expect(uploaded).toBeVisible();
+  await uploaded.click();
   await expect(page.getByText('annual_cost',{exact:true})).toBeVisible();
   await expect(page.getByText('deductible',{exact:true})).toBeVisible();
   await expect(page.getByText('cancellation_notice_days',{exact:true})).toBeVisible();
