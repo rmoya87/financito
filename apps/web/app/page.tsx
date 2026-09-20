@@ -88,8 +88,8 @@ export default function DashboardPage(){
           <CircleDollarSign size={20} className="text-[var(--brand)]"/>
         </div>
         <div className="mt-4 flex flex-col gap-3">
-          {d.spending_by_category.length?d.spending_by_category.slice(0,7).map((row,index)=>{
-            const color=categoryColor(row.system_key,index);
+          {d.spending_by_category.length?d.spending_by_category.slice(0,7).map(row=>{
+            const color=categoryColor(row.system_key);
             return <div key={row.system_key}>
               <div className="flex justify-between gap-3 text-sm">
                 <span className="flex items-center gap-2"><span aria-hidden="true" className="size-2.5 rounded-full" style={{backgroundColor:color}}/>{row.category}</span>
