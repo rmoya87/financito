@@ -154,3 +154,26 @@ def test_dashboard_accepts_explicit_date_range():
         response=client.get("/api/v1/dashboard",params={"start":"2040-01-01","end":"2040-01-31"})
         assert response.status_code==200
         assert response.json()["period"]=={"start":"2040-01-01","end":"2040-01-31"}
+
+
+def test_documents_can_group_by_policy_number_before_premium_is_confirmed():
+    with SessionLocal() as db:
+        first=_document(db,"seguro-info-1.pdf")
+        second=_document(db,"seguro-info-2.pdf")
+        _fact(db,first.id,"policy_number","POL-PENDING-777")
+        _fact(db,second.id,"policy_number","POL-PENDING-777")
+        db.flush()
+
+        first_group=auto_link_document_entity(db,first)
+        second_group=auto_link_document_entity(db,second)
+        assert first_group is not None
+        assert second_group is not None
+        assert first_group["entity_type"]=="contract"
+        assert second_group["entity_type"]=="contract"
+        assert first_group["entity_id"]==second_group["entity_id"]
+
+        contract=db.get(Contract,first_group["entity_id"])
+        assert contract is not None
+        assert contract.contract_type=="insurance"
+        assert contract.annual_cost is None
+        assert db.scalar(select(InsurancePolicy.id).where(InsurancePolicy.contract_id==contract.id)) is None
