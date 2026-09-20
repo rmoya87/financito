@@ -184,6 +184,7 @@ export default function ToolsPage(){
           <button className="fin-button self-end" disabled={saveMortgage.isPending}>{selectedMortgage?'Actualizar datos reales':'Guardar hipoteca'}</button>
         </form>
         {saveMortgage.error&&<div className="mt-3"><ErrorState error={saveMortgage.error}/></div>}
+        {activeMortgage?.source_document_id&&<a className="mt-3 inline-block text-xs underline" href={'/documents/?document='+encodeURIComponent(activeMortgage.source_document_id)}>Ver documento que alimenta esta hipoteca</a>}
       </Card>
 
       <Card>
@@ -206,7 +207,7 @@ export default function ToolsPage(){
           <label className="text-sm">Importe hipotético a amortizar<input className="fin-input mt-1" type="number" step=".01" value={extra} onChange={e=>setExtra(e.target.value)} required/></label>
           <button className="fin-button" disabled={!activeMortgage||prepay.isPending}>Comparar con mis datos</button>
         </form>
-        {activeMortgage?.early_repayment_fee===null&&<div className="mt-2 text-xs text-[var(--muted)]">La comisión no consta. Añádela arriba; Financito no asumirá 0.</div>}
+        {activeMortgage?.early_repayment_fee===null&&<div className="mt-2 text-xs text-[var(--muted)]">No hay una comisión fija guardada. Financito intentará resolver la fórmula/porcentaje desde documentación confirmada y, si tampoco consta, bloqueará el cálculo en lugar de asumir 0.</div>}
         {prepay.error&&<div className="mt-3"><ErrorState error={prepay.error}/></div>}
         {prepay.data&&<div className="mt-4 grid gap-3 sm:grid-cols-2 text-sm">
           <div className="rounded-xl bg-[var(--surface-2)] p-4"><strong>Reducir cuota</strong><div className="mt-2">Nueva cuota <Money value={prepay.data.reduced_payment}/></div><div>Ahorro neto de intereses <Money value={prepay.data.interest_saved_reduce_payment}/></div></div>
