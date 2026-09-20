@@ -57,6 +57,15 @@
 - backup cifrado y restauración verificada;
 - export JSON/CSV, borrado local y regeneración de derivados.
 
+## Ejecutable de macOS
+
+Después de clonar el repositorio, el usuario normal no necesita ejecutar comandos para actualizar o arrancar Financito:
+
+- **\`Financito.command\`**: doble clic. Guarda cambios locales en un stash de seguridad, comprueba \`origin/main\`, actualiza por fast-forward, prepara Python/backend/frontend cuando el commit cambia y arranca la aplicación.
+- **\`Financito-sin-actualizar.command\`**: doble clic para arrancar con la copia local sin consultar GitHub.
+
+El runner usa \`~/.financito/launcher.log\` para diagnóstico. Si faltan Python/Node/Tesseract y Homebrew está disponible, intenta instalarlos automáticamente. Nunca hace \`reset --hard\` ni elimina cambios locales.
+
 ## Arranque local
 
 Desarrollo:
