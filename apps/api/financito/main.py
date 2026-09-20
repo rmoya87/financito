@@ -17,7 +17,8 @@ from .migrations import migrate
 from .domain.engines import CashFlowEngine, MortgageEngine, OptimizationEngine
 from .models import Account, ActionItem, AuditEvent, Budget, CategorizationAudit, Category, Commitment, Document, ExtractedFact, Transaction
 from .schemas import AccountCreate, AccountOut, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentIndexRequest, FactUpdate, ForecastRequest, MortgageScenarioRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
-from .security import LocalSecurityMiddleware, create_session\nfrom .routes_extended import router as extended_router
+from .security import LocalSecurityMiddleware, create_session
+from .routes_extended import router as extended_router
 from .routes_analytics import router as analytics_router
 from .services.vault_watcher import VaultWatcher
 from .services.categorization import ensure_categories
