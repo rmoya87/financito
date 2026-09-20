@@ -120,3 +120,20 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 - E2E Playwright y auditoría accesibilidad automatizada completa.
 
 Un elemento de esta sección no se sustituirá con datos ficticios ni supuestos silenciosos.
+
+
+## Evidencia agrupada por producto
+
+- Documentos deja de tratar cada archivo como un producto financiero independiente. Varios PDFs, anexos, recibos o condiciones pueden enlazarse mediante `EntityLink(evidence_for)` a una única póliza, hipoteca o contrato.
+- Los seguros se autoagrupan cuando existe un identificador fuerte coincidente (por ejemplo, número de póliza); proveedor/tipo por sí solos no se usan para fusionar, para evitar falsos positivos.
+- La interfaz de Documentos permite corregir manualmente la vinculación a una ficha existente y muestra cuántos archivos forman el producto.
+- La validación en bloque confirma datos coherentes entre los documentos del grupo. Si dos archivos contradicen un mismo campo, el dato queda como `conflicting` y requiere una decisión explícita; no se confirma silenciosamente.
+- Seguros consolida todas las fuentes documentales por póliza. Contratos excluye `insurance` y `mortgage`, que permanecen en sus dominios específicos.
+- Las tareas de `Para ti` relacionadas con documentos llevan al archivo y a la acción concreta; una conclusión de IA puede marcarse como revisada u ocultarse desde la propia pantalla.
+- Inicio admite periodos Este mes, últimos 30/90 días, este año y últimos 12 meses, y el backend calcula ingresos, gasto y ahorro para el intervalo seleccionado.
+
+## Categorización por concepto
+
+- Cambiar la categoría desde Todos los movimientos crea/actualiza una regla persistente `description_exact`.
+- La corrección se aplica al histórico completo con el mismo concepto normalizado y a los futuros movimientos iguales.
+- Las semánticas especiales (movimiento entre cuentas, reembolsos, ingresos) siguen aplicándose después de la propagación.
