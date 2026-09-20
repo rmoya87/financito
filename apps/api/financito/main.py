@@ -15,7 +15,8 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .db import SessionLocal
 from .migrations import migrate
-from .domain.engines import CashFlowEngine, MortgageEngine, OptimizationEngine\nfrom .services.financial_analytics import cash_flow,category_spending
+from .domain.engines import CashFlowEngine, MortgageEngine, OptimizationEngine
+from .services.financial_analytics import cash_flow,category_spending
 from .models import Account, ActionItem, AuditEvent, Budget, CategorizationAudit, Category, Commitment, Document, ExtractedFact, Transaction
 from .schemas import AccountCreate, AccountOut, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentIndexRequest, FactUpdate, ForecastRequest, MortgageScenarioRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
 from .security import LocalSecurityMiddleware, create_session
