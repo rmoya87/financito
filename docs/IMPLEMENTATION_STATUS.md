@@ -19,7 +19,8 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 
 ### Movimientos y analítica
 - CSV y formatos bancarios estructurados: XLSX/XLSM, QIF, OFX, CAMT/XML y MT940/STA.
-- deduplicación, normalización, categorías, reglas, corrección manual auditable y review queue;
+- deduplicación de extractos solapados por referencia bancaria, huella exacta y similitud conservadora; preserva movimientos idénticos legítimos mediante conteo multiconjunto;
+- normalización, categorías, reglas, corrección manual auditable y review queue;
 - categorización híbrida local: reglas > memoria de comercios verificados > clasificador determinista > similitud por embeddings > LLM local para casos ambiguos; las propuestas de IA no se marcan como verificadas por el usuario.
 - splits exactos, transferencias internas y reembolsos.
 - reembolsos netean gasto y no inflan ingresos en Dashboard, Analytics, Forecast/Stress y Chat.
