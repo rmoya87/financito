@@ -51,8 +51,8 @@ export default function ActionsPage(){
             {a.due_date?<div className="text-xs text-[var(--muted)]">Antes de {a.due_date}</div>:null}
           </div>
           <div className="flex flex-wrap gap-2">
-            {a.action_type==="review_document_evidence"&&a.related_entity_type==="document"&&a.related_entity_id?
-              <Link className="fin-button py-2 text-xs" href={`/documents/?document=${encodeURIComponent(a.related_entity_id)}`}>Revisar documento</Link>:
+            {a.related_entity_type==="document"&&a.related_entity_id&&["review_document_evidence","review_document_ai_insights"].includes(a.action_type)?
+              <Link className="fin-button py-2 text-xs" href={`/documents/?document=${encodeURIComponent(a.related_entity_id)}`}>{a.action_type==="review_document_ai_insights"?"Revisar conclusiones":"Revisar documento"}</Link>:
               <button className="fin-button py-2 text-xs" onClick={()=>update.mutate({id:a.id,status:'done'})}>Hecho</button>}
             <button className="fin-button secondary py-2 text-xs" onClick={()=>update.mutate({id:a.id,status:'dismissed'})}>Descartar</button>
           </div>
