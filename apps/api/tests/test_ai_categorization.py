@@ -5,7 +5,7 @@ from financito.db import SessionLocal
 from financito.models import Account,Transaction
 from financito.services import local_ai
 from financito.services.ai_categorization import improve_categorization
-from financito.services.categorization import categorize_transaction,ensure_categories,normalize_text,propagate_verified_merchant
+from financito.services.categorization import DEFAULT_CATEGORIES,categorize_transaction,ensure_categories,normalize_text,propagate_verified_merchant
 
 
 def _tx(account_id:str,desc:str,merchant:str,amount:str,fp:str)->Transaction:
@@ -66,3 +66,25 @@ def test_hybrid_categorizer_does_not_override_user_verified(monkeypatch):
         assert result["considered"]==0
         assert tx.category_id==cats["health"].id
         assert tx.user_verified is True
+
+
+def test_expanded_taxonomy_and_common_merchants_are_classified():
+    with SessionLocal() as db:
+        cats=ensure_categories(db)
+        assert set(DEFAULT_CATEGORIES) <= set(cats)
+        assert {"leisure","sports","vehicle","family","pets","technology","telecom","personal_care","bank_fees","debt","salary","refunds","donations","savings"} <= set(cats)
+
+        account=Account(name="Expanded taxonomy");db.add(account);db.flush()
+        cases=[
+            ("Entrada cine","CINE DEMO","-18.00","leisure","taxonomy-1"),
+            ("Cuota box","CROSSFIT DEMO","-65.00","sports","taxonomy-2"),
+            ("Comida mascota","KIWOKO DEMO","-42.00","pets","taxonomy-3"),
+            ("Factura fibra","VODAFONE DEMO","-39.00","telecom","taxonomy-4"),
+            ("Combustible","REPSOL DEMO","-70.00","vehicle","taxonomy-5"),
+            ("Nómina septiembre","EMPRESA DEMO","2500.00","salary","taxonomy-6"),
+            ("Reembolso compra","TIENDA DEMO","25.00","refunds","taxonomy-7"),
+        ]
+        for desc,merchant,amount,key,fp in cases:
+            tx=_tx(account.id,desc,merchant,amount,fp);db.add(tx);db.flush();categorize_transaction(db,tx)
+            assert tx.category_id==cats[key].id, (desc,key)
+            assert tx.categorization_confidence>=Decimal("0.85")
