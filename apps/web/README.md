@@ -1,12 +1,12 @@
 # Financito WebApp
 
-Frontend definido por [docs/WEBAPP.md](../../docs/WEBAPP.md) y [docs/UI_UX.md](../../docs/UI_UX.md).
+WebApp local implementada con Next.js 16.3 LTS, React 19.3, TypeScript, Tailwind CSS 4.3 y TanStack Query. Se exporta estáticamente para que FastAPI sirva UI y API desde un único origen local.
 
-Stack obligatorio inicial:
-- Next.js;
-- React;
-- TypeScript;
-- TailwindCSS;
-- shadcn/ui.
+```bash
+cd apps/web
+npm install
+npm run typecheck
+npm run build
+```
 
-Este directorio alojará la implementación de la WebApp. No deben introducirse reglas financieras deterministas en el frontend.
+No contiene reglas financieras críticas: todos los cálculos se solicitan a `/api/v1`.
