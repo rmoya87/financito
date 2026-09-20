@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from decimal import Decimal
 
@@ -9,6 +10,8 @@ from sqlalchemy.orm import Session
 from ..models import Security
 from ..models_extended import NewsItem
 from ..models_analytics import NewsAnalysis
+from .investment_tracking import tracked_assets
+from .local_ai import generate_json,status as local_ai_status
 
 METHOD_VERSION="heuristic-v1"
 
@@ -136,3 +139,59 @@ def local_news(session:Session,limit:int=100)->list[dict]:
         "reliability":float(item.reliability),
         "analysis":by_item.get(item.id,[]),
     } for item in items]
+
+
+def portfolio_news_brief(session:Session,query:str|None=None,limit:int=25)->dict:
+    items=local_news(session,limit)
+    if query:
+        terms=[x for x in _norm(query).split() if len(x)>2]
+        filtered=[item for item in items if any(term in _norm(item["headline"]) for term in terms)]
+        if filtered:items=filtered
+    assets=tracked_assets(session)
+    facts=[]
+    for item in items[:15]:
+        analyses=item.get("analysis") or []
+        facts.append({
+            "headline":item["headline"],"source":item["source"],"published_at":str(item["published_at"]),"url":item["url"],
+            "linked_assets":[a.get("security") for a in analyses if a.get("security")],
+            "event_types":sorted({a.get("event_type") for a in analyses if a.get("event_type")}),
+            "impact_levels":sorted({a.get("impact_level") for a in analyses if a.get("impact_level")}),
+        })
+    holdings=[{
+        "name":a["name"],"identifier":a.get("identifier"),"asset_class":a["asset_class"],"owned":a["owned"],
+        "simulated":a.get("simulation") is not None,
+    } for a in assets]
+
+    fallback={
+        "summary":"No hay suficientes noticias locales relacionadas con tus activos para elaborar un análisis." if not facts else f"Se han encontrado {len(facts)} noticias recientes para contextualizar frente a {len(holdings)} activos guardados.",
+        "facts":facts,
+        "portfolio_impacts":[],
+        "risks":["El impacto de una noticia no permite predecir por sí solo la evolución del precio."],
+        "watch":["Contrasta los hechos con la fuente original y revisa concentración, horizonte y liquidez antes de tomar una decisión."],
+        "method":"deterministic_fallback",
+        "ai_available":False,
+    }
+    ai=local_ai_status()
+    if not facts or not ai.get("chat_ready"):
+        fallback["ai_available"]=bool(ai.get("chat_ready"))
+        return fallback
+    prompt="""Eres el analista local de Financito. Trabaja SOLO con el JSON de hechos y activos incluido abajo.
+Devuelve JSON con las claves summary (string), portfolio_impacts (array de objetos con asset, observation, possible_effects, evidence_headlines), risks (array de strings) y watch (array de strings).
+Reglas: separa hechos de interpretación; no inventes información, precios, probabilidades ni recomendaciones de comprar/vender; usa lenguaje condicional para efectos futuros; menciona concentración o exposición solo si está respaldada por los activos; no conviertas sentimiento léxico en predicción. Si una noticia no afecta claramente a un activo, dilo.
+DATOS:
+"""+json.dumps({"query":query,"facts":facts,"assets":holdings},ensure_ascii=False,default=str)
+    try:
+        generated=generate_json(prompt)
+        return {
+            "summary":str(generated.get("summary") or fallback["summary"]),
+            "facts":facts,
+            "portfolio_impacts":generated.get("portfolio_impacts") if isinstance(generated.get("portfolio_impacts"),list) else [],
+            "risks":generated.get("risks") if isinstance(generated.get("risks"),list) else fallback["risks"],
+            "watch":generated.get("watch") if isinstance(generated.get("watch"),list) else fallback["watch"],
+            "method":"local_ai",
+            "ai_available":True,
+        }
+    except Exception as exc:
+        fallback["ai_available"]=True
+        fallback["ai_warning"]="La IA local no pudo completar el análisis; se muestran únicamente hechos estructurados."
+        return fallback
