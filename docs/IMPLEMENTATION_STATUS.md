@@ -126,6 +126,7 @@ Un elemento de esta sección no se sustituirá con datos ficticios ni supuestos 
 
 - Documentos deja de tratar cada archivo como un producto financiero independiente. Varios PDFs, anexos, recibos o condiciones pueden enlazarse mediante `EntityLink(evidence_for)` a una única póliza, hipoteca o contrato.
 - Los seguros se autoagrupan cuando existe un identificador fuerte coincidente (por ejemplo, número de póliza); proveedor/tipo por sí solos no se usan para fusionar, para evitar falsos positivos.
+- Una ficha de seguro puede existir y reunir varios documentos incluso antes de conocer la prima; cuando aparece evidencia suficiente, se proyecta una única póliza y no una por archivo.
 - La interfaz de Documentos permite corregir manualmente la vinculación a una ficha existente y muestra cuántos archivos forman el producto.
 - La validación en bloque confirma datos coherentes entre los documentos del grupo. Si dos archivos contradicen un mismo campo, el dato queda como `conflicting` y requiere una decisión explícita; no se confirma silenciosamente.
 - Seguros consolida todas las fuentes documentales por póliza. Contratos excluye `insurance` y `mortgage`, que permanecen en sus dominios específicos.
