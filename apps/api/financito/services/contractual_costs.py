@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from ..models import Contract, Document, ExtractedFact, Mortgage
 from ..models_analytics import EntityLink, LinkedProduct
 from ..models_extended import InsurancePolicy
+from ..domain.engines import MortgageEngine
 
 
 MORTGAGE_KEYS = {
@@ -25,6 +26,9 @@ MORTGAGE_KEYS = {
     "linked_life_insurance",
     "linked_card",
     "linked_pension_plan",
+    "linked_home_insurance_rate_penalty_pp",
+    "linked_life_insurance_rate_penalty_pp",
+    "linked_salary_rate_penalty_pp",
 }
 
 
@@ -150,6 +154,45 @@ def resolve_subrogation_penalty(session: Session, mortgage: Mortgage) -> dict:
     return {"status": "needs_more_data", "amount": None, "formula": None, "source": None, "fact_key": None}
 
 
+def linked_product_rate_impacts(session: Session, mortgage: Mortgage) -> list[dict]:
+    ctx = mortgage_contract_context(session, mortgage.id)
+    by_key = ctx["by_key"]
+    base = MortgageEngine.amortization(mortgage.remaining_principal, mortgage.nominal_rate, mortgage.remaining_months)
+    mappings = (
+        ("home_insurance", "linked_home_insurance_rate_penalty_pp"),
+        ("life_insurance", "linked_life_insurance_rate_penalty_pp"),
+        ("salary", "linked_salary_rate_penalty_pp"),
+    )
+    out = []
+    for product, key in mappings:
+        fact = by_key.get(key)
+        pp = _as_decimal(None if fact is None else fact.get("value"))
+        if pp is None:
+            continue
+        delta_rate = pp / Decimal("100")
+        alt = MortgageEngine.amortization(
+            mortgage.remaining_principal,
+            mortgage.nominal_rate + delta_rate,
+            mortgage.remaining_months,
+        )
+        out.append({
+            "product": product,
+            "fact_key": key,
+            "rate_penalty_pp": str(pp),
+            "monthly_payment_at_current_rate": str(base.monthly_payment),
+            "monthly_payment_without_product": str(alt.monthly_payment),
+            "monthly_payment_increase": str((alt.monthly_payment-base.monthly_payment).quantize(Decimal("0.01"))),
+            "remaining_interest_increase": str((alt.total_interest-base.total_interest).quantize(Decimal("0.01"))),
+            "source": fact,
+            "assumption": (
+                "fixed_rate_contract"
+                if mortgage.interest_type == "fixed"
+                else "current_rate_held_constant_for_comparison"
+            ),
+        })
+    return out
+
+
 def insurance_switching_context(session: Session) -> list[dict]:
     policies = session.scalars(select(InsurancePolicy)).all()
     out = []
@@ -235,6 +278,7 @@ def switching_readiness(session: Session, mortgage_id: str | None = None) -> dic
                 "amount": None if subrogation["amount"] is None else str(subrogation["amount"]),
             },
             "linked_product_signals": linked_signals,
+            "linked_product_rate_impacts": linked_product_rate_impacts(session, mortgage),
         },
         "insurance": insurance,
         "hypotheses": hypotheses,
