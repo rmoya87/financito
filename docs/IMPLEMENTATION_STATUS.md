@@ -1,7 +1,7 @@
 # Estado de implementación
 
-Fecha de corte: **2026-09-20**.  
-Schema actual: **v9**.
+Fecha de corte: **2026-09-21**.  
+Schema actual: **v11**.
 
 Este documento describe únicamente comportamiento ejecutable en `main`. Los planes futuros viven en `ROADMAP.md`.
 
@@ -137,3 +137,12 @@ Un elemento de esta sección no se sustituirá con datos ficticios ni supuestos 
 - Cambiar la categoría desde Todos los movimientos crea/actualiza una regla persistente `description_exact`.
 - La corrección se aplica al histórico completo con el mismo concepto normalizado y a los futuros movimientos iguales.
 - Las semánticas especiales (movimiento entre cuentas, reembolsos, ingresos) siguen aplicándose después de la propagación.
+
+
+### Casa y optimización hipotecaria
+- Patrimonio incorpora **Casa** entre el resumen y el resto del detalle patrimonial. Consolida valor de vivienda, capital pendiente, cuota, plazo, TIN, TAE, tipo fijo/variable/mixto, fechas, índice+diferencial, revisiones y comisiones relevantes.
+- Los campos ausentes se muestran explícitamente con el motivo por el que hacen falta y pueden completarse desde la propia ficha; la evidencia documental confirmada rellena huecos sin pisar una corrección manual.
+- Se calculan equity estimado y LTV usando el valor atribuible de la vivienda y el capital pendiente.
+- Los seguros de hogar/vida relacionados se muestran junto a la hipoteca para evaluar el coste efectivo de vinculaciones.
+- La comparación de mercado consulta referencias públicas bajo demanda, mantiene capital y plazo pendientes para hacer comparable la cuota y muestra diferencia mensual e intereses restantes. Si existe un coste de salida confirmado, calcula un punto de equilibrio parcial.
+- Banco de España aparece como fuente oficial de referencia; las páginas comerciales se tratan como señales públicas, nunca como oferta personalizada. El ahorro neto definitivo requiere incorporar FEIN/oferta, seguros vinculados y todos los costes de cambio.
