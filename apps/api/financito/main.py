@@ -137,7 +137,7 @@ def dashboard(db:Session=Depends(get_db)):
     upcoming=db.scalars(select(Commitment).where(and_(Commitment.due_date>=today,Commitment.due_date<=today+timedelta(days=45),Commitment.status=="active")).order_by(Commitment.due_date)).all()
     actions=db.scalars(select(ActionItem).where(ActionItem.status.in_(["pending","in_progress"])).order_by(ActionItem.due_date.asc().nullslast()).limit(10)).all()
     category_rows=category_spending(db,start,today)
-    return {"period":{"start":start,"end":today},"liquidity":str(balances),"income":str(flow_data["income"]),"expenses":str(flow_data["expenses"]),"savings":str(flow_data["savings"]),"savings_rate":str(flow_data["savings_rate"]) if flow_data["savings_rate"] is not None else None,"spending_by_category":[{"category":r["category"],"amount":str(r["amount"])} for r in category_rows],"upcoming_commitments":[{"id":c.id,"title":c.title,"amount":str(c.amount),"due_date":c.due_date} for c in upcoming],"actions":[{"id":a.id,"title":a.title,"priority":a.priority,"due_date":a.due_date,"status":a.status} for a in actions]}
+    return {"period":{"start":start,"end":today},"liquidity":str(balances),"income":str(flow_data["income"]),"expenses":str(flow_data["expenses"]),"savings":str(flow_data["savings"]),"savings_rate":str(flow_data["savings_rate"]) if flow_data["savings_rate"] is not None else None,"spending_by_category":[{"category":r["category"],"system_key":r["system_key"],"amount":str(r["amount"])} for r in category_rows],"upcoming_commitments":[{"id":c.id,"title":c.title,"amount":str(c.amount),"due_date":c.due_date} for c in upcoming],"actions":[{"id":a.id,"title":a.title,"priority":a.priority,"due_date":a.due_date,"status":a.status} for a in actions]}
 
 
 @app.post("/api/v1/budgets")
