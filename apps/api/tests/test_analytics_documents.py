@@ -39,7 +39,7 @@ def test_refund_reduces_expense_and_not_income():
         data=overview(db,date(2026,9,1),date(2026,9,30))
         assert Decimal(data["cash_flow"]["income"])==Decimal("0.00")
         assert Decimal(data["cash_flow"]["expenses"])==Decimal("0.00")
-        assert refund.category_id==expense.category_id
+        assert refund.category_id==cats["refunds"].id
         link=db.scalar(select(EntityLink).where(EntityLink.from_id==refund.id,EntityLink.relation_type=="refund_of"))
         assert link is not None
 
