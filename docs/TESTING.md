@@ -29,6 +29,7 @@ Suites para:
 - FIFO/tax lots;
 - transferencias y splits;
 - reglas de categoría;
+- aprendizaje de categoría por comercio confirmado y categorización IA local con fallback seguro;
 - RAG;
 - stress/backtest/planning;
 - Open Banking authorize/sync/pagination/dedupe/revoke;
@@ -45,6 +46,7 @@ Suites para:
 - reembolso reduce gasto y no crea ingreso;
 - split conserva suma exacta;
 - corrección manual prevalece;
+- la IA nunca sobrescribe movimientos verificados por el usuario y solo acepta categorías existentes;
 - dato contractual ausente no se convierte en cero;
 - quotes/históricos externos conservan provider/frescura;
 - backup inválido no se restaura;

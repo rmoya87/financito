@@ -42,6 +42,7 @@ Base funcional: `/api/v1`.
 - `POST /transactions/detect-transfers`
 - `POST /transactions/detect-refunds`
 - `GET /transactions/review-queue`
+- `POST /transactions/ai-categorize` — mejora explícita de pendientes con memoria local, embeddings y LLM local; no modifica movimientos verificados por el usuario
 - `GET /transactions/{id}/splits`
 - `PUT /transactions/{id}/splits`
 
