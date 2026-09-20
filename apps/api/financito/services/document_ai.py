@@ -19,7 +19,7 @@ MAX_CHUNKS = 18
 
 CONTRACT_FACT_KEYS = {
     "cancellation_notice_days","early_exit_penalty","annual_cost","monthly_cost","deductible",
-    "permanence_end_date","renewal_date","provider_name","insurance_type",
+    "permanence_end_date","renewal_date","provider_name","insurance_type","policy_number","contract_number","insured_object",
 }
 MORTGAGE_FACT_KEYS = {
     "nominal_rate","apr_rate","reference_index","interest_type","differential_rate",
@@ -475,6 +475,11 @@ SCHEMA JSON:
     )
     session.add(row)
     _upsert_action(session, document, result)
+    # Identity proposals can link this file to an existing policy/contract.
+    # Re-run evidence synchronization so several files become one product
+    # without turning inferred identity hints into confirmed contractual facts.
+    from .evidence import synchronize_document_evidence
+    synchronize_document_evidence(session, document)
     session.flush()
     return {"status": "ready", "analysis": result, "message": None}
 
