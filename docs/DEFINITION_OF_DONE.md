@@ -89,3 +89,21 @@ La IA no puede declarar una tarea completa sin:
 - tests relevantes ejecutados;
 - docs actualizadas;
 - limitaciones reales declaradas.
+
+
+## Forecasting
+
+Una previsión no se considera terminada si:
+- no muestra horizonte;
+- no identifica mismo periodo del año anterior cuando existe;
+- mezcla gasto conocido y estimado sin distinguir;
+- no muestra rango/incertidumbre;
+- no tiene backtesting;
+- no registra model_version;
+- el LLM genera cifras en lugar del ForecastEngine.
+
+## Repairability
+
+Todo índice o derivado importante debe tener estrategia de reconstrucción.
+
+Una feature no está terminada si un fallo a mitad de proceso puede dejar datos parcialmente visibles o irrecuperables.
