@@ -139,3 +139,17 @@ def test_tracked_asset_uses_real_purchase_data_and_watch_state():
         assert Decimal(match["cost_basis"])==Decimal("202")
         assert match["current_price"] is None
         assert match["unrealized_pnl"] is None
+
+        db.add(MarketPrice(
+            security_id=owned["security_id"],
+            timestamp=datetime.now(timezone.utc),
+            close=Decimal("25"),
+            currency="EUR",
+            provider="test",
+            is_delayed=False,
+        ))
+        db.flush()
+        refreshed=next(x for x in tracked_assets(db) if x["security_id"]==owned["security_id"])
+        assert Decimal(refreshed["current_price"])==Decimal("25")
+        assert Decimal(refreshed["current_value"])==Decimal("250")
+        assert Decimal(refreshed["unrealized_pnl"])==Decimal("48")
