@@ -34,6 +34,7 @@ from .services.forecast import forecast
 from .services.imports import import_csv
 from .services.local_ai import status as ai_status
 from .services.secure_config import provider_status
+from .services.snapshots import record_snapshot
 
 
 @asynccontextmanager
@@ -92,6 +93,7 @@ def accounts(db: Session = Depends(get_db)):
 @app.post("/api/v1/accounts", response_model=AccountOut)
 def create_account(payload: AccountCreate, db: Session = Depends(get_db)):
     row=Account(**payload.model_dump()); db.add(row); db.flush()
+    record_snapshot(db,"account",row.id,{"balance":str(row.current_balance),"available_balance":None if row.available_balance is None else str(row.available_balance),"currency":row.currency},source="account_created")
     db.add(AuditEvent(event_type="account_created",entity_type="account",entity_id=row.id))
     db.commit(); db.refresh(row); return row
 
