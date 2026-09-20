@@ -32,7 +32,10 @@ def _facts(session: Session, document_id: str) -> list[ExtractedFact]:
 
 def review_summary(session: Session, document_id: str) -> dict:
     facts = _facts(session, document_id)
-    pending = [f for f in facts if f.status == "inferred" and not f.user_verified]
+    pending = [
+        f for f in facts
+        if not f.user_verified and f.status in {"inferred", "ambiguous", "conflicting"}
+    ]
     confirmed = [f for f in facts if f.status == "confirmed" and f.user_verified]
     ambiguous = [f for f in facts if f.status in {"ambiguous", "conflicting"}]
     reviewed = [f for f in facts if f.user_verified or f.status in REVIEWED_STATUSES]
@@ -278,32 +281,41 @@ def _confirm_coherent_for_documents(session: Session, document_ids: list[str]) -
         select(ExtractedFact).where(
             ExtractedFact.document_id.in_(document_ids),
             ExtractedFact.fact_type.in_(MATERIAL_FACT_TYPES),
-            ExtractedFact.status == "inferred",
-            ExtractedFact.user_verified.is_(False),
         )
     ).all()
     by_key: dict[str, list[ExtractedFact]] = {}
     coverage: list[ExtractedFact] = []
     for row in rows:
         if row.fact_type == "coverage_fact":
-            coverage.append(row)
+            if not row.user_verified and row.status in {"inferred", "ambiguous", "conflicting"}:
+                coverage.append(row)
         else:
             by_key.setdefault(row.key, []).append(row)
 
     confirmed = 0
     conflicts = 0
     for items in by_key.values():
-        values = {_normalize_identity(_payload(item).get("value")) for item in items}
-        values.discard("")
-        if len(values) <= 1:
-            for item in items:
+        unresolved = [
+            item for item in items
+            if not item.user_verified and item.status in {"inferred", "ambiguous", "conflicting"}
+        ]
+        if not unresolved:
+            continue
+        reference_values = {
+            _normalize_identity(_payload(item).get("value"))
+            for item in items
+            if item.status not in {"not_found", "superseded"}
+        }
+        reference_values.discard("")
+        if len(reference_values) <= 1:
+            for item in unresolved:
                 item.status = "confirmed"
                 item.user_verified = True
                 confirmed += 1
         else:
-            for item in items:
+            for item in unresolved:
                 item.status = "conflicting"
-                item.user_verified = True
+                item.user_verified = False
                 conflicts += 1
     for item in coverage:
         item.status = "confirmed"
