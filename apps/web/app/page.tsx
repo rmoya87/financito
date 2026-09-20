@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import {useQuery} from '@tanstack/react-query';
-import {ArrowRight,CalendarDays,CircleDollarSign,Sparkles,WalletCards} from 'lucide-react';
+import {ArrowRight,CalendarDays,CircleDollarSign,FileText,Sparkles,WalletCards} from 'lucide-react';
 import {apiGet} from '@/lib/api';
 import {categoryColor} from '@/lib/category-colors';
 import {PageHeader} from '@/components/page-header';
@@ -125,7 +125,7 @@ export default function DashboardPage(){
 
     <section className="mt-5">
       <h2 className="mb-3 text-lg font-bold">Explorar</h2>
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <Link href="/transactions/" className="fin-card flex items-center gap-4 p-4 hover:border-[var(--brand)]">
           <div className="grid size-10 place-items-center rounded-xl bg-[var(--brand-soft)] text-[var(--brand)]"><CircleDollarSign size={20}/></div>
           <div><div className="font-semibold">Movimientos</div><div className="text-xs text-[var(--muted)]">Gastos, cuentas y análisis</div></div>
@@ -137,6 +137,10 @@ export default function DashboardPage(){
         <Link href="/actions/" className="fin-card flex items-center gap-4 p-4 hover:border-[var(--brand)]">
           <div className="grid size-10 place-items-center rounded-xl bg-[var(--brand-soft)] text-[var(--brand)]"><Sparkles size={20}/></div>
           <div><div className="font-semibold">Decisiones</div><div className="text-xs text-[var(--muted)]">Oportunidades, objetivos y simulaciones</div></div>
+        </Link>
+        <Link href="/documents/" className="fin-card flex items-center gap-4 p-4 hover:border-[var(--brand)]">
+          <div className="grid size-10 place-items-center rounded-xl bg-[var(--brand-soft)] text-[var(--brand)]"><FileText size={20}/></div>
+          <div><div className="font-semibold">Añadir documentos</div><div className="text-xs text-[var(--muted)]">Hipoteca, seguros y contratos; análisis local automático</div></div>
         </Link>
       </div>
     </section>
