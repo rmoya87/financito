@@ -27,6 +27,7 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 - presupuestos y compromisos.
 - análisis por categoría/comercio, fijo-variable, esencial-discrecional y series mensuales.
 - forecast con baseline comparable, accuracy histórica y Calendar.
+- Laboratorio de decisiones alimentado por perfiles reales guardados, sin defaults financieros de ejemplo.
 - stress testing y cash runway.
 
 ### Banking
@@ -52,6 +53,7 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 ### Patrimonio, inversiones y mercado
 - activos y pasivos manuales, net worth y ownership.
 - portfolios, securities, trades y FIFO tax lots.
+- acciones/ETF/fondos/cripto en modo seguimiento o poseído, con compra real, coste base, último precio persistido, P&L, dividendos y frescura de mercado.
 - P&L realizado/no realizado.
 - Alpha Vantage: quote e histórico bajo demanda y caché local.
 - exposición por activo/clase y concentración HHI.
@@ -65,7 +67,7 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 - pólizas y hechos de cobertura.
 - duplicidades solo entre coberturas verificadas.
 - requisitos de cobertura definidos por usuario y detección de huecos contra esos requisitos.
-- motor hipotecario de cuota/intereses.
+- perfil hipotecario persistente con snapshots; motor hipotecario de cuota/intereses y escenarios basados en el mortgage_id real.
 - amortización extraordinaria: reducir cuota vs reducir plazo, con comisión explícita.
 - motor de switching con costes, penalizaciones, beneficios perdidos, tax impact y break-even.
 - beneficios y productos vinculados.
