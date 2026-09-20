@@ -18,6 +18,7 @@ from .providers.news import GdeltNewsProvider
 from .services.market_data import history as market_history,portfolio_exposure,refresh_history,refresh_security,security_risk
 from .services.news_analysis import analyze_all,analyze_item,local_news
 from .services.portfolio_analysis import portfolio_fit,portfolio_performance
+from .services.decision_context import live_decision_context
 
 router=APIRouter(prefix="/api/v1")
 
@@ -123,7 +124,7 @@ def decision_detail(decision_id:str,db:Session=Depends(dbdep)):
     outcomes=db.scalars(select(DecisionOutcome).where(DecisionOutcome.decision_case_id==decision_id).order_by(DecisionOutcome.created_at)).all()
     return {
         "id":row.id,"type":row.decision_type,"question":row.question,"status":row.status,
-        "current_state":json.loads(row.current_state_json),"assumptions":json.loads(row.assumptions_json),"constraints":json.loads(row.constraints_json),
+        "current_state":json.loads(row.current_state_json),"live_current_state":live_decision_context(db),"assumptions":json.loads(row.assumptions_json),"constraints":json.loads(row.constraints_json),
         "alternatives":[{"id":a.id,"name":a.name,"one_off_cost":str(a.one_off_cost),"monthly_cost":str(a.monthly_cost),"expected_benefit":str(a.expected_benefit),"net_benefit":str(a.net_benefit),"break_even_months":None if a.break_even_months is None else str(a.break_even_months),"risk_level":a.risk_level,"horizon_results":json.loads(a.horizon_results_json),"uncertainties":json.loads(a.uncertainties_json)} for a in alternatives],
         "outcomes":[{"id":o.id,"selected_alternative_id":o.selected_alternative_id,"observation_start":o.observation_start,"observation_end":o.observation_end,"expected":json.loads(o.expected_impact_json),"observed":json.loads(o.observed_impact_json),"variance":json.loads(o.variance_json),"explanation":o.explanation,"data_completeness":str(o.data_completeness)} for o in outcomes],
     }
@@ -136,7 +137,10 @@ def update_decision(decision_id:str,p:DecisionStatusIn,db:Session=Depends(dbdep)
 
 @router.post("/decisions")
 def add_decision(p:DecisionIn,db:Session=Depends(dbdep)):
-    r=DecisionCase(decision_type=p.decision_type,question=p.question,current_state_json=json.dumps(p.current_state),assumptions_json=json.dumps(p.assumptions),constraints_json=json.dumps(p.constraints),calculation_version="v1",status="draft");db.add(r);db.commit();return {"id":r.id}
+    live=live_decision_context(db)
+    snapshot={"captured_from":"live_financito_data","context":live}
+    if p.current_state:snapshot["user_input"]=p.current_state
+    r=DecisionCase(decision_type=p.decision_type,question=p.question,current_state_json=json.dumps(snapshot),assumptions_json=json.dumps(p.assumptions),constraints_json=json.dumps(p.constraints),calculation_version="real-context-v1",status="draft");db.add(r);db.commit();return {"id":r.id}
 @router.post("/decisions/{decision_id}/alternatives")
 def add_alt(decision_id:str,p:AlternativeIn,db:Session=Depends(dbdep)):
     if not db.get(DecisionCase,decision_id):raise HTTPException(404,"Decision not found")
