@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import Portfolio,Position,Security
-from ..models_extended import MarketPrice,Trade
+from ..models_extended import CorporateAction,MarketPrice,Trade
 from .market_data import portfolio_exposure
 from ..domain.portfolio import portfolio_summary
 
@@ -98,6 +98,10 @@ def portfolio_performance(session:Session,portfolio_id:str)->dict:
         fx=float(trade.fx_rate)
         value=(gross+fees)*fx if trade.side=="buy" else -(gross-fees)*fx
         cashflows.append((trade.executed_at.date(),-value))
+    actions=session.scalars(select(CorporateAction).where(CorporateAction.portfolio_id==portfolio_id).order_by(CorporateAction.effective_date)).all()
+    for action in actions:
+        if action.action_type=="dividend":
+            cashflows.append((action.effective_date,float(action.value)))
     cashflows.append((date.today(),current_value))
     mwr=_xirr(cashflows)
 
@@ -107,7 +111,9 @@ def portfolio_performance(session:Session,portfolio_id:str)->dict:
     for p in prices:price_events[p.timestamp.date()].append(p)
     trade_events=defaultdict(list)
     for t in trades:trade_events[t.executed_at.date()].append(t)
-    dates=sorted(set(price_events)|set(trade_events))[-1500:]
+    action_events=defaultdict(list)
+    for action in actions:action_events[action.effective_date].append(action)
+    dates=sorted(set(price_events)|set(trade_events)|set(action_events))[-1500:]
 
     quantities=defaultdict(lambda:Decimal("0"))
     latest_price={}
@@ -118,6 +124,12 @@ def portfolio_performance(session:Session,portfolio_id:str)->dict:
     for day in dates:
         for p in price_events.get(day,[]):latest_price[p.security_id]=float(p.close)
         external_flow=0.0
+        income=0.0
+        for action in action_events.get(day,[]):
+            if action.action_type=="split":
+                quantities[action.security_id]*=action.value
+            elif action.action_type=="dividend":
+                income+=float(action.value)
         for t in trade_events.get(day,[]):
             amount=float(t.quantity*t.price+t.fees) if t.side=="buy" else -float(t.quantity*t.price-t.fees)
             external_flow+=amount*float(t.fx_rate)
@@ -128,7 +140,7 @@ def portfolio_performance(session:Session,portfolio_id:str)->dict:
             continue
         value=sum(float(quantities[sid])*latest_price[sid] for sid in held)
         if prev_value>0:
-            period_return=(value-prev_value-external_flow)/prev_value
+            period_return=(value+income-prev_value-external_flow)/prev_value
             if math.isfinite(period_return) and period_return>-1:
                 product*=1+period_return;evaluated+=1
             else:skipped+=1
@@ -147,6 +159,6 @@ def portfolio_performance(session:Session,portfolio_id:str)->dict:
         "assumptions":[
             "MWR usa flujos de compras/ventas, FX registrado y valoración actual de posiciones.",
             "TWR encadena retornos solo cuando todas las posiciones mantenidas tienen un precio persistido en esa fecha.",
-            "No se ajusta automáticamente por dividendos o corporate actions no registrados.",
+            "Dividendos y splits registrados se incorporan; eventos no registrados siguen fuera del cálculo.",
         ],
     }
