@@ -9,7 +9,7 @@ from .db import SessionLocal
 from .models import Account,Contract,FinancialGoal,Mortgage,Portfolio,Security
 from .models_extended import Asset,BackupRecord,CoverageFact,InsurancePolicy,Liability,RepairIssue,Trade,TrackedAsset
 from .models_analytics import EntityLink
-from .schemas_extended import AssetCreate,BackupCreate,BackupRestore,ChatRequest,ContractCreate,CoverageCompareRequest,CoverageCreate,CorporateActionCreate,GoalCreate,GoalProgressUpdate,InsuranceCreate,LiabilityCreate,MortgageProfileCreate,MortgageProfileUpdate,PortfolioCreate,RagSearchRequest,SecurityCreate,StoredMortgagePrepaymentRequest,StoredMortgageRatePathRequest,StoredMortgageScenarioRequest,StressRequest,TaxEstimateRequest,TrackedAssetCreate,TradeCreate
+from .schemas_extended import AssetCreate,AssetSimulationStart,BackupCreate,BackupRestore,ChatRequest,ContractCreate,CoverageCompareRequest,CoverageCreate,CorporateActionCreate,GoalCreate,GoalProgressUpdate,InsuranceCreate,LiabilityCreate,MortgageProfileCreate,MortgageProfileUpdate,PortfolioCreate,RagSearchRequest,SecurityCreate,StoredMortgagePrepaymentRequest,StoredMortgageRatePathRequest,StoredMortgageScenarioRequest,StressRequest,TaxEstimateRequest,TaxProfileUpdate,TrackedAssetCreate,TradeCreate
 from .domain.portfolio import apply_trade,portfolio_summary
 from .domain.engines import MortgageEngine,MortgagePrepaymentEngine,MortgageRatePathEngine
 from .domain.stress import run_stress
@@ -19,7 +19,7 @@ from .services.contracts import compare_coverages,refresh_contract_actions,scan_
 from .services.import_formats import import_statement
 from .services.rag import index_document_chunks,search
 from .services.repair import repair,scan
-from .services.tax import estimate
+from .services.tax import estimate,get_profile,profile_dict,upsert_profile
 from .services.wealth import summary as wealth_summary
 from .services.financial_analytics import cash_flow
 from .services.snapshots import record_snapshot
@@ -344,8 +344,20 @@ def repair_run(issue_id:str,db:Session=Depends(dbdep)):
     except ValueError as e:raise HTTPException(400,str(e))
     db.commit();return result
 
+@router.get("/tax/profile")
+def tax_profile(jurisdiction:str="ES",tax_year:int=date.today().year,db:Session=Depends(dbdep)):
+    return profile_dict(get_profile(db,jurisdiction.upper(),tax_year),jurisdiction.upper(),tax_year)
+
+@router.put("/tax/profile")
+def save_tax_profile(p:TaxProfileUpdate,db:Session=Depends(dbdep)):
+    if p.children_under_three>p.dependent_children:
+        raise HTTPException(400,"Los menores de tres años no pueden superar el número total de descendientes.")
+    row=upsert_profile(db,p.model_dump());db.commit()
+    return profile_dict(row,row.jurisdiction,row.tax_year)
+
 @router.post("/tax/estimate")
-def tax(p:TaxEstimateRequest,db:Session=Depends(dbdep)):return estimate(db,p.jurisdiction,p.tax_year,p.assumed_rate)
+def tax(p:TaxEstimateRequest,db:Session=Depends(dbdep)):
+    return estimate(db,p.jurisdiction,p.tax_year)
 @router.get("/market/quote/{symbol}")
 def quote(symbol:str):
     try:return AlphaVantageProvider().quote(symbol)
