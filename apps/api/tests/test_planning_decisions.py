@@ -188,15 +188,15 @@ def test_chat_and_stress_use_refund_aware_cash_flow():
         account = Account(name=f"Refund flow {suffix}")
         db.add(account); db.flush()
         expense = Transaction(
-            account_id=account.id, booking_date=today, amount=Decimal("-40"),
-            base_amount=Decimal("-40"), currency="EUR", base_currency="EUR",
+            account_id=account.id, booking_date=today, amount=Decimal("-999999"),
+            base_amount=Decimal("-999999"), currency="EUR", base_currency="EUR",
             description_raw=f"Compra {suffix}", description_normalized=f"compra {suffix}",
             merchant_raw=f"Tienda {suffix}", merchant_normalized=f"tienda {suffix}",
             duplicate_fingerprint=f"chat-expense-{suffix}",
         )
         refund = Transaction(
-            account_id=account.id, booking_date=today, amount=Decimal("40"),
-            base_amount=Decimal("40"), currency="EUR", base_currency="EUR",
+            account_id=account.id, booking_date=today, amount=Decimal("999999"),
+            base_amount=Decimal("999999"), currency="EUR", base_currency="EUR",
             description_raw=f"Devolucion {suffix}", description_normalized=f"devolucion {suffix}",
             merchant_raw=f"Tienda {suffix}", merchant_normalized=f"tienda {suffix}",
             duplicate_fingerprint=f"chat-refund-{suffix}",
@@ -209,6 +209,5 @@ def test_chat_and_stress_use_refund_aware_cash_flow():
         ))
         db.commit()
         result = answer(db, "resumen")
-        assert Decimal(result["calculations"]["cash_flow"]["income"]) >= Decimal("0")
-        # El par compra+reembolso no debe sumar 40 como ingreso ni 40 como gasto.
-        assert Decimal(result["calculations"]["cash_flow"]["expenses"]) >= Decimal("0")
+        assert Decimal(result["calculations"]["cash_flow"]["income"]) < Decimal("999999")
+        assert Decimal(result["calculations"]["cash_flow"]["expenses"]) < Decimal("999999")
