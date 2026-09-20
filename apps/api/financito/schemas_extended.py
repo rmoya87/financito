@@ -49,3 +49,42 @@ class CorporateActionCreate(BaseModel):
     value:Decimal=Field(gt=0)
     currency:str="EUR"
     notes:str|None=None
+
+
+class MortgageProfileCreate(BaseModel):
+    lender:str
+    remaining_principal:Decimal=Field(gt=0)
+    currency:str="EUR"
+    interest_type:str=Field(pattern="^(fixed|variable|mixed)$")
+    nominal_rate:Decimal=Field(ge=0,le=1)
+    monthly_payment:Decimal=Field(gt=0)
+    remaining_months:int=Field(gt=0,le=1200)
+    early_repayment_fee:Decimal|None=Field(default=None,ge=0)
+
+class MortgageProfileUpdate(MortgageProfileCreate):
+    pass
+
+class StoredMortgageScenarioRequest(BaseModel):
+    mortgage_id:str
+
+class StoredMortgagePrepaymentRequest(BaseModel):
+    mortgage_id:str
+    extra_payment:Decimal=Field(gt=0)
+
+class StoredMortgageRatePathRequest(BaseModel):
+    mortgage_id:str
+    rate_steps:list[dict]=Field(default_factory=list,max_length=50)
+
+class TrackedAssetCreate(BaseModel):
+    asset_class:str=Field(pattern="^(stock|etf|fund|bond|crypto|cash)$")
+    name:str
+    identifier:str
+    owned:bool=False
+    portfolio_id:str|None=None
+    quantity:Decimal|None=Field(default=None,gt=0)
+    purchase_price:Decimal|None=Field(default=None,gt=0)
+    purchase_date:date|None=None
+    fees:Decimal=Field(default=Decimal("0"),ge=0)
+    currency:str="EUR"
+    provider_asset_id:str|None=None
+    notes:str|None=None
