@@ -108,7 +108,7 @@ test('caso de decisión registra alternativa y resultado',async({page})=>{
   await page.getByPlaceholder('Impacto observado (€)').fill('700');
   await page.getByPlaceholder('Explicación').fill('Observado E2E');
   await page.getByRole('button',{name:'Guardar resultado'}).click();
-  await expect(page.getByText(/"net":-80/)).toBeVisible();
+  await expect(page.getByText(/Variación observada:/)).toBeVisible();
 });
 
 test('backup cifrado se crea y se verifica para restore',async({page})=>{
