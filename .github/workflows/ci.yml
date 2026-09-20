@@ -6,11 +6,18 @@ on:
 permissions:
   contents: read
 jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with: { python-version: '3.13' }
+      - run: python scripts/check_docs.py
   backend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with: { python-version: '3.13' }
       - run: pip install -e 'apps/api[dev]'
       - run: PYTHONPATH=apps/api FINANCITO_ALLOW_PLAINTEXT_SQLITE=1 FINANCITO_DATA_DIR=/tmp/financito-ci FINANCITO_VAULT_DIR=/tmp/financito-ci/vault python -m compileall -q apps/api/financito
@@ -20,7 +27,7 @@ jobs:
     defaults: { run: { working-directory: apps/web } }
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: { node-version: '24' }
       - run: npm install --no-audit --no-fund
       - run: npm run typecheck
