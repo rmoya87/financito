@@ -154,3 +154,55 @@ def test_dashboard_accepts_explicit_date_range():
         response=client.get("/api/v1/dashboard",params={"start":"2040-01-01","end":"2040-01-31"})
         assert response.status_code==200
         assert response.json()["period"]=={"start":"2040-01-01","end":"2040-01-31"}
+
+
+def test_incomplete_insurance_group_can_collect_documents_before_premium():
+    with SessionLocal() as db:
+        contract=Contract(
+            provider_name=f"Aseguradora pendiente {uuid4().hex[:6]}",
+            contract_type="insurance",
+            evidence_status="needs_more_data",
+        )
+        db.add(contract);db.flush()
+        first=_document(db,"nota-informativa.pdf")
+        second=_document(db,"condiciones-generales.pdf")
+        for document in (first,second):
+            _fact(db,document.id,"policy_number","POL-PENDING-777")
+        db.add(EntityLink(
+            from_type="document",from_id=first.id,relation_type="evidence_for",
+            to_type="contract",to_id=contract.id,confidence=Decimal("1"),
+            source_type="user",source_ref=first.id,
+        ))
+        db.flush()
+
+        result=auto_link_document_entity(db,second)
+        assert result is not None
+        assert result["entity_type"]=="contract"
+        assert result["entity_id"]==contract.id
+        second_link=db.scalar(select(EntityLink).where(
+            EntityLink.from_type=="document",
+            EntityLink.from_id==second.id,
+            EntityLink.relation_type=="evidence_for",
+            EntityLink.to_type=="contract",
+            EntityLink.to_id==contract.id,
+        ))
+        assert second_link is not None
+
+        # Once one document later supplies a confirmed premium, all documents
+        # in the contract group converge on one policy instead of creating one
+        # policy per file.
+        premium=_fact(db,first.id,"annual_cost","480",status="confirmed",verified=True)
+        assert premium.user_verified is True
+        from financito.services.evidence import synchronize_document_evidence
+        synchronize_document_evidence(db,first)
+        synchronize_document_evidence(db,second)
+        policies=db.scalars(select(InsurancePolicy).where(InsurancePolicy.contract_id==contract.id)).all()
+        assert len(policies)==1
+        policy=policies[0]
+        linked_docs=set(db.scalars(select(EntityLink.from_id).where(
+            EntityLink.from_type=="document",
+            EntityLink.relation_type=="evidence_for",
+            EntityLink.to_type=="insurance_policy",
+            EntityLink.to_id==policy.id,
+        )).all())
+        assert {first.id,second.id}.issubset(linked_docs)
