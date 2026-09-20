@@ -136,3 +136,49 @@ Todas las comparaciones históricas deben utilizar solo información disponible 
 ## Precisión
 
 Usar Decimal para importes monetarios cuando corresponda. No depender de float binario para cálculos de dinero, cuotas o penalizaciones.
+
+
+## ForecastEngine
+
+Inputs:
+- transactions;
+- income series;
+- recurring series;
+- commitments;
+- budgets;
+- contract changes;
+- extraordinary markers.
+
+Debe utilizar como baseline obligatorio el mismo periodo del año anterior cuando exista histórico suficiente.
+
+No copiarlo literalmente: combinarlo con tendencia reciente, estacionalidad y commitments conocidos.
+
+Outputs:
+- predicted income;
+- predicted expenses;
+- predicted savings;
+- predicted liquidity;
+- category forecasts;
+- confidence intervals;
+- drivers;
+- accuracy metadata.
+
+## CommitmentsEngine
+
+Resuelve obligaciones futuras y evita tratar saldo bruto como liquidez libre.
+
+## StressTestEngine
+
+Aplica shocks como assumptions sobre snapshots actuales.
+
+## CoverageEngine
+
+Compara coberturas estructuradas y detecta gaps/overlaps.
+
+## CostCenterEngine
+
+Agrega gasto total por activo/área de vida.
+
+## DecisionOutcomeEngine
+
+Compara impacto esperado con observado para calibración posterior.
