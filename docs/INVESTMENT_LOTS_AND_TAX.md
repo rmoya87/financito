@@ -1,66 +1,50 @@
-# Lotes de inversión y base fiscal
+# Lotes de inversión y fiscalidad
 
-## Objetivo
+## Lotes y disposals
 
-Modelar compras/ventas desde el principio para poder calcular correctamente P&L realizado, coste, divisa y fiscalidad modular.
+Compras y ventas conservan cantidad, coste, comisiones, divisa, FX y trazabilidad. Las ventas asignan lotes FIFO y generan P&L realizado.
 
-## Tax lot
+## Motor fiscal versionado
 
-Campos:
-- security_id;
-- acquisition_date;
-- quantity_original;
-- quantity_remaining;
-- unit_cost;
-- fees;
-- currency;
-- fx_rate_at_acquisition;
-- source;
-- account/broker;
-- tax_metadata.
+La normativa vive en módulos deterministas por `jurisdiction + tax_year`, fuera del LLM.
 
-## Disposal allocation
+Rulesets iniciales:
 
-Registrar qué lotes se consumen en una venta según la regla fiscal/configuración aplicable.
+- `ES-IRPF-ahorro-2025-v1`;
+- `ES-IRPF-ahorro-2026-v1`.
 
-La regla concreta depende de jurisdicción y ejercicio.
+Cada ruleset conserva:
+- escala;
+- límites de compensación;
+- años de arrastre;
+- referencias legales;
+- URLs oficiales;
+- fecha de verificación.
 
-## Corporate actions
+## España: base del ahorro
 
-Soportar:
-- splits;
-- reverse splits;
-- spin-offs;
-- mergers;
-- dividends;
-- return of capital;
-- fees.
+El módulo actual implementa la integración corriente de los dos saldos de la base del ahorro y la escala conjunta 19/21/23/27/30. El cruce entre saldo negativo de un bloque y saldo positivo del otro está limitado al 25 %, con remanente documentado para arrastre de cuatro años.
 
-No alterar histórico sin trace.
-
-## Divisas
-
-Conservar:
-- precio original;
-- divisa original;
-- FX histórico;
-- valor base.
+No se consumen automáticamente saldos negativos de ejercicios anteriores porque necesitan su propia evidencia histórica.
 
 ## Tax Center
 
-El motor fiscal:
-- es modular por jurisdicción/ejercicio;
-- nunca se implementa dentro del LLM;
-- muestra supuestos;
-- cita fuentes normativas cuando se implemente legislación específica.
+Si existe ruleset para el ejercicio:
+- aplica la normativa versionada;
+- muestra versión, fuentes y fecha;
+- indica inputs fiscales ausentes;
+- etiqueta el resultado como cálculo parcial cuando solo dispone del P&L de inversiones.
 
-## Escenarios de venta
+Si no existe ruleset:
+- no inventa tipos;
+- permite una tasa explícita únicamente como simulación.
 
-Permitir estimar:
-- ganancia/pérdida;
-- costes;
-- impacto fiscal estimado;
-- cambio de allocation;
-- liquidez resultante.
+Endpoint detallado:
 
-No presentar una estimación fiscal como declaración oficial.
+```text
+POST /api/v1/tax/savings/calculate
+```
+
+## Alcance
+
+Financito no presenta este cálculo como Modelo 100 ni declaración oficial. Mínimo personal/familiar, arrastres previos, otras rentas y ajustes que no estén registrados siguen fuera del resultado.
