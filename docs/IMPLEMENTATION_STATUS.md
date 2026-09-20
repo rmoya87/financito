@@ -46,10 +46,12 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 - no se exponen endpoints públicos de sesión/balances/transacciones crudos.
 
 ### Documentos y RAG
-- watcher de Vault.
+- subida múltiple desde la WebApp mediante selector/drag & drop al Vault privado, más watcher de Vault en segundo plano.
 - PDF, TXT, CSV, JSON, DOCX, XLSX/XLSM, PNG/JPEG/HEIC/TIFF/BMP.
 - SHA-256, deduplicación, OCR, detección ES/EN y clasificación conservadora.
 - hechos contractuales con página y contexto; confirmación humana persistente; los facts confirmados se proyectan automáticamente a Contratos y, cuando existe prima confirmada, a Pólizas, manteniendo enlace al documento fuente.
+- análisis interpretativo con LLM local: resumen, ventajas, penalizaciones, obligaciones, riesgos, exclusiones/límites, vinculaciones, oportunidades, impactos cruzados y datos faltantes; visible en Documentos, Seguros, Hipoteca/Laboratorio y Contratos.
+- propuestas de hechos materiales y coberturas por IA local con whitelist + página obligatoria; permanecen inferidas hasta confirmación. Las coberturas confirmadas se proyectan a CoverageFact y alimentan huecos/duplicidades.
 - FTS5/BM25 + embeddings locales opcionales + sqlite-vec/fallback cosine.
 - fusión Reciprocal Rank Fusion y reranking léxico.
 - búsqueda global y citas que abren documento/página; el chat local recibe además un contexto estructurado con el estado confirmado/inferido de la evidencia.
@@ -96,7 +98,7 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 - disponibilidad real de cada banco dentro del proveedor PSD2.
 
 ## Parcial por diseño
-- extracción contractual: detecta hechos comunes, pero una FEIN/FIAE, póliza o anexo complejo puede requerir revisión/manualización.
+- extracción contractual: combina reglas deterministas y propuestas del LLM local. Una FEIN/FIAE, póliza o anexo complejo sigue requiriendo revisión humana de hechos materiales antes de influir en cálculos.
 - fundamentals: extracción de conceptos SEC seleccionados, no un terminal financiero completo.
 - news: búsqueda/ingestión; no existe todavía un motor robusto de impacto/sentimiento.
 - portfolio fit/recommendation: scoring determinista disponible, sin asesoramiento personalizado automático.
