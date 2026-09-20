@@ -48,8 +48,9 @@ export default function DashboardPage(){
       description="Tu situación financiera, lo que ha cambiado y lo que merece atención ahora."
     />
 
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
       <Metric label="Disponible" value={d.liquidity} detail="Liquidez consolidada"/>
+      <Metric label="Ingresos este mes" value={d.income} detail={`${d.period.start} — ${d.period.end}`}/>
       <Metric label="Gasto este mes" value={d.expenses} detail={`${d.period.start} — ${d.period.end}`}/>
       <Metric label="Ahorro este mes" value={d.savings} detail={savingsRate}/>
       {wealth.data?<Metric label="Patrimonio neto" value={wealth.data.net_worth} detail="Activos menos deuda"/>:
