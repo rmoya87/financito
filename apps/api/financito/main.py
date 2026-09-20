@@ -33,7 +33,7 @@ from .services.vault_watcher import VaultWatcher
 from .services.categorization import ensure_categories,propagate_verified_merchant
 from .services.transaction_ops import apply_category_semantics,detect_internal_transfers,detect_refunds,pair_internal_transfer_counterpart,set_category_for_same_concept,synchronize_transaction_semantics
 from .services.documents import index_document,reprocess_document,safe_path,store_uploaded_document
-from .services.evidence import confirm_document_coherent_evidence,confirm_entity_coherent_evidence,link_document_to_entity,review_summary,synchronize_all_document_evidence,synchronize_document_evidence
+from .services.evidence import confirm_document_coherent_evidence,confirm_entity_coherent_evidence,create_document_evidence_group,link_document_to_entity,review_summary,synchronize_all_document_evidence,synchronize_document_evidence
 from .services.document_ai import analyze_document_by_id,domain_insights,latest_analysis
 from .services.forecast import forecast
 from .services.month_end import month_end_projection
@@ -346,6 +346,24 @@ def evidence_groups(db:Session=Depends(get_db)):
             "documents":[{"id":x.from_id,"file_name":documents[x.from_id].file_name} for x in docs if x.from_id in documents],
         })
     return sorted(result,key=lambda x:(x["kind"],x["label"].lower()))
+
+
+@app.post("/api/v1/documents/{document_id}/evidence-group")
+def create_evidence_group(document_id:str,db:Session=Depends(get_db)):
+    document=db.get(Document,document_id)
+    if not document: raise HTTPException(404,"Document not found")
+    try:
+        result=create_document_evidence_group(db,document)
+    except ValueError as exc:
+        raise HTTPException(400,str(exc))
+    db.add(AuditEvent(
+        event_type="document_evidence_group_created",
+        entity_type="document",
+        entity_id=document_id,
+        metadata_json=json.dumps(result),
+    ))
+    db.commit()
+    return result
 
 
 @app.put("/api/v1/documents/{document_id}/entity-link")
