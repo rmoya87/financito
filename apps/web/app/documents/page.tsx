@@ -13,9 +13,9 @@ type InsightItem={title:string;detail:string;pages:number[];impact?:string};
 type AIAnalysis={id?:string;status?:string;confidence:string;summary:string;advantages:InsightItem[];penalties:InsightItem[];obligations:InsightItem[];risks:InsightItem[];exclusions_or_limits:InsightItem[];linked_products:InsightItem[];optimization_opportunities:InsightItem[];cross_area_impacts:InsightItem[];missing_information:InsightItem[];model_role:string};
 type AnalysisResponse={document_id:string;status:'ready'|'not_analyzed';analysis:AIAnalysis|null;ai:{available:boolean;configured_model:string|null;chat_ready?:boolean}};
 type UploadResponse={documents:{id:string;file_name:string;document_type:string;facts_created:number;chunks_created:number}[];ai_analysis_scheduled:boolean};
-type Fact={id:string;fact_type:string;key:string;value:{value:string;unit?:string};confidence:string;status:string;source_page:number|null;source_section:string|null;user_verified:boolean};
+type Fact={id:string;fact_type:string;key:string;value:{value:string;unit?:string;coverage_type?:string;limit_amount?:string|null;deductible?:string|null;conditions?:string;exclusions?:string;source?:string};confidence:string;status:string;source_page:number|null;source_section:string|null;user_verified:boolean};
 
-const MATERIAL_FACT_TYPES=new Set(['contract_term','mortgage_term','linked_product']);
+const MATERIAL_FACT_TYPES=new Set(['contract_term','mortgage_term','linked_product','coverage_fact']);
 
 export default function DocumentsPage(){
   const qc=useQueryClient();
@@ -275,6 +275,8 @@ export default function DocumentsPage(){
                   <div className="text-sm text-[var(--muted)]">
                     {f.value.value} {f.value.unit||''} · confianza {Math.round(Number(f.confidence)*100)}%
                   </div>
+                  {f.fact_type==='coverage_fact'&&<div className="mt-1 text-xs text-[var(--muted)]">{f.value.limit_amount?'Límite '+f.value.limit_amount+' € · ':''}{f.value.deductible?'Franquicia '+f.value.deductible+' € · ':''}{f.value.conditions||''}{f.value.exclusions?(' · Exclusiones: '+f.value.exclusions):''}</div>}
+                  {f.value.source==='local_ai_proposal'&&<div className="mt-1 text-[11px] font-medium text-[var(--muted)]">Propuesto por IA local; confirma solo si coincide con el documento.</div>}
                   {f.source_section&&<div className="mt-1 text-xs text-[var(--muted)]">{f.source_section}</div>}
                   {f.source_page&&selected&&<a
                     className="mt-1 inline-block text-xs underline"
