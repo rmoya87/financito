@@ -85,3 +85,55 @@ def test_portfolio_fit_and_performance_are_deterministic():
         assert perf["mwr"] is not None
         assert perf["observations"]>=1
         assert 0<=perf["coverage"]<=1
+
+
+
+def test_tracked_asset_uses_real_purchase_data_and_watch_state():
+    from datetime import date
+    from financito.services.investment_tracking import save_tracked_asset, tracked_assets
+
+    suffix=uuid4().hex[:8].upper()
+    with SessionLocal() as db:
+        watch=save_tracked_asset(
+            db,
+            asset_class="crypto",
+            name=f"Bitcoin {suffix}",
+            identifier=f"bitcoin-{suffix.lower()}",
+            owned=False,
+            portfolio_id=None,
+            quantity=None,
+            purchase_price=None,
+            purchase_date=None,
+            fees=Decimal("0"),
+            currency="EUR",
+            provider_asset_id=f"bitcoin-{suffix.lower()}",
+            notes=None,
+        )
+        assert watch["owned"] is False
+        assert watch["tracking_state"]=="watching"
+
+        owned=save_tracked_asset(
+            db,
+            asset_class="stock",
+            name=f"Acción {suffix}",
+            identifier=f"T{suffix[:4]}",
+            owned=True,
+            portfolio_id=None,
+            quantity=Decimal("10"),
+            purchase_price=Decimal("20"),
+            purchase_date=date(2026,1,15),
+            fees=Decimal("2"),
+            currency="EUR",
+            provider_asset_id=None,
+            notes=None,
+        )
+        db.commit()
+        assert owned["owned"] is True
+        assert Decimal(owned["quantity"])==Decimal("10")
+        assert Decimal(owned["average_cost"])==Decimal("20.2")
+
+        rows=tracked_assets(db)
+        match=next(x for x in rows if x["security_id"]==owned["security_id"])
+        assert match["cost_basis"]=="202.0000000000"
+        assert match["current_price"]=="20.0000000000"
+        assert Decimal(match["unrealized_pnl"])==Decimal("-2")
