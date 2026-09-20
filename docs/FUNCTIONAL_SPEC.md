@@ -164,6 +164,14 @@ seguros, hipoteca, préstamos, facturas de suministros, telecomunicaciones, nóm
 
 ## 8. Contratos y servicios
 
+Los documentos contractuales descargados por el usuario son fuente primaria para condiciones particulares, penalizaciones, preavisos, vinculaciones y coberturas. Financito debe extraer estas cláusulas a datos estructurados y utilizarlas directamente en los motores de cálculo.
+
+No basta con que el PDF sea consultable por RAG.
+
+La jerarquía de evidencia, vigencia, conflictos y reglas de bloqueo se definen en CONTRACT_EVIDENCE.md.
+
+
+
 Cada producto debe poder almacenar:
 - proveedor;
 - coste;
