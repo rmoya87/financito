@@ -126,6 +126,10 @@ export default function DocumentsPage(){
       apiMutate('/api/v1/documents/'+documentId+'/entity-link','PUT',{entity_type:entityType,entity_id:entityId}),
     onSuccess:invalidateEvidence,
   });
+  const createGroup=useMutation({
+    mutationFn:(documentId:string)=>apiMutate<{entity_type:'contract';entity_id:string}>('/api/v1/documents/'+documentId+'/evidence-group','POST'),
+    onSuccess:invalidateEvidence,
+  });
   const confirmCoherent=useMutation({
     mutationFn:({documentId,group}:{documentId:string;group:EvidenceGroup|null})=>
       group
@@ -354,6 +358,10 @@ export default function DocumentsPage(){
             {currentGroup.documents.length>1&&<div className="mt-2">{currentGroup.documents.map(d=><div key={d.id}>• {d.file_name}</div>)}</div>}
           </div>}
           {!currentGroup&&selectedDoc.document_type==='insurance'&&<div className="mt-2 text-xs text-[var(--muted)]">Si la póliza contiene un número identificador claro, Financito crea una agrupación provisional y reúne automáticamente los siguientes documentos que compartan ese número, aunque todavía falte confirmar la prima.</div>}
+          {!currentGroup&&['insurance','contract','loan','energy','telecom'].includes(selectedDoc.document_type)&&<button className="fin-button secondary mt-3 py-1.5 text-xs" onClick={()=>createGroup.mutate(selectedDoc.id)} disabled={createGroup.isPending}>
+            {createGroup.isPending?'Creando ficha…':'Crear una ficha para este producto'}
+          </button>}
+          {createGroup.error&&<div className="mt-3"><ErrorState error={createGroup.error}/></div>}
           {linkEntity.error&&<div className="mt-3"><ErrorState error={linkEntity.error}/></div>}
         </div>}
 
