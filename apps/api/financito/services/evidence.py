@@ -307,6 +307,11 @@ def link_document_to_entity(
     # Insurance documents also carry a supporting contract link. When the user
     # moves/unlinks a document, remove that old document->contract relation too;
     # a new policy contract is attached below when appropriate.
+    target_contract = (
+        session.get(Contract, entity_id)
+        if entity_type == "contract" and entity_id
+        else None
+    )
     if entity_type == "insurance_policy":
         contract_links = session.scalars(
             select(EntityLink).where(
@@ -320,6 +325,20 @@ def link_document_to_entity(
             (link.to_type, link.to_id, link.source_type) for link in contract_links
         )
         for link in contract_links:
+            session.delete(link)
+    elif target_contract is not None and target_contract.contract_type == "insurance":
+        policy_links = session.scalars(
+            select(EntityLink).where(
+                EntityLink.from_type == "document",
+                EntityLink.from_id == document.id,
+                EntityLink.relation_type == "evidence_for",
+                EntityLink.to_type == "insurance_policy",
+            )
+        ).all()
+        orphan_candidates.extend(
+            (link.to_type, link.to_id, link.source_type) for link in policy_links
+        )
+        for link in policy_links:
             session.delete(link)
     session.flush()
 
