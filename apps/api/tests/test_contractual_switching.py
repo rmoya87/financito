@@ -5,6 +5,7 @@ from uuid import uuid4
 from financito.db import SessionLocal
 from financito.models import Document, ExtractedFact, Mortgage
 from financito.services.contractual_costs import (
+    linked_product_rate_impacts,
     resolve_prepayment_penalty,
     resolve_subrogation_penalty,
     switching_readiness,
@@ -98,3 +99,26 @@ def test_public_market_parser_only_extracts_explicit_claims_and_rates():
     assert "linked_home_insurance" in claims
     assert "personalized_quote" in claims
     assert _promo_percent(sample)=="40"
+
+
+
+def test_extracts_and_prices_loss_of_home_insurance_bonus():
+    from financito.services.documents import extract_contract_facts
+
+    text=(
+        "Si no renuevas el Seguro de Hogar comercializado por el banco "
+        "se añade al interés nominal anual bonificado un margen adicional de 0,10 %."
+    )
+    extracted=extract_contract_facts(text,4)
+    match=next(x for x in extracted if x["key"]=="linked_home_insurance_rate_penalty_pp")
+    assert match["value"]=="0.10"
+    assert match["unit"]=="percentage_points"
+
+    with SessionLocal() as db:
+        mortgage=_mortgage(db)
+        _mortgage_doc(db,{"linked_home_insurance_rate_penalty_pp":"0.10"})
+        impacts=linked_product_rate_impacts(db,mortgage)
+        home=next(x for x in impacts if x["product"]=="home_insurance")
+        assert Decimal(home["monthly_payment_increase"])>Decimal("0")
+        assert Decimal(home["remaining_interest_increase"])>Decimal("0")
+        assert home["assumption"]=="fixed_rate_contract"
