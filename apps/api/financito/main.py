@@ -305,15 +305,30 @@ def evidence_groups(db:Session=Depends(get_db)):
         grouped.setdefault((link.to_type,link.to_id),[]).append(link)
 
     contracts={row.id:row for row in db.scalars(select(Contract)).all()}
+    policies=list(db.scalars(select(InsurancePolicy)).all())
+    policy_contract_ids={policy.contract_id for policy in policies if policy.contract_id}
     result=[]
-    for policy in db.scalars(select(InsurancePolicy)).all():
+    for policy in policies:
         contract=contracts.get(policy.contract_id or "")
-        docs=grouped.get(("insurance_policy",policy.id),[])
+        policy_docs=grouped.get(("insurance_policy",policy.id),[])
+        contract_docs=grouped.get(("contract",contract.id),[]) if contract else []
+        docs_by_id={x.from_id:x for x in [*policy_docs,*contract_docs]}
+        docs=list(docs_by_id.values())
         provider=contract.provider_name if contract else "Aseguradora pendiente"
         label=f"Seguro {policy.insurance_type} · {provider}"
         result.append({
             "entity_type":"insurance_policy","entity_id":policy.id,"kind":"insurance",
             "label":label,"provider":provider,"document_count":len(docs),
+            "documents":[{"id":x.from_id,"file_name":documents[x.from_id].file_name} for x in docs if x.from_id in documents],
+        })
+    for contract in contracts.values():
+        if contract.contract_type!="insurance" or contract.id in policy_contract_ids:
+            continue
+        docs=grouped.get(("contract",contract.id),[])
+        result.append({
+            "entity_type":"contract","entity_id":contract.id,"kind":"insurance",
+            "label":f"Seguro pendiente · {contract.provider_name}",
+            "provider":contract.provider_name,"document_count":len(docs),
             "documents":[{"id":x.from_id,"file_name":documents[x.from_id].file_name} for x in docs if x.from_id in documents],
         })
     for mortgage in db.scalars(select(Mortgage).order_by(Mortgage.lender)).all():
