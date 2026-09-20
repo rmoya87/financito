@@ -234,3 +234,16 @@ Para colecciones grandes usar cursor pagination. Evitar offset profundo salvo da
 ## Idempotencia
 
 Imports, sincronizaciones, reindexados y operaciones repetibles deben aceptar o generar idempotency keys cuando exista riesgo de duplicación.
+
+
+## Evidencia contractual
+
+- GET /contracts/{id}/facts
+- GET /contracts/{id}/conflicts
+- POST /contracts/{id}/facts/{factId}/verify
+- PATCH /contracts/{id}/facts/{factId}
+- GET /calculations/{id}/trace
+
+Los facts devuelven documentId, page, section, confidence, status, effective dates y evidencia necesaria para abrir la fuente.
+
+Nunca convertir not_found en 0.
