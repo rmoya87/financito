@@ -15,10 +15,10 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .db import SessionLocal
 from .migrations import migrate
-from .domain.engines import CashFlowEngine, MortgageEngine, OptimizationEngine
+from .domain.engines import CashFlowEngine, MortgageEngine, MortgagePrepaymentEngine, OptimizationEngine
 from .services.financial_analytics import cash_flow,category_spending
 from .models import Account, ActionItem, AuditEvent, Budget, CategorizationAudit, Category, Commitment, Document, ExtractedFact, Transaction
-from .schemas import AccountCreate, AccountOut, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentIndexRequest, FactUpdate, ForecastRequest, MortgageScenarioRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
+from .schemas import AccountCreate, AccountOut, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentIndexRequest, FactUpdate, ForecastRequest, MortgageScenarioRequest, MortgagePrepaymentRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
 from .security import LocalSecurityMiddleware, create_session
 from .routes_extended import router as extended_router
 from .routes_analytics import router as analytics_router
@@ -233,6 +233,15 @@ def update_action(action_id:str,payload:ActionUpdate,db:Session=Depends(get_db))
 def mortgage_scenario(payload:MortgageScenarioRequest):
     result=MortgageEngine.amortization(payload.principal,payload.annual_rate,payload.months)
     return {"monthly_payment":str(result.monthly_payment),"total_payments":str(result.total_payments),"total_interest":str(result.total_interest)}
+
+
+@app.post("/api/v1/mortgage/prepayment")
+def mortgage_prepayment(payload:MortgagePrepaymentRequest):
+    try:
+        result=MortgagePrepaymentEngine.compare(**payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(400,str(exc))
+    return {k:(str(v) if isinstance(v,Decimal) else v) for k,v in result.__dict__.items()}
 
 
 @app.post("/api/v1/optimization/calculate")
