@@ -257,3 +257,31 @@ Cada clasificación conserva:
 ## Privacidad
 
 La clasificación se realiza localmente. Ningún descriptor de movimientos se envía a servicios de IA cloud.
+
+
+## Deduplicación de extractos solapados
+
+La importación está diseñada para que se puedan cargar meses completos aunque parte del periodo ya exista.
+
+Orden de identificación:
+1. **Referencia bancaria estable** cuando el formato la aporta (por ejemplo FITID en OFX, referencias de CAMT o columnas de referencia/transaction id).
+2. **Huella exacta** por cuenta, fecha, importe, divisa y descripción normalizada.
+3. **Coincidencia tolerante conservadora** contra movimientos ya existentes de la misma cuenta, mismo importe/divisa y fecha igual o desplazada como máximo un día. Solo se considera duplicado automático cuando descripción/comercio aportan evidencia suficientemente fuerte.
+
+La coincidencia tolerante:
+- elimina ruido habitual de exportación como prefijos de compra/pago, terminales y números largos;
+- compara descripción y comercio normalizados;
+- es deliberadamente conservadora para no borrar dos compras reales del mismo importe en el mismo comercio;
+- cada movimiento existente solo puede emparejarse una vez por importación.
+
+Los duplicados idénticos legítimos se tratan como **multiconjunto**: si un extracto contiene dos movimientos realmente iguales, ambos pueden almacenarse. Al volver a importar el mismo extracto se reconocerán los dos, en vez de colapsarlos en uno.
+
+El resultado de importación separa:
+- duplicados por referencia bancaria;
+- duplicados exactos;
+- duplicados por similitud;
+- movimientos insertados;
+- omitidos por estado pendiente/revertido/cancelado;
+- rechazados por formato/datos inválidos.
+
+No se usa solo “misma fecha + mismo importe” como criterio de borrado automático.
