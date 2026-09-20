@@ -65,7 +65,7 @@ export default function DashboardPage(){
         <Card><div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Patrimonio neto</div><div className="mt-2 text-2xl font-bold">—</div><div className="mt-1 text-xs text-[var(--muted)]">Calculando patrimonio</div></Card>}
     </div>
 
-    <section className="mt-5">
+    {d.actions.length>0&&<section className="mt-5">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold">Para ti</h2>
@@ -73,8 +73,7 @@ export default function DashboardPage(){
         </div>
         <Link href="/actions/" className="flex items-center gap-1 text-sm font-semibold text-[var(--brand)]">Ver todo <ArrowRight size={16}/></Link>
       </div>
-      {d.actions.length?
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {d.actions.slice(0,4).map(action=>{const destination=actionDestination(action);return <Link key={action.id} href={destination.href} className="fin-card block p-4 transition-transform hover:-translate-y-0.5">
             <div className="flex items-center justify-between gap-2">
               <span className="rounded-full bg-[var(--brand-soft)] px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-[var(--brand)]">{action.priority}</span>
@@ -85,9 +84,8 @@ export default function DashboardPage(){
             {action.notes&&<div className="mt-1 line-clamp-2 text-xs text-[var(--muted)]">{action.notes}</div>}
             <div className="mt-2 text-xs text-[var(--muted)]">{action.due_date?`Antes de ${action.due_date}`:'Sin fecha límite'}</div>
           </Link>})}
-        </div>:
-        <Card><EmptyState>No hay nada que requiera tu atención ahora mismo.</EmptyState></Card>}
-    </section>
+        </div>
+    </section>}
 
     <div className="mt-5 grid gap-4 xl:grid-cols-2">
       <Card>

@@ -21,6 +21,7 @@ function friendlyStatus(status:number){
   if(status===400)return 'La información enviada no es válida.';
   if(status===401||status===403)return 'La sesión local no permite realizar esta acción.';
   if(status===404)return 'No se ha encontrado el dato solicitado.';
+  if(status===405)return 'La interfaz y el backend local no aceptan la misma operación. Reinicia Financito con el lanzador para cargar la misma versión de ambos componentes.';
   if(status===409)return 'La operación necesita resolver antes una inconsistencia o un dato pendiente.';
   if(status===413)return 'El archivo es demasiado grande.';
   if(status===422)return 'Falta algún dato obligatorio o tiene un formato no válido.';
@@ -33,7 +34,7 @@ async function parse<T>(res:Response):Promise<T>{
     let message=friendlyStatus(res.status);
     try{
       const data=await res.clone().json() as {detail?:unknown;message?:unknown};
-      if(typeof data.detail==='string'&&data.detail.trim())message=data.detail.trim();
+      if(typeof data.detail==='string'&&data.detail.trim()&&!(res.status===405&&data.detail.trim().toLowerCase()==='method not allowed'))message=data.detail.trim();
       else if(typeof data.message==='string'&&data.message.trim())message=data.message.trim();
       else if(Array.isArray(data.detail)){
         const fields=data.detail
@@ -84,10 +85,10 @@ export async function apiMutate<T>(path:string,method:'POST'|'PATCH'|'PUT'|'DELE
   return parse<T>(res);
 }
 
-async function uploadRequest(path:string,form:FormData,forceSession=false){
+async function uploadRequest(path:string,form:FormData,forceSession=false,method:'POST'|'PUT'='POST'){
   const csrf=await ensureSession(forceSession);
   return fetch(path,{
-    method:'POST',
+    method,
     credentials:'same-origin',
     headers:{'X-CSRF-Token':csrf},
     body:form,
@@ -98,6 +99,13 @@ export async function apiUpload<T>(path:string,form:FormData):Promise<T>{
   let res=await uploadRequest(path,form);
   if(res.status===401||res.status===403){
     res=await uploadRequest(path,form,true);
+  }
+  // Older local builds accepted the multipart ingestion route with PUT.
+  // Retrying only on 405 makes mixed-version upgrades self-healing without
+  // repeating a successful upload.
+  if(res.status===405){
+    res=await uploadRequest(path,form,false,'PUT');
+    if(res.status===401||res.status===403)res=await uploadRequest(path,form,true,'PUT');
   }
   return parse<T>(res);
 }

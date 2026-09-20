@@ -71,8 +71,19 @@ def status()->dict:
 def embed(inputs:str|list[str])->list[list[float]]:
     _,embedding_model=effective_ai_models()
     if not embedding_model:raise RuntimeError("No local embedding model configured")
-    data=_json("/api/embed",{"model":embedding_model,"input":inputs,"keep_alive":"10m"},timeout=120)
-    return data["embeddings"]
+    try:
+        data=_json("/api/embed",{"model":embedding_model,"input":inputs,"keep_alive":"10m"},timeout=120)
+        return data["embeddings"]
+    except HTTPError as exc:
+        if exc.code not in {404,405,422}:raise
+        values=[inputs] if isinstance(inputs,str) else inputs
+        embeddings=[]
+        for value in values:
+            legacy=_json("/api/embeddings",{"model":embedding_model,"prompt":value},timeout=120)
+            vector=legacy.get("embedding")
+            if not isinstance(vector,list):raise RuntimeError("Ollama no devolvió un embedding compatible")
+            embeddings.append(vector)
+        return embeddings
 
 def _generate(prompt:str,*,json_mode:bool=False,timeout:float=180)->str:
     chat_model,_=effective_ai_models()
@@ -88,12 +99,28 @@ def _generate(prompt:str,*,json_mode:bool=False,timeout:float=180)->str:
     if json_mode:payload["format"]="json"
     try:
         data=_json("/api/generate",payload,timeout=timeout)
+        raw=str(data.get("response","")).strip()
     except HTTPError as exc:
-        # Older Ollama versions/models may reject the think option. Retry without it.
-        if exc.code not in {400,404,422}:raise
+        # Ollama versions differ in support for think=false and some local
+        # installations expose chat while rejecting generate. Keep both
+        # official local APIs as deterministic compatibility fallbacks.
+        if exc.code not in {400,404,405,422}:raise
         payload.pop("think",None)
-        data=_json("/api/generate",payload,timeout=timeout)
-    raw=str(data.get("response","")).strip()
+        try:
+            data=_json("/api/generate",payload,timeout=timeout)
+            raw=str(data.get("response","")).strip()
+        except HTTPError as retry_exc:
+            if retry_exc.code not in {400,404,405,422}:raise
+            chat_payload={
+                "model":chat_model,
+                "stream":False,
+                "keep_alive":"10m",
+                "options":{"temperature":0},
+                "messages":[{"role":"user","content":prompt}],
+            }
+            if json_mode:chat_payload["format"]="json"
+            data=_json("/api/chat",chat_payload,timeout=timeout)
+            raw=str((data.get("message") or {}).get("content","")).strip()
     if not raw:
         thinking=str(data.get("thinking","")).strip()
         if thinking:

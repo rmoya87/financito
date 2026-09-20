@@ -124,5 +124,6 @@ def update_ai_config(p:AIConfigIn):
 
 
 @router.post("/ai/test")
+@router.get("/ai/test",include_in_schema=False)
 def test_ai():
     return ai_diagnose()

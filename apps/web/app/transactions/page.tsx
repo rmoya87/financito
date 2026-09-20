@@ -1,6 +1,6 @@
 'use client';
 
-import {FormEvent,useEffect,useMemo,useState} from 'react';
+import {FormEvent,useDeferredValue,useEffect,useMemo,useState} from 'react';
 import {useMutation,useQuery,useQueryClient} from '@tanstack/react-query';
 import {apiGet,apiMutate,apiUpload} from '@/lib/api';
 import {PageHeader} from '@/components/page-header';
@@ -18,6 +18,7 @@ type Tx={
   id:string;booking_date:string;amount:string;currency:string;description_raw:string;merchant_raw:string|null;
   category_id:string|null;categorization_method:string;categorization_confidence:string;user_verified:boolean;is_internal_transfer:boolean
 };
+type TxPage={items:Tx[];total:number;page:number;page_size:number;pages:number};
 type Rule={id:string;matcher_type:string;matcher_value:string;category_id:string;priority:number;enabled:boolean};
 type Split={amount:string;category_id:string;note:string};
 type ImportResult={
@@ -39,6 +40,11 @@ export default function TransactionsPage(){
   const [file,setFile]=useState<File|null>(null);
   const [search,setSearch]=useState('');
   const [categoryFilter,setCategoryFilter]=useState('');
+  const [fromDate,setFromDate]=useState('');
+  const [toDate,setToDate]=useState('');
+  const [page,setPage]=useState(1);
+  const [pageSize,setPageSize]=useState(50);
+  const deferredSearch=useDeferredValue(search);
   const [rulesOpen,setRulesOpen]=useState(false);
   useEffect(()=>{
     const q=new URLSearchParams(window.location.search).get('q');
@@ -50,7 +56,17 @@ export default function TransactionsPage(){
 
   const accounts=useQuery({queryKey:['accounts'],queryFn:()=>apiGet<Account[]>('/api/v1/accounts')});
   const cats=useQuery({queryKey:['categories'],queryFn:()=>apiGet<Category[]>('/api/v1/categories')});
-  const txs=useQuery({queryKey:['transactions'],queryFn:()=>apiGet<Tx[]>('/api/v1/transactions?limit=5000')});
+  const txs=useQuery({
+    queryKey:['transactions',deferredSearch,categoryFilter,fromDate,toDate,page,pageSize],
+    queryFn:()=>{
+      const params=new URLSearchParams({page:String(page),page_size:String(pageSize)});
+      if(deferredSearch.trim())params.set('q',deferredSearch.trim());
+      if(categoryFilter)params.set('category_id',categoryFilter);
+      if(fromDate)params.set('start',fromDate);
+      if(toDate)params.set('end',toDate);
+      return apiGet<TxPage>('/api/v1/transactions/page?'+params.toString());
+    },
+  });
   const rules=useQuery({queryKey:['transaction-rules'],queryFn:()=>apiGet<Rule[]>('/api/v1/transaction-rules')});
 
   const invalidateTransactions=()=>{
@@ -98,16 +114,20 @@ export default function TransactionsPage(){
   });
 
   const categoryById=useMemo(()=>new Map((cats.data||[]).map(c=>[c.id,c])),[cats.data]);
-  const filtered=useMemo(()=>{
-    const q=search.trim().toLocaleLowerCase('es');
-    return (txs.data||[]).filter(t=>{
-      if(categoryFilter&&t.category_id!==categoryFilter)return false;
-      if(!q)return true;
-      const cat=categoryById.get(t.category_id||'')?.name||'';
-      return [t.description_raw,t.merchant_raw||'',t.booking_date,t.amount,cat]
-        .some(value=>String(value).toLocaleLowerCase('es').includes(q));
-    });
-  },[txs.data,search,categoryFilter,categoryById]);
+  const rows=txs.data?.items||[];
+  const total=txs.data?.total||0;
+  const pages=txs.data?.pages||1;
+  const currentPage=txs.data?.page||page;
+  const rangeStart=total===0?0:(currentPage-1)*pageSize+1;
+  const rangeEnd=Math.min(total,currentPage*pageSize);
+
+  useEffect(()=>{
+    setPage(1);
+  },[deferredSearch,categoryFilter,fromDate,toDate,pageSize]);
+
+  useEffect(()=>{
+    if(txs.data&&page!==txs.data.page)setPage(txs.data.page);
+  },[txs.data,page]);
 
   function submit(e:FormEvent){e.preventDefault();upload.mutate()}
   function openRuleFor(tx?:Tx){
@@ -170,23 +190,26 @@ export default function TransactionsPage(){
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="font-bold">Todos los movimientos</h2>
-          <p className="mt-1 text-sm text-[var(--muted)]">{filtered.length} de {txs.data?.length??0} movimientos mostrados.</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">{total?`Mostrando ${rangeStart}–${rangeEnd} de ${total}`:'Sin movimientos para estos filtros'}.</p>
         </div>
-        <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-[minmax(260px,1fr)_220px]">
-          <input className="fin-input" type="search" aria-label="Buscar movimientos" placeholder="Buscar concepto, comercio, fecha o importe…" value={search} onChange={e=>setSearch(e.target.value)}/>
+        <div className="grid w-full gap-2 xl:w-auto xl:grid-cols-[minmax(260px,1fr)_210px_150px_150px_130px]">
+          <input className="fin-input" type="search" aria-label="Buscar movimientos" placeholder="Buscar concepto, comercio, categoría o importe…" value={search} onChange={e=>setSearch(e.target.value)}/>
           <select className="fin-input" aria-label="Filtrar por categoría" value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}>
             <option value="">Todas las categorías</option>
             {cats.data?.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
+          <label className="text-xs text-[var(--muted)]">Desde<input className="fin-input mt-1" type="date" aria-label="Fecha inicial" value={fromDate} max={toDate||undefined} onChange={e=>setFromDate(e.target.value)}/></label>
+          <label className="text-xs text-[var(--muted)]">Hasta<input className="fin-input mt-1" type="date" aria-label="Fecha final" value={toDate} min={fromDate||undefined} onChange={e=>setToDate(e.target.value)}/></label>
+          <label className="text-xs text-[var(--muted)]">Por página<select className="fin-input mt-1" aria-label="Movimientos por página" value={pageSize} onChange={e=>setPageSize(Number(e.target.value))}><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select></label>
         </div>
       </div>
 
-      {txs.isLoading?<Loading/>:txs.error?<ErrorState error={txs.error}/>:filtered.length?
+      {txs.isLoading?<Loading/>:txs.error?<ErrorState error={txs.error}/>:rows.length?
         <table className="w-full min-w-[1050px] text-sm">
           <thead className="text-left text-xs uppercase text-[var(--muted)]">
             <tr><th className="pb-3">Fecha</th><th>Concepto</th><th>Categoría</th><th>Tratamiento</th><th>Acciones</th><th className="text-right">Importe</th></tr>
           </thead>
-          <tbody>{filtered.map(t=>{
+          <tbody>{rows.map(t=>{
             const category=categoryById.get(t.category_id||'');
             const semantic=category?specialHelp[category.system_key]:undefined;
             return <tr key={t.id} className="border-t border-[var(--border)] align-top">
@@ -216,7 +239,16 @@ export default function TransactionsPage(){
               <td className={'py-3 text-right font-semibold '+(Number(t.amount)<0?'':'text-[var(--brand)]')}><Money value={t.amount} currency={t.currency}/></td>
             </tr>
           })}</tbody>
-        </table>:<EmptyState>No hay movimientos que coincidan con el filtro.</EmptyState>}
+        </table>:<EmptyState>No hay movimientos que coincidan con los filtros.</EmptyState>}
+      {!txs.isLoading&&!txs.error&&total>0&&<div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] pt-4 text-sm">
+        <div className="text-[var(--muted)]">Página {currentPage} de {pages} · {rangeStart}–{rangeEnd} de {total}</div>
+        <div className="flex gap-2">
+          <button className="fin-button secondary py-1.5" disabled={currentPage<=1||txs.isFetching} onClick={()=>setPage(1)}>Primera</button>
+          <button className="fin-button secondary py-1.5" disabled={currentPage<=1||txs.isFetching} onClick={()=>setPage(p=>Math.max(1,p-1))}>Anterior</button>
+          <button className="fin-button secondary py-1.5" disabled={currentPage>=pages||txs.isFetching} onClick={()=>setPage(p=>Math.min(pages,p+1))}>Siguiente</button>
+          <button className="fin-button secondary py-1.5" disabled={currentPage>=pages||txs.isFetching} onClick={()=>setPage(pages)}>Última</button>
+        </div>
+      </div>}
     </Card>
 
     {rulesOpen&&<div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Reglas automáticas">

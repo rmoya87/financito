@@ -31,7 +31,7 @@ from .services.market_research import scan_public_market
 from .services.investment_tracking import remove_tracking,save_tracked_asset,simulation_history,start_simulation,tracked_assets
 from .services.broker_import import import_broker_csv
 from .services.corporate_actions import add_action,list_actions
-from .providers.market import AlphaVantageProvider
+from .providers.market import quote_with_free_fallback
 from .providers.news import GdeltNewsProvider
 router=APIRouter(prefix="/api/v1")
 
@@ -208,6 +208,11 @@ def tracked_asset_delete(security_id:str,db:Session=Depends(dbdep)):
     if not db.get(Security,security_id):raise HTTPException(404,"Security not found")
     result=remove_tracking(db,security_id);db.commit();return result
 
+@router.post("/tracked-assets/{security_id}/unfollow")
+def tracked_asset_unfollow(security_id:str,db:Session=Depends(dbdep)):
+    """Explicit action alias used by the UI for watch-list removal."""
+    return tracked_asset_delete(security_id,db)
+
 @router.post("/tracked-assets/refresh-all")
 def tracked_assets_refresh_all(db:Session=Depends(dbdep)):
     from .services.market_data import refresh_security
@@ -240,6 +245,71 @@ def tracked_asset_refresh(security_id:str,include_history:bool=False,db:Session=
 
 @router.get("/wealth")
 def wealth(db:Session=Depends(dbdep)):return wealth_summary(db)
+
+@router.get("/wealth/details")
+def wealth_details(db:Session=Depends(dbdep)):
+    summary=wealth_summary(db)
+    accounts=[{
+        "id":row.id,
+        "name":row.name,
+        "institution_name":row.institution_name,
+        "currency":row.currency,
+        "balance":str(row.current_balance),
+    } for row in db.scalars(select(Account).order_by(Account.name)).all()]
+    assets=[{
+        "id":row.id,
+        "type":row.asset_type,
+        "name":row.name,
+        "value":str(row.current_value),
+        "currency":row.currency,
+        "valuation_date":row.valuation_date,
+        "valuation_source":row.valuation_source,
+        "ownership_percentage":str(row.ownership_percentage),
+    } for row in db.scalars(select(Asset).order_by(Asset.asset_type,Asset.name)).all()]
+    liabilities=[{
+        "id":row.id,
+        "type":row.liability_type,
+        "name":row.name,
+        "amount":str(row.outstanding_amount),
+        "currency":row.currency,
+        "annual_rate":None if row.annual_rate is None else str(row.annual_rate),
+        "ownership_percentage":str(row.ownership_percentage),
+    } for row in db.scalars(select(Liability).order_by(Liability.liability_type,Liability.name)).all()]
+    mortgages=[{
+        "id":row.id,
+        "lender":row.lender,
+        "remaining_principal":str(row.remaining_principal),
+        "currency":row.currency,
+        "interest_type":row.interest_type,
+        "nominal_rate":str(row.nominal_rate),
+        "monthly_payment":str(row.monthly_payment),
+        "remaining_months":row.remaining_months,
+    } for row in db.scalars(select(Mortgage).order_by(Mortgage.lender)).all()]
+    contracts={row.id:row for row in db.scalars(select(Contract)).all()}
+    policies=[]
+    annual_insurance=Decimal("0")
+    for row in db.scalars(select(InsurancePolicy).order_by(InsurancePolicy.insurance_type)).all():
+        annual_insurance+=row.annual_premium
+        contract=contracts.get(row.contract_id) if row.contract_id else None
+        policies.append({
+            "id":row.id,
+            "insurance_type":row.insurance_type,
+            "annual_premium":str(row.annual_premium),
+            "currency":row.currency,
+            "deductible":None if row.deductible is None else str(row.deductible),
+            "provider":None if contract is None else contract.provider_name,
+            "contract_id":row.contract_id,
+        })
+    investments=[row for row in tracked_assets(db) if row.get("owned")]
+    return {
+        "summary":summary,
+        "accounts":accounts,
+        "assets":assets,
+        "liabilities":liabilities,
+        "mortgages":mortgages,
+        "investments":investments,
+        "insurance":{"annual_premium_total":str(annual_insurance),"policies":policies},
+    }
 @router.get("/assets")
 def assets(db:Session=Depends(dbdep)):return [{"id":r.id,"type":r.asset_type,"name":r.name,"value":str(r.current_value),"currency":r.currency,"valuation_date":r.valuation_date} for r in db.scalars(select(Asset).order_by(Asset.name)).all()]
 @router.post("/assets")
@@ -396,6 +466,7 @@ def tax_profile(jurisdiction:str="ES",tax_year:int=date.today().year,db:Session=
     return profile_dict(get_profile(db,jurisdiction.upper(),tax_year),jurisdiction.upper(),tax_year)
 
 @router.put("/tax/profile")
+@router.post("/tax/profile",include_in_schema=False)
 def save_tax_profile(p:TaxProfileUpdate,db:Session=Depends(dbdep)):
     if p.children_under_three>p.dependent_children:
         raise HTTPException(400,"Los menores de tres años no pueden superar el número total de descendientes.")
@@ -405,9 +476,13 @@ def save_tax_profile(p:TaxProfileUpdate,db:Session=Depends(dbdep)):
 @router.post("/tax/estimate")
 def tax(p:TaxEstimateRequest,db:Session=Depends(dbdep)):
     return estimate(db,p.jurisdiction,p.tax_year)
+
+@router.get("/tax/estimate",include_in_schema=False)
+def tax_compat_get(jurisdiction:str="ES",tax_year:int=date.today().year,db:Session=Depends(dbdep)):
+    return estimate(db,jurisdiction,tax_year)
 @router.get("/market/quote/{symbol}")
 def quote(symbol:str):
-    try:return AlphaVantageProvider().quote(symbol)
+    try:return quote_with_free_fallback(symbol)
     except Exception as e:raise HTTPException(503,str(e))
 @router.get("/news/search")
 def news(q:str):

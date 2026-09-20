@@ -71,3 +71,8 @@ No se considera cerrado un cambio si:
 - tests críticos fallan;
 - documentación afirma una funcionalidad que el runtime no ofrece;
 - introduce secretos/datos reales en el repositorio.
+
+
+## Contratos de rutas por secciones
+
+Los flujos críticos que anteriormente podían degradar en HTTP 405 tienen pruebas de contrato explícitas: paginación de movimientos, perfil/estimación fiscal, prueba de IA local, subida documental POST/PUT y resumen patrimonial. Estas pruebas verifican el método HTTP además de la forma mínima de la respuesta para detectar desalineaciones entre WebApp y backend antes de publicar. La WebApp también debe degradar los payloads parciales a errores locales, sin derribar la página completa.

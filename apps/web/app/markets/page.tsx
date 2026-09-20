@@ -10,8 +10,8 @@ import {Money} from '@/components/ui/money';
 import {EmptyState,ErrorState} from '@/components/ui/states';
 
 type Quote={symbol:string;price:string;provider:string;as_of:string|null;delayed:boolean};
-type CryptoPrice={provider:string;assets:{id:string;currency:string;price:number|null;market_cap:number|null;volume_24h:number|null;change_24h_pct:number|null;last_updated_at:number|null}[]};
-type CryptoMetrics={coin_id:string;metrics:{volatility:number|null;max_drawdown:number;sharpe:number|null;sortino:number|null;var_95?:number;cvar_95?:number};observations:number;provider:string};
+type CryptoPrice={provider?:string;assets?:{id:string;currency:string;price?:number|null;market_cap?:number|null;volume_24h?:number|null;change_24h_pct?:number|null;last_updated_at?:number|null}[]};
+type CryptoMetrics={coin_id:string;metrics?:{volatility?:number|null;max_drawdown?:number|null;sharpe?:number|null;sortino?:number|null;var_95?:number;cvar_95?:number};observations?:number;provider?:string};
 type SecData={cik:string;entity_name:string;provider:string;facts:Record<string,{value:number;unit:string;period_end:string|null;filed:string|null;form:string|null;accession:string|null}>};
 type Analysis={security_id:string|null;security:string|null;event_type:string;sentiment:number;impact_level:string;confidence:number;method_version:string;rationale:string};
 type LocalNews={items:{id:string;headline:string;url:string;source:string;published_at:string;reliability:number;analysis:Analysis[]}[]};
@@ -80,7 +80,7 @@ export default function MarketsPage(){
     onSuccess:(_,vars)=>{setSelectedSimulation(vars.id);qc.invalidateQueries({queryKey:['tracked-assets']});qc.invalidateQueries({queryKey:['simulation-history',vars.id]})},
   });
   const removeTracked=useMutation({
-    mutationFn:(id:string)=>apiMutate('/api/v1/tracked-assets/'+id,'DELETE'),
+    mutationFn:(id:string)=>apiMutate('/api/v1/tracked-assets/'+id+'/unfollow','POST'),
     onSuccess:(_,id)=>{if(selectedSimulation===id)setSelectedSimulation('');qc.invalidateQueries({queryKey:['tracked-assets']})},
   });
 
@@ -93,7 +93,8 @@ export default function MarketsPage(){
   },{invested:0,current:0,pnl:0}),[simulations]);
   const chartData=useMemo(()=>simHistory.data?.rows.map(r=>({date:new Date(r.timestamp).toLocaleDateString('es-ES'),value:Number(r.value),pnl:Number(r.pnl)}))||[],[simHistory.data]);
 
-  const cryptoRow=crypto.data?.assets[0];
+  const cryptoRow=Array.isArray(crypto.data?.assets)?crypto.data?.assets?.[0]:undefined;
+  const cryptoRisk=cryptoMetrics.data?.metrics;
 
   return <>
     <PageHeader title="Mercados e inversiones seguidas" description="Carteras reales y simuladas persistentes, precios externos normalizados y noticias analizadas contra tus activos. Los escenarios no son predicciones ni recomendaciones."/>
@@ -168,8 +169,9 @@ export default function MarketsPage(){
         <h2 className="font-bold">Cripto</h2>
         <form className="mt-3 flex gap-2" onSubmit={(e:FormEvent)=>{e.preventDefault();crypto.mutate();cryptoMetrics.mutate()}}><input className="fin-input" aria-label="Activo cripto" value={coin} onChange={e=>setCoin(e.target.value)}/><button className="fin-button">Precio y riesgo</button></form>
         {(crypto.error||cryptoMetrics.error)&&<div className="mt-3"><ErrorState error={(crypto.error||cryptoMetrics.error)!}/></div>}
-        {cryptoRow&&<div className="mt-4 grid gap-2 sm:grid-cols-2 text-sm"><div><span className="text-[var(--muted)]">Precio</span><div className="text-xl font-bold"><Money value={cryptoRow.price} currency={cryptoRow.currency}/></div></div><div><span className="text-[var(--muted)]">Cambio 24 h</span><div className="font-semibold">{cryptoRow.change_24h_pct===null?'—':cryptoRow.change_24h_pct.toLocaleString('es-ES',{maximumFractionDigits:2})+'%'}</div></div><div><span className="text-[var(--muted)]">Capitalización</span><div className="font-semibold"><Money value={cryptoRow.market_cap} currency={cryptoRow.currency}/></div></div><div><span className="text-[var(--muted)]">Volumen 24 h</span><div className="font-semibold"><Money value={cryptoRow.volume_24h} currency={cryptoRow.currency}/></div></div><div className="text-xs text-[var(--muted)] sm:col-span-2">Fuente {crypto.data?.provider}{cryptoRow.last_updated_at?' · '+new Date(cryptoRow.last_updated_at*1000).toLocaleString('es-ES'):''}</div></div>}
-        {cryptoMetrics.data&&<div className="mt-3 grid grid-cols-2 gap-2 text-sm"><div>Volatilidad anual <strong>{cryptoMetrics.data.metrics.volatility===null?'—':(cryptoMetrics.data.metrics.volatility*100).toLocaleString('es-ES',{maximumFractionDigits:1})+'%'}</strong></div><div>Drawdown <strong>{(cryptoMetrics.data.metrics.max_drawdown*100).toLocaleString('es-ES',{maximumFractionDigits:1})}%</strong></div><div>Sharpe <strong>{cryptoMetrics.data.metrics.sharpe===null?'—':cryptoMetrics.data.metrics.sharpe.toLocaleString('es-ES',{maximumFractionDigits:2})}</strong></div><div>Muestras <strong>{cryptoMetrics.data.observations.toLocaleString('es-ES')}</strong></div></div>}
+        {cryptoRow&&<div className="mt-4 grid gap-2 sm:grid-cols-2 text-sm"><div><span className="text-[var(--muted)]">Precio</span><div className="text-xl font-bold"><Money value={cryptoRow.price??null} currency={cryptoRow.currency||'EUR'}/></div></div><div><span className="text-[var(--muted)]">Cambio 24 h</span><div className="font-semibold">{cryptoRow.change_24h_pct==null?'—':cryptoRow.change_24h_pct.toLocaleString('es-ES',{maximumFractionDigits:2})+'%'}</div></div><div><span className="text-[var(--muted)]">Capitalización</span><div className="font-semibold"><Money value={cryptoRow.market_cap??null} currency={cryptoRow.currency||'EUR'}/></div></div><div><span className="text-[var(--muted)]">Volumen 24 h</span><div className="font-semibold"><Money value={cryptoRow.volume_24h??null} currency={cryptoRow.currency||'EUR'}/></div></div><div className="text-xs text-[var(--muted)] sm:col-span-2">Fuente {crypto.data?.provider||'CoinGecko'}{cryptoRow.last_updated_at?' · '+new Date(cryptoRow.last_updated_at*1000).toLocaleString('es-ES'):''}</div></div>}
+        {cryptoMetrics.data&&cryptoRisk&&<div className="mt-3 grid grid-cols-2 gap-2 text-sm"><div>Volatilidad anual <strong>{cryptoRisk.volatility==null?'—':(cryptoRisk.volatility*100).toLocaleString('es-ES',{maximumFractionDigits:1})+'%'}</strong></div><div>Drawdown <strong>{cryptoRisk.max_drawdown==null?'—':(cryptoRisk.max_drawdown*100).toLocaleString('es-ES',{maximumFractionDigits:1})+'%'}</strong></div><div>Sharpe <strong>{cryptoRisk.sharpe==null?'—':cryptoRisk.sharpe.toLocaleString('es-ES',{maximumFractionDigits:2})}</strong></div><div>Muestras <strong>{(cryptoMetrics.data.observations??0).toLocaleString('es-ES')}</strong></div></div>}
+        {crypto.data&&!cryptoRow&&!crypto.error&&<div className="mt-3 text-sm text-[var(--muted)]">La fuente no ha devuelto datos para ese identificador. Usa el ID de CoinGecko, por ejemplo <strong>bitcoin</strong> o <strong>ethereum</strong>.</div>}
       </Card>
 
       <Card>

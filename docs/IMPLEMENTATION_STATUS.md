@@ -21,7 +21,7 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 - CSV y formatos bancarios estructurados: XLSX/XLSM, QIF, OFX, CAMT/XML y MT940/STA.
 - XLSX multi-sección de Bankinter: detección automática de la tabla contabilizada (`Fecha contable / Fecha valor / Descripción / Importe / Saldo / Divisa`), ignorando el bloque previo de movimientos pendientes para evitar duplicados al contabilizarse.
 - deduplicación de extractos solapados por referencia bancaria, huella exacta y similitud conservadora; preserva movimientos idénticos legítimos mediante conteo multiconjunto;
-- normalización, categorías, reglas y corrección manual auditable sobre un histórico único buscable; las reglas se gestionan en modal;
+- normalización, categorías, reglas y corrección manual auditable sobre un histórico único buscable; las reglas se gestionan en modal; el listado usa paginación de servidor, búsqueda y filtros por categoría/fechas con 25/50/100 filas por página;
 - categorización híbrida local: reglas > memoria de comercios verificados > clasificador determinista > similitud por embeddings > LLM local para casos ambiguos; las propuestas de IA no se marcan como verificadas por el usuario.
 - splits exactos; detección automática tras importar; `Movimiento entre cuentas` y `Reembolsos` son categorías con semántica contable propia también cuando proceden de reglas o correcciones manuales.
 - reembolsos netean gasto y no inflan ingresos en Dashboard, Analytics, Forecast/Stress y Chat.
@@ -58,11 +58,12 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 - reindexado y reconstrucción de derivados conservando evidencia verificada.
 
 ### Patrimonio, inversiones y mercado
+- resumen patrimonial 360º con patrimonio neto, liquidez, vivienda/inmuebles, vehículos, otros bienes, inversiones reales, hipoteca, otras deudas y seguros; las primas se muestran como coste/protección y nunca como activo.
 - activos y pasivos manuales, net worth y ownership.
 - portfolios, securities, trades y FIFO tax lots.
 - acciones/ETF/fondos/cripto en modo seguimiento o poseído, con compra real, coste base, último precio persistido, P&L, dividendos y frescura de mercado.
 - P&L realizado/no realizado.
-- Alpha Vantage: quote e histórico bajo demanda y caché local.
+- Alpha Vantage: quote e histórico bajo demanda y caché local; si no está configurado, está limitado o no devuelve precio, acciones/ETF intentan Stooq como respaldo gratuito retrasado/EOD para no bloquear seguimiento y simulaciones.
 - exposición por activo/clase y concentración HHI.
 - risk metrics desde históricos.
 - CoinGecko: precio y métricas de riesgo.
@@ -85,8 +86,8 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 - centros de coste con asignaciones porcentuales; una categoría vinculada agrega automáticamente su gasto de los últimos 12 meses y puede combinarse con contratos/pólizas/activos/deuda.
 
 ### Operación
-- Configuración de IA local con prueba de generación real de Ollama, diagnóstico de modelo/tag y compatibilidad con Qwen mediante `think=false` con fallback.
-- las rutas estáticas de la WebApp responden HEAD correctamente para prefetch/health checks, evitando falsos 405.
+- Configuración de IA local con prueba de generación real de Ollama, diagnóstico de modelo/tag y compatibilidad con variantes locales de Ollama (`/api/generate`/`/api/chat`, `think=false` y embeddings modernos/legacy).
+- las rutas estáticas de la WebApp responden HEAD correctamente para prefetch/health checks, evitando falsos 405; el HTML se sirve sin caché para no mezclar una WebApp antigua con un backend recién actualizado.
 - backup cifrado AES-256-GCM, clave derivada con scrypt, manifest SHA-256 y extracción TAR segura.
 - restore a staging, verificación y aplicación al siguiente arranque.
 - Repair Center.
