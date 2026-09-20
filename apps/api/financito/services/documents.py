@@ -95,13 +95,15 @@ def _context(text:str,start:int,end:int)->str:
 def extract_contract_facts(text:str,source_page:int|None=None)->list[dict]:
     facts=[]
     patterns=[
-        ("cancellation_notice_days",r"(?:preaviso|antelaci[oó]n)\D{0,50}(\d{1,3})\s*d[ií]as","days",.76),
-        ("early_exit_penalty",r"(?:penalizaci[oó]n|comisi[oó]n(?:\s+por\s+cancelaci[oó]n)?|compensaci[oó]n por reembolso)\D{0,100}(\d+[\.,]?\d*)\s*(?:€|euros?)","EUR",.74),
+        ("cancellation_notice_days",r"(?:preaviso|antelaci[oó]n|comunicar(?:lo)?\s+con)\D{0,80}(\d{1,3})\s*d[ií]as","days",.78),
+        ("early_exit_penalty",r"(?:penalizaci[oó]n|comisi[oó]n(?:\s+por\s+(?:cancelaci[oó]n|subrogaci[oó]n|amortizaci[oó]n))?|compensaci[oó]n por reembolso|coste de cancelaci[oó]n)\D{0,120}(\d+[\.,]?\d*)\s*(?:€|euros?)","EUR",.78),
         ("annual_cost",r"(?:prima anual|coste anual|cuota anual)\D{0,70}(\d+[\.,]?\d*)\s*(?:€|euros?)","EUR",.76),
         ("monthly_cost",r"(?:cuota mensual|mensualidad)\D{0,70}(\d+[\.,]?\d*)\s*(?:€|euros?)","EUR",.72),
         ("deductible",r"(?:franquicia)\D{0,60}(\d+[\.,]?\d*)\s*(?:€|euros?)","EUR",.78),
         ("nominal_rate",r"(?:\bTIN\b|tipo nominal)\D{0,60}(\d+[\.,]?\d*)\s*%","percent",.76),
         ("apr_rate",r"(?:\bTAE\b)\D{0,60}(\d+[\.,]?\d*)\s*%","percent",.78),
+        ("remaining_principal",r"(?:capital\s+pendiente|saldo\s+pendiente|principal\s+pendiente)\D{0,80}(\d{1,3}(?:[\.\s]\d{3})*(?:,\d{1,2})?|\d+(?:[\.,]\d+)?)\s*(?:€|euros?)","EUR",.84),
+        ("monthly_payment",r"(?:cuota\s+(?:mensual|actual)|mensualidad)\D{0,80}(\d{1,3}(?:[\.\s]\d{3})*(?:,\d{1,2})?|\d+(?:[\.,]\d+)?)\s*(?:€|euros?)","EUR",.82),
     ]
     lowered=text.lower()
     for key,pattern,unit,confidence in patterns:
@@ -122,7 +124,9 @@ def extract_contract_facts(text:str,source_page:int|None=None)->list[dict]:
         ("mortgage_term_years",r"(?:plazo(?:\s+(?:de|total\s+de))?)\D{0,25}(\d{1,3})\s*a[nñ]os","years",.82),
         ("rate_review_months",r"(?:revisi[oó]n(?:\s+del\s+tipo)?(?:\s+cada)?)\D{0,25}(\d{1,3})\s*meses","months",.78),
         ("opening_fee_percent",r"(?:comisi[oó]n\s+de\s+apertura)\D{0,45}(\d+[\.,]?\d*)\s*%","percent",.84),
-        ("early_repayment_fee_percent",r"(?:compensaci[oó]n\s+por\s+reembolso\s+anticipado|comisi[oó]n\s+por\s+(?:amortizaci[oó]n|reembolso)\s+anticipad[oa])\D{0,65}(\d+[\.,]?\d*)\s*%","percent",.84),
+        ("early_repayment_fee_percent",r"(?:compensaci[oó]n\s+por\s+reembolso\s+anticipado|comisi[oó]n\s+por\s+(?:amortizaci[oó]n|reembolso)\s+anticipad[oa])\D{0,90}(\d+[\.,]?\d*)\s*%","percent",.84),
+        ("subrogation_fee_percent",r"(?:comisi[oó]n|compensaci[oó]n)\s+(?:por\s+)?subrogaci[oó]n\D{0,90}(\d+[\.,]?\d*)\s*%","percent",.86),
+        ("cancellation_fee_percent",r"(?:comisi[oó]n|penalizaci[oó]n|compensaci[oó]n)\s+(?:por\s+)?cancelaci[oó]n\D{0,90}(\d+[\.,]?\d*)\s*%","percent",.82),
     ]
     for key,pattern,unit,confidence in mortgage_number_patterns:
         for match in re.finditer(pattern,lowered,re.I):
