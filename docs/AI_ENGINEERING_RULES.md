@@ -223,3 +223,30 @@ La IA debe detener la implementación de una parte concreta si:
 - existe ambigüedad material que afecta seguridad o dinero.
 
 En el resto del trabajo debe continuar con lo que sí puede completar.
+
+
+## 21. IA aplicada a documentos financieros
+
+La IA documental debe trabajar en dos capas.
+
+1. **Interpretación**: puede resumir, explicar, detectar relaciones, riesgos, ventajas, exclusiones, oportunidades y datos faltantes.
+2. **Evidencia material**: puede proponer hechos estructurados, pero nunca confirmarlos por sí misma.
+
+Obligatorio:
+- LLM local únicamente;
+- contexto limitado al documento y hechos estructurados;
+- temperatura determinista;
+- salida JSON validada/normalizada;
+- claves materiales con whitelist;
+- página obligatoria para toda propuesta material;
+- confianza acotada;
+- mantener `user_verified=false` hasta revisión humana;
+- conservar análisis como `ai_insight`;
+- evitar duplicar hechos confirmados en reanálisis.
+
+Prohibido:
+- usar una conclusión narrativa de IA como input monetario;
+- convertir una ausencia de cláusula en 0 €;
+- inventar coberturas, exclusiones o límites;
+- usar una cobertura propuesta para declarar equivalencia hasta su confirmación;
+- enviar documentos privados a un LLM cloud.
