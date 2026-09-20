@@ -40,7 +40,7 @@ function actionDestination(action:Dashboard['actions'][number]){
 
 const priorityLabel:Record<string,string>={high:'Alta',medium:'Media',low:'Baja'};
 
-type DashboardRange='month'|'30d'|'90d'|'year'|'12m'|'all';
+type DashboardRange='month'|'30d'|'90d'|'year'|'12m'|'all'|'custom';
 
 function isoDate(value:Date){
   const y=value.getFullYear();
@@ -49,7 +49,8 @@ function isoDate(value:Date){
   return `${y}-${m}-${d}`;
 }
 
-function dashboardRange(range:DashboardRange){
+function dashboardRange(range:DashboardRange,customStart='',customEnd=''){
+  if(range==='custom')return {start:customStart,end:customEnd};
   const end=new Date();
   const start=new Date(end);
   if(range==='month')start.setDate(1);
@@ -70,9 +71,16 @@ function Metric({label,value,detail}:{label:string;value:string;detail?:string})
 }
 
 export default function DashboardPage(){
+  const defaults=dashboardRange('month');
   const [range,setRange]=useState<DashboardRange>('month');
-  const dates=dashboardRange(range);
-  const dashboard=useQuery({queryKey:['dashboard',range,dates.start,dates.end],queryFn:()=>apiGet<Dashboard>('/api/v1/dashboard?start='+dates.start+'&end='+dates.end)});
+  const [customStart,setCustomStart]=useState(defaults.start);
+  const [customEnd,setCustomEnd]=useState(defaults.end);
+  const dates=dashboardRange(range,customStart,customEnd);
+  const dashboard=useQuery({
+    queryKey:['dashboard',range,dates.start,dates.end],
+    queryFn:()=>apiGet<Dashboard>('/api/v1/dashboard?start='+dates.start+'&end='+dates.end),
+    enabled:Boolean(dates.start&&dates.end),
+  });
   const wealth=useQuery({queryKey:['wealth'],queryFn:()=>apiGet<Wealth>('/api/v1/wealth'),retry:false});
 
   if(dashboard.isLoading)return <><PageHeader title="Inicio"/><Loading/></>;
@@ -86,16 +94,27 @@ export default function DashboardPage(){
     <PageHeader
       title="Inicio"
       description="Tu situación financiera, lo que ha cambiado y lo que merece atención ahora."
-      action={<label className="block text-xs font-medium text-[var(--muted)]">Periodo
-        <select className="fin-input mt-1 min-w-[180px]" aria-label="Periodo del resumen de Inicio" value={range} onChange={e=>setRange(e.target.value as DashboardRange)}>
-          <option value="month">Este mes</option>
-          <option value="30d">Últimos 30 días</option>
-          <option value="90d">Últimos 90 días</option>
-          <option value="year">Este año</option>
-          <option value="12m">Últimos 12 meses</option>
-          <option value="all">Todo el histórico</option>
-        </select>
-      </label>}
+      action={<div className="flex flex-wrap items-end justify-end gap-2">
+        <label className="block text-xs font-medium text-[var(--muted)]">Periodo
+          <select className="fin-input mt-1 min-w-[180px]" aria-label="Periodo del resumen de Inicio" value={range} onChange={e=>setRange(e.target.value as DashboardRange)}>
+            <option value="month">Este mes</option>
+            <option value="30d">Últimos 30 días</option>
+            <option value="90d">Últimos 90 días</option>
+            <option value="year">Este año</option>
+            <option value="12m">Últimos 12 meses</option>
+            <option value="all">Todo el histórico</option>
+            <option value="custom">Personalizado</option>
+          </select>
+        </label>
+        {range==='custom'&&<>
+          <label className="block text-xs font-medium text-[var(--muted)]">Desde
+            <input className="fin-input mt-1 w-auto" type="date" value={customStart} max={customEnd||undefined} onChange={e=>setCustomStart(e.target.value)}/>
+          </label>
+          <label className="block text-xs font-medium text-[var(--muted)]">Hasta
+            <input className="fin-input mt-1 w-auto" type="date" value={customEnd} min={customStart||undefined} onChange={e=>setCustomEnd(e.target.value)}/>
+          </label>
+        </>}
+      </div>}
     />
 
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
