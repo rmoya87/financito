@@ -105,3 +105,10 @@ Las regresiones cubren:
 - cálculo del punto de equilibrio parcial solo cuando existe un coste de salida conocido.
 
 La comparación de mercado se prueba con fuentes simuladas en tests para que CI no dependa de sitios externos.
+
+
+## Casa y optimización hipotecaria
+
+Las regresiones cubren la ficha ampliada de hipoteca, persistencia de TAE/índice/diferencial/comisiones, cálculo de LTV con el valor de la vivienda y generación de una cuota comparable frente a un TIN público manteniendo capital y plazo. Los tests de mercado sustituyen la red por respuestas controladas: no dependen de ofertas externas para pasar CI.
+
+La agrupación documental incluye además casos en los que un anexo se clasifica inicialmente en otro tipo, documentos sin prima que se agrupan antes de poder proyectar una póliza y reagrupación tardía cuando el documento que identifica el producto se procesa después.
