@@ -18,6 +18,7 @@ type Prepay={mortgage:MortgageProfile;original_monthly_payment:string;original_t
 type RatePath={mortgage:MortgageProfile;total_payments:string;total_interest:string;min_monthly_payment:string;max_monthly_payment:string;final_balance:string;notice:string;segments:{start_month:number;annual_rate:string;monthly_payment:string;end_balance:string}[]};
 type Contract={id:string;provider_name:string;contract_type:string;annual_cost:string|null;early_exit_penalty:string|null;evidence_status:string;renewal_date:string|null};
 type Opt={status:string;net_annual_benefit:string|null;break_even_months:string|null};
+type GlobalScenario={monthly_income_after_shock:string;monthly_net:string;ending_liquidity:string;cash_runway_months:string|null;portfolio_after_shock:string};
 type Context={generated_at:string;real_data_only:boolean;liquidity:string;cash_flow_current_month:{start:string;end:string;income:string;expenses:string;savings:string;savings_rate:string|null};cash_flow_last_90_days:{start:string;end:string;income:string;expenses:string;savings:string;savings_rate:string|null;average_monthly_income:string;average_monthly_expenses:string;average_monthly_savings:string};tracked_assets:any[];rules:string[]};
 type SwitchingReadiness={ready:boolean;missing:string[];mortgage:null|{id:string;lender:string;remaining_principal:string;nominal_rate:string;monthly_payment:string;remaining_months:number;subrogation_penalty:{status:string;amount:string|null;formula:string|null;source:any};linked_product_signals:string[];linked_product_rate_impacts:{product:string;fact_key:string;rate_penalty_pp:string;monthly_payment_at_current_rate:string;monthly_payment_without_product:string;monthly_payment_increase:string;remaining_interest_increase:string;source:any;assumption:string}[]};insurance:{policy_id:string;insurance_type:string;annual_premium:string;provider:string|null;renewal_date:string|null;cancellation_notice_days:number|null;exit_penalty:string|null;evidence_status:string|null;source_document_id:string|null}[];hypotheses:{key:string;label:string}[];rule:string};
 type MarketScan={generated_at:string;current_mortgage_rate_percent:string|null;leads:{source_id:string;provider:string;kind:string;status:string;public_tin_min:number|null;benchmark_difference_pp:number|null;promo_percent:string|null;claims:string[];url:string;retrieved_at:string;requires_personalized_quote:boolean}[];disclaimer:string};
@@ -43,6 +44,8 @@ export default function ToolsPage(){
   const context=useQuery({queryKey:['decision-lab-context'],queryFn:()=>apiGet<Context>('/api/v1/decision-lab/context')});
   const readiness=useQuery({queryKey:['switching-readiness',selectedMortgage],queryFn:()=>apiGet<SwitchingReadiness>('/api/v1/decision-lab/switching-readiness'+(selectedMortgage?'?mortgage_id='+encodeURIComponent(selectedMortgage):''))});
   const marketScan=useMutation({mutationFn:()=>apiGet<MarketScan>('/api/v1/decision-lab/market-scan')});
+  const [globalShock,setGlobalShock]=useState({income_reduction_pct:'20',extraordinary_expense:'0',portfolio_drop_pct:'20',months:6});
+  const globalScenario=useMutation({mutationFn:()=>apiMutate<GlobalScenario>('/api/v1/stress','POST',globalShock)});
   const mortgageInsights=useQuery({queryKey:['document-insights','mortgage'],queryFn:()=>apiGet<DocInsight[]>('/api/v1/document-insights?document_type=mortgage')});
 
   useEffect(()=>{
@@ -97,6 +100,27 @@ export default function ToolsPage(){
         <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Ahorro mes actual</div><div className="mt-1 font-bold"><Money value={context.data.cash_flow_current_month.savings}/></div></div>
         <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Ingreso medio mensual 90 días</div><div className="mt-1 font-bold"><Money value={context.data.cash_flow_last_90_days.average_monthly_income}/></div></div>
       </div>:null}
+    </Card>
+
+    <Card className="mt-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><h2 className="font-bold">Escenario global</h2><p className="mt-1 text-sm text-[var(--muted)]">Combina liquidez, ingresos/gastos observados y cartera real para probar una caída de ingresos, un gasto extraordinario y una caída hipotética de inversiones en un mismo escenario.</p></div>
+        <div className="flex gap-2"><Link className="text-xs underline" href="/goals/">Ver objetivos</Link><Link className="text-xs underline" href="/markets/">Simular inversiones</Link></div>
+      </div>
+      <form className="mt-4 grid gap-3 md:grid-cols-4" onSubmit={(e:FormEvent)=>{e.preventDefault();globalScenario.mutate()}}>
+        <label className="text-sm">Caída de ingresos (%)<input className="fin-input mt-1" type="number" min="0" max="100" step=".1" value={globalShock.income_reduction_pct} onChange={e=>setGlobalShock({...globalShock,income_reduction_pct:e.target.value})}/></label>
+        <label className="text-sm">Gasto extraordinario<input className="fin-input mt-1" type="number" min="0" step=".01" value={globalShock.extraordinary_expense} onChange={e=>setGlobalShock({...globalShock,extraordinary_expense:e.target.value})}/></label>
+        <label className="text-sm">Caída de cartera (%)<input className="fin-input mt-1" type="number" min="0" max="100" step=".1" value={globalShock.portfolio_drop_pct} onChange={e=>setGlobalShock({...globalShock,portfolio_drop_pct:e.target.value})}/></label>
+        <label className="text-sm">Horizonte (meses)<input className="fin-input mt-1" type="number" min="1" max="60" value={globalShock.months} onChange={e=>setGlobalShock({...globalShock,months:Number(e.target.value)})}/></label>
+        <button className="fin-button md:col-span-4" disabled={globalScenario.isPending}>{globalScenario.isPending?'Calculando…':'Simular escenario completo'}</button>
+      </form>
+      {globalScenario.error&&<div className="mt-3"><ErrorState error={globalScenario.error}/></div>}
+      {globalScenario.data&&<div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4 text-sm">
+        <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Ingreso mensual tras shock</div><strong><Money value={globalScenario.data.monthly_income_after_shock}/></strong></div>
+        <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Flujo mensual resultante</div><strong><Money value={globalScenario.data.monthly_net}/></strong></div>
+        <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Liquidez al final</div><strong><Money value={globalScenario.data.ending_liquidity}/></strong></div>
+        <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Cartera tras shock</div><strong><Money value={globalScenario.data.portfolio_after_shock}/></strong><div className="text-[11px] text-[var(--muted)]">Runway {globalScenario.data.cash_runway_months===null?'sin consumo neto':globalScenario.data.cash_runway_months+' meses'}</div></div>
+      </div>}
     </Card>
 
     <div className="mt-4 grid gap-4 xl:grid-cols-2">
