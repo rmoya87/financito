@@ -107,3 +107,19 @@ Una previsión no se considera terminada si:
 Todo índice o derivado importante debe tener estrategia de reconstrucción.
 
 Una feature no está terminada si un fallo a mitad de proceso puede dejar datos parcialmente visibles o irrecuperables.
+
+
+## Temporalidad
+
+Una feature histórica no está terminada si no puede distinguir, cuando sea material:
+- cuándo ocurrió;
+- cuándo era vigente;
+- cuándo se observó.
+
+## Inversiones
+
+Una venta/escenario no está terminada si ignora lotes, fees o divisa cuando esos datos existen.
+
+## Operabilidad
+
+La aplicación estable debe poder arrancar y recuperarse sin exigir Terminal al usuario final.
