@@ -13,7 +13,7 @@ type CryptoMetrics={coin_id:string;metrics:{volatility:number|null;max_drawdown:
 type Analysis={security_id:string|null;security:string|null;event_type:string;sentiment:number;impact_level:string;confidence:number;method_version:string;rationale:string};
 type LocalNews={items:{id:string;headline:string;url:string;source:string;published_at:string;reliability:number;analysis:Analysis[]}[]};
 type Portfolio={id:string;name:string};
-type TrackedAsset={security_id:string;name:string;identifier:string|null;asset_class:string;currency:string;tracking_state:string;provider_asset_id:string|null;owned:boolean;quantity:string;average_cost:string;cost_basis:string;current_price:string|null;current_value:string|null;unrealized_pnl:string|null;unrealized_return:string|null;realized_pnl:string;dividends:string;total_result:string|null;price_provider:string|null;price_as_of:string|null;price_fetched_at:string|null;price_delayed:boolean|null};
+type TrackedAsset={security_id:string;name:string;identifier:string|null;asset_class:string;currency:string;tracking_state:string;provider_asset_id:string|null;owned:boolean;quantity:string;average_cost:string;cost_basis:string;current_price:string|null;current_value:string|null;unrealized_pnl:string|null;unrealized_return:string|null;realized_pnl:string;dividends:string;total_result:string|null;price_provider:string|null;price_as_of:string|null;price_fetched_at:string|null;price_delayed:boolean|null;price_age_minutes:number|null;price_stale:boolean};
 
 function sentimentLabel(value:number){return value>.15?'positivo':value<-.15?'negativo':'neutral'}
 
@@ -35,11 +35,11 @@ export default function MarketsPage(){
   const sec=useMutation({mutationFn:()=>apiGet<any>('/api/v1/fundamentals/sec/'+encodeURIComponent(cik))});
   const saveTracked=useMutation({mutationFn:()=>apiMutate<TrackedAsset>('/api/v1/tracked-assets','POST',{asset_class:trackedForm.asset_class,name:trackedForm.name,identifier:trackedForm.identifier,owned:trackedForm.owned==='yes',portfolio_id:trackedForm.portfolio_id||null,quantity:trackedForm.owned==='yes'?trackedForm.quantity:null,purchase_price:trackedForm.owned==='yes'?trackedForm.purchase_price:null,purchase_date:trackedForm.owned==='yes'?trackedForm.purchase_date:null,fees:trackedForm.fees||'0',fx_rate:trackedForm.fx_rate||'1',currency:trackedForm.currency,provider_asset_id:trackedForm.asset_class==='crypto'?trackedForm.identifier:null,notes:null}),onSuccess:()=>{setTrackedForm({...trackedForm,name:'',identifier:'',quantity:'',purchase_price:'',fees:'0',fx_rate:'1'});qc.invalidateQueries({queryKey:['tracked-assets']});qc.invalidateQueries({queryKey:['portfolios']});qc.invalidateQueries({queryKey:['securities']})}});
   const refreshTracked=useMutation({mutationFn:(id:string)=>apiMutate('/api/v1/tracked-assets/'+id+'/refresh?include_history=false','POST'),onSuccess:()=>{qc.invalidateQueries({queryKey:['tracked-assets']});qc.invalidateQueries({queryKey:['portfolios']})}});
+  const refreshAll=useMutation({mutationFn:()=>apiMutate('/api/v1/tracked-assets/refresh-all','POST'),onSuccess:()=>{qc.invalidateQueries({queryKey:['tracked-assets']});qc.invalidateQueries({queryKey:['portfolios']})}});
   return <>
     <PageHeader title="Mercados y fuentes" description="Datos externos bajo demanda, con proveedor visible. Los análisis derivados se calculan localmente y no son predicciones."/>
     <Card className="mb-4">
-      <h2 className="font-bold">Mis acciones y cripto</h2>
-      <p className="mt-1 text-sm text-[var(--muted)]">Guarda activos que tienes o que solo quieres seguir. Si lo tienes, Financito usa tu cantidad y precio de compra para calcular coste, valor actual y resultado con el último precio real guardado.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Mis acciones y cripto</h2><p className="mt-1 text-sm text-[var(--muted)]">Guarda activos que tienes o que solo quieres seguir. Si lo tienes, Financito usa tu cantidad y precio de compra para calcular coste, valor actual y resultado con el último precio real guardado.</p></div><button className="fin-button secondary" disabled={refreshAll.isPending||!tracked.data?.length} onClick={()=>refreshAll.mutate()}>{refreshAll.isPending?'Actualizando…':'Actualizar precios'}</button></div>
       <form className="mt-4 grid gap-2 md:grid-cols-4" onSubmit={(e:FormEvent)=>{e.preventDefault();saveTracked.mutate()}}>
         <select aria-label="Tipo de activo seguido" className="fin-input" value={trackedForm.asset_class} onChange={e=>setTrackedForm({...trackedForm,asset_class:e.target.value})}><option value="stock">Acción</option><option value="etf">ETF</option><option value="fund">Fondo</option><option value="crypto">Cripto</option></select>
         <input aria-label="Nombre del activo" className="fin-input" placeholder="Nombre" value={trackedForm.name} onChange={e=>setTrackedForm({...trackedForm,name:e.target.value})} required/>
@@ -57,7 +57,7 @@ export default function MarketsPage(){
         <button className="fin-button md:col-span-4" disabled={saveTracked.isPending}>{saveTracked.isPending?'Guardando…':'Guardar activo'}</button>
       </form>
       {saveTracked.error&&<div className="mt-3"><ErrorState error={saveTracked.error}/></div>}
-      {refreshTracked.error&&<div className="mt-3"><ErrorState error={refreshTracked.error}/></div>}
+      {refreshTracked.error&&<div className="mt-3"><ErrorState error={refreshTracked.error}/></div>}{refreshAll.error&&<div className="mt-3"><ErrorState error={refreshAll.error}/></div>}
       <div className="mt-5 grid gap-3 lg:grid-cols-2">
         {tracked.data?.length?tracked.data.map(a=><div key={a.security_id} className="rounded-xl bg-[var(--surface-2)] p-4 text-sm">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -76,7 +76,7 @@ export default function MarketsPage(){
               <div><span className="text-[var(--muted)]">Dividendos</span><div className="font-semibold">{a.dividends} {a.currency}</div></div>
             </>}
           </div>
-          <div className="mt-3 text-xs text-[var(--muted)]">{a.price_provider?(a.price_provider+' · precio '+(a.price_as_of?new Date(a.price_as_of).toLocaleString():'sin fecha')):'Aún no hay precio de mercado guardado. Pulsa Actualizar precio.'}</div>
+          <div className="mt-3 text-xs text-[var(--muted)]">{a.price_provider?(a.price_provider+' · precio '+(a.price_as_of?new Date(a.price_as_of).toLocaleString():'sin fecha')+(a.price_stale?' · desactualizado':'')):'Aún no hay precio de mercado guardado. Pulsa Actualizar precio.'}</div>
         </div>):<EmptyState>No has guardado acciones o cripto todavía.</EmptyState>}
       </div>
     </Card>
