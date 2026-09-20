@@ -110,3 +110,14 @@ class MortgagePrepaymentRequest(BaseModel):
     months: int = Field(gt=0, le=1200)
     extra_payment: Decimal = Field(ge=0)
     prepayment_fee: Decimal = Field(default=Decimal("0"), ge=0)
+
+
+class MortgageRateStep(BaseModel):
+    month:int=Field(ge=1,le=1200)
+    annual_rate:Decimal=Field(ge=0,le=1)
+
+class MortgageRatePathRequest(BaseModel):
+    principal:Decimal=Field(gt=0)
+    months:int=Field(gt=0,le=1200)
+    initial_annual_rate:Decimal=Field(ge=0,le=1)
+    rate_steps:list[MortgageRateStep]=Field(default_factory=list,max_length=50)
