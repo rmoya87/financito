@@ -88,3 +88,19 @@ def test_expanded_taxonomy_and_common_merchants_are_classified():
             tx=_tx(account.id,desc,merchant,amount,fp);db.add(tx);db.flush();categorize_transaction(db,tx)
             assert tx.category_id==cats[key].id, (desc,key)
             assert tx.categorization_confidence>=Decimal("0.85")
+
+
+def test_improve_rechecks_previous_deterministic_categories_after_taxonomy_change(monkeypatch):
+    with SessionLocal() as db:
+        cats=ensure_categories(db)
+        account=Account(name="Taxonomy refresh");db.add(account);db.flush()
+        tx=_tx(account.id,"Pago combustible","REPSOL DEMO","-70.00","taxonomy-refresh-1")
+        tx.category_id=cats["transport"].id
+        tx.categorization_method="deterministic_classifier"
+        tx.categorization_confidence=Decimal("0.85")
+        db.add(tx);db.flush()
+        monkeypatch.setattr(local_ai,"status",lambda:{"available":False,"configured_model":None,"embedding_model":None,"models":[],"chat_ready":False,"embedding_ready":False})
+        result=improve_categorization(db,limit=100,llm_limit=0)
+        assert result["reevaluated"]>=1
+        assert tx.category_id==cats["vehicle"].id
+        assert tx.user_verified is False
