@@ -7,9 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .models import Account,Contract,FinancialGoal,Mortgage,Portfolio,Security
-from .models_extended import Asset,BackupRecord,CoverageFact,InsurancePolicy,Liability,RepairIssue,Trade,TrackedAsset
+from .models_extended import Asset,BackupRecord,CoverageFact,InsurancePolicy,Liability,MortgageProfileExtra,RepairIssue,Trade,TrackedAsset
 from .models_analytics import EntityLink
-from .schemas_extended import AssetCreate,AssetSimulationStart,BackupCreate,BackupRestore,ChatRequest,ContractCreate,CoverageCompareRequest,CoverageCreate,CorporateActionCreate,GoalCreate,GoalProgressUpdate,InsuranceCreate,LiabilityCreate,MortgageProfileCreate,MortgageProfileUpdate,PortfolioCreate,RagSearchRequest,SecurityCreate,StoredMortgagePrepaymentRequest,StoredMortgageRatePathRequest,StoredMortgageScenarioRequest,StressRequest,TaxEstimateRequest,TaxProfileUpdate,TrackedAssetCreate,TradeCreate
+from .schemas_extended import AssetCreate,AssetSimulationStart,BackupCreate,BackupRestore,ChatRequest,ContractCreate,CoverageCompareRequest,CoverageCreate,CorporateActionCreate,GoalCreate,GoalProgressUpdate,InsuranceCreate,LiabilityCreate,MortgageExtraUpdate,MortgageProfileCreate,MortgageProfileUpdate,PortfolioCreate,RagSearchRequest,SecurityCreate,StoredMortgagePrepaymentRequest,StoredMortgageRatePathRequest,StoredMortgageScenarioRequest,StressRequest,TaxEstimateRequest,TaxProfileUpdate,TrackedAssetCreate,TradeCreate
 from .domain.portfolio import apply_trade,portfolio_summary
 from .domain.engines import MortgageEngine,MortgagePrepaymentEngine,MortgageRatePathEngine
 from .domain.stress import run_stress
@@ -26,7 +26,7 @@ from .services.wealth import summary as wealth_summary
 from .services.financial_analytics import cash_flow
 from .services.snapshots import record_snapshot
 from .services.decision_context import live_decision_context,mortgage_row
-from .services.contractual_costs import resolve_prepayment_penalty,switching_readiness
+from .services.contractual_costs import mortgage_contract_context,resolve_prepayment_penalty,switching_readiness
 from .services.market_research import scan_public_market
 from .services.investment_tracking import remove_tracking,save_tracked_asset,simulation_history,start_simulation,tracked_assets
 from .services.broker_import import import_broker_csv
@@ -104,6 +104,160 @@ def update_mortgage(mortgage_id:str,p:MortgageProfileUpdate,db:Session=Depends(d
         "currency":r.currency,
     },source="mortgage_updated")
     db.commit();return mortgage_row(r)
+
+def _mortgage_extra_payload(row:MortgageProfileExtra|None)->dict:
+    if row is None:
+        return {
+            "original_principal":None,"original_term_months":None,"start_date":None,"maturity_date":None,
+            "apr_rate":None,"reference_index":None,"differential_rate":None,"rate_review_months":None,
+            "next_review_date":None,"opening_fee_percent":None,"early_repayment_fee_percent":None,
+            "subrogation_fee_percent":None,"cancellation_fee_percent":None,"notes":None,
+        }
+    return {
+        "original_principal":None if row.original_principal is None else str(row.original_principal),
+        "original_term_months":row.original_term_months,
+        "start_date":row.start_date,
+        "maturity_date":row.maturity_date,
+        "apr_rate":None if row.apr_rate is None else str(row.apr_rate),
+        "reference_index":row.reference_index,
+        "differential_rate":None if row.differential_rate is None else str(row.differential_rate),
+        "rate_review_months":row.rate_review_months,
+        "next_review_date":row.next_review_date,
+        "opening_fee_percent":None if row.opening_fee_percent is None else str(row.opening_fee_percent),
+        "early_repayment_fee_percent":None if row.early_repayment_fee_percent is None else str(row.early_repayment_fee_percent),
+        "subrogation_fee_percent":None if row.subrogation_fee_percent is None else str(row.subrogation_fee_percent),
+        "cancellation_fee_percent":None if row.cancellation_fee_percent is None else str(row.cancellation_fee_percent),
+        "notes":row.notes,
+    }
+
+@router.get("/mortgages/{mortgage_id}/profile-extra")
+def mortgage_profile_extra(mortgage_id:str,db:Session=Depends(dbdep)):
+    if not db.get(Mortgage,mortgage_id):raise HTTPException(404,"Mortgage not found")
+    row=db.scalar(select(MortgageProfileExtra).where(MortgageProfileExtra.mortgage_id==mortgage_id))
+    return _mortgage_extra_payload(row)
+
+@router.patch("/mortgages/{mortgage_id}/profile-extra")
+def update_mortgage_profile_extra(mortgage_id:str,p:MortgageExtraUpdate,db:Session=Depends(dbdep)):
+    if not db.get(Mortgage,mortgage_id):raise HTTPException(404,"Mortgage not found")
+    row=db.scalar(select(MortgageProfileExtra).where(MortgageProfileExtra.mortgage_id==mortgage_id))
+    if row is None:
+        row=MortgageProfileExtra(mortgage_id=mortgage_id)
+        db.add(row)
+    for key,value in p.model_dump().items():
+        setattr(row,key,value)
+    db.commit()
+    return _mortgage_extra_payload(row)
+
+@router.get("/wealth/home")
+def wealth_home(db:Session=Depends(dbdep)):
+    mortgage=db.scalar(select(Mortgage).order_by(Mortgage.updated_at.desc()))
+    properties=db.scalars(select(Asset).where(
+        Asset.asset_type.in_(["property","home","house","real_estate"])
+    ).order_by(Asset.valuation_date.desc(),Asset.current_value.desc())).all()
+    home=properties[0] if properties else None
+    contracts={row.id:row for row in db.scalars(select(Contract)).all()}
+    policies=[]
+    for policy in db.scalars(select(InsurancePolicy)).all():
+        kind=(policy.insurance_type or "").lower()
+        if not any(token in kind for token in ("home","house","hogar","life","vida","mortgage","hipoteca")):
+            continue
+        contract=contracts.get(policy.contract_id or "")
+        policies.append({
+            "id":policy.id,
+            "insurance_type":policy.insurance_type,
+            "annual_premium":str(policy.annual_premium),
+            "provider":None if contract is None else contract.provider_name,
+            "renewal_date":None if contract is None else contract.renewal_date,
+        })
+
+    if mortgage is None:
+        return {
+            "property":None if home is None else {
+                "id":home.id,"name":home.name,"value":str(home.current_value),"currency":home.currency,
+                "valuation_date":home.valuation_date,"valuation_source":home.valuation_source,
+                "ownership_percentage":str(home.ownership_percentage),
+            },
+            "mortgage":None,
+            "extra":_mortgage_extra_payload(None),
+            "document_facts":{},
+            "source_documents":[],
+            "insurance":policies,
+            "equity":None,
+            "owned_equity":None,
+            "ltv":None,
+            "missing":[
+                {"key":"mortgage","label":"Datos de la hipoteca","reason":"Necesarios para calcular cuota, intereses y escenarios de mejora."}
+            ],
+        }
+
+    extra=db.scalar(select(MortgageProfileExtra).where(MortgageProfileExtra.mortgage_id==mortgage.id))
+    context=mortgage_contract_context(db,mortgage.id)
+    by_key=context["by_key"]
+    extra_payload=_mortgage_extra_payload(extra)
+
+    # Confirmed document evidence fills informational gaps without silently
+    # overwriting manual profile values.
+    evidence_map={
+        "apr_rate":"apr_rate","reference_index":"reference_index","differential_rate":"differential_rate",
+        "rate_review_months":"rate_review_months","opening_fee_percent":"opening_fee_percent",
+        "early_repayment_fee_percent":"early_repayment_fee_percent","subrogation_fee_percent":"subrogation_fee_percent",
+        "cancellation_fee_percent":"cancellation_fee_percent",
+    }
+    for target,key in evidence_map.items():
+        if extra_payload.get(target) is None and by_key.get(key):
+            raw=by_key[key].get("value")
+            if target in {"apr_rate","differential_rate"} and raw not in {None,""}:
+                try:extra_payload[target]=str(Decimal(str(raw).replace(",","."))/Decimal("100"))
+                except Exception:extra_payload[target]=raw
+            elif target=="rate_review_months" and raw not in {None,""}:
+                try:extra_payload[target]=int(Decimal(str(raw).replace(",",".")))
+                except Exception:extra_payload[target]=raw
+            else:
+                extra_payload[target]=raw
+
+    equity=None;ltv=None;owned_equity=None
+    if home is not None:
+        # LTV bancario se calcula contra el valor total de la garantía, no
+        # contra el porcentaje patrimonial del usuario.
+        equity=(home.current_value-mortgage.remaining_principal).quantize(Decimal("0.01"))
+        if home.current_value>0:
+            ltv=(mortgage.remaining_principal/home.current_value*Decimal("100")).quantize(Decimal("0.01"))
+        owned_value=home.current_value*home.ownership_percentage/Decimal("100")
+        owned_equity=(owned_value-mortgage.remaining_principal).quantize(Decimal("0.01"))
+
+    missing=[]
+    def need(key,label,reason,value):
+        if value in {None,""}:missing.append({"key":key,"label":label,"reason":reason})
+    if home is None:
+        missing.append({"key":"property_value","label":"Valor actual de la vivienda","reason":"Permite calcular patrimonio inmobiliario y LTV."})
+    need("apr_rate","TAE actual","Necesaria para comparar el coste total con ofertas nuevas.",extra_payload.get("apr_rate"))
+    if mortgage.interest_type in {"variable","mixed"}:
+        need("reference_index","Índice de referencia","Necesario para modelar futuras revisiones.",extra_payload.get("reference_index"))
+        need("differential_rate","Diferencial","Necesario para reconstruir el tipo variable.",extra_payload.get("differential_rate"))
+        need("rate_review_months","Periodicidad de revisión","Necesaria para simular cambios de cuota.",extra_payload.get("rate_review_months"))
+        need("next_review_date","Próxima revisión","Permite saber cuándo puede cambiar la cuota.",extra_payload.get("next_review_date"))
+    if mortgage.early_repayment_fee is None and extra_payload.get("early_repayment_fee_percent") is None:
+        missing.append({"key":"early_repayment_fee_percent","label":"Comisión de amortización anticipada","reason":"Necesaria para calcular si amortizar compensa."})
+    if extra_payload.get("subrogation_fee_percent") is None and extra_payload.get("cancellation_fee_percent") is None:
+        missing.append({"key":"subrogation_fee_percent","label":"Coste/comisión de subrogación o salida","reason":"Necesario para calcular el punto de equilibrio al cambiar de banco."})
+
+    return {
+        "property":None if home is None else {
+            "id":home.id,"name":home.name,"value":str(home.current_value),"currency":home.currency,
+            "valuation_date":home.valuation_date,"valuation_source":home.valuation_source,
+            "ownership_percentage":str(home.ownership_percentage),
+        },
+        "mortgage":mortgage_row(mortgage),
+        "extra":extra_payload,
+        "document_facts":by_key,
+        "source_documents":context["source_documents"],
+        "insurance":policies,
+        "equity":None if equity is None else str(equity),
+        "owned_equity":None if owned_equity is None else str(owned_equity),
+        "ltv":None if ltv is None else str(ltv),
+        "missing":missing,
+    }
+
 
 @router.post("/decision-lab/mortgage/current")
 def mortgage_current(p:StoredMortgageScenarioRequest,db:Session=Depends(dbdep)):
@@ -326,6 +480,14 @@ def assets(db:Session=Depends(dbdep)):return [{"id":r.id,"type":r.asset_type,"na
 def add_asset(p:AssetCreate,db:Session=Depends(dbdep)):
     r=Asset(**p.model_dump());db.add(r);db.flush()
     record_snapshot(db,"asset",r.id,{"value":str(r.current_value),"ownership_percentage":str(r.ownership_percentage),"currency":r.currency},r.valuation_date,"asset_created")
+    db.commit();return {"id":r.id}
+@router.patch("/assets/{asset_id}")
+def update_asset(asset_id:str,p:AssetCreate,db:Session=Depends(dbdep)):
+    r=db.get(Asset,asset_id)
+    if not r:raise HTTPException(404,"Asset not found")
+    for key,value in p.model_dump().items():setattr(r,key,value)
+    db.flush()
+    record_snapshot(db,"asset",r.id,{"value":str(r.current_value),"ownership_percentage":str(r.ownership_percentage),"currency":r.currency},r.valuation_date,"asset_updated")
     db.commit();return {"id":r.id}
 @router.get("/liabilities")
 def liabilities(db:Session=Depends(dbdep)):return [{"id":r.id,"type":r.liability_type,"name":r.name,"amount":str(r.outstanding_amount),"currency":r.currency} for r in db.scalars(select(Liability).order_by(Liability.name)).all()]

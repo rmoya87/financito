@@ -117,6 +117,27 @@ class LotDisposal(Base):
     allocation_rule:Mapped[str]=mapped_column(String(40),default="FIFO")
     created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=utcnow)
 
+class MortgageProfileExtra(Base, TimestampMixin):
+    __tablename__="mortgage_profile_extra"
+    __table_args__=(UniqueConstraint("mortgage_id",name="uq_mortgage_profile_extra_mortgage"),)
+    id:Mapped[str]=mapped_column(String(36),primary_key=True,default=uuid_str)
+    mortgage_id:Mapped[str]=mapped_column(ForeignKey("mortgage.id",ondelete="CASCADE"),index=True)
+    original_principal:Mapped[Decimal|None]=mapped_column(Numeric(18,4),nullable=True)
+    original_term_months:Mapped[int|None]=mapped_column(Integer,nullable=True)
+    start_date:Mapped[date|None]=mapped_column(Date,nullable=True)
+    maturity_date:Mapped[date|None]=mapped_column(Date,nullable=True)
+    apr_rate:Mapped[Decimal|None]=mapped_column(Numeric(8,6),nullable=True)
+    reference_index:Mapped[str|None]=mapped_column(String(80),nullable=True)
+    differential_rate:Mapped[Decimal|None]=mapped_column(Numeric(8,6),nullable=True)
+    rate_review_months:Mapped[int|None]=mapped_column(Integer,nullable=True)
+    next_review_date:Mapped[date|None]=mapped_column(Date,nullable=True)
+    opening_fee_percent:Mapped[Decimal|None]=mapped_column(Numeric(8,4),nullable=True)
+    early_repayment_fee_percent:Mapped[Decimal|None]=mapped_column(Numeric(8,4),nullable=True)
+    subrogation_fee_percent:Mapped[Decimal|None]=mapped_column(Numeric(8,4),nullable=True)
+    cancellation_fee_percent:Mapped[Decimal|None]=mapped_column(Numeric(8,4),nullable=True)
+    notes:Mapped[str|None]=mapped_column(Text,nullable=True)
+
+
 class InsurancePolicy(Base, TimestampMixin):
     __tablename__="insurance_policy"
     id:Mapped[str]=mapped_column(String(36),primary_key=True,default=uuid_str)

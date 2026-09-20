@@ -24,7 +24,7 @@ CONTRACT_FACT_KEYS = {
 }
 MORTGAGE_FACT_KEYS = {
     "nominal_rate","apr_rate","reference_index","interest_type","differential_rate",
-    "mortgage_term_years","rate_review_months","opening_fee_percent",
+    "mortgage_term_years","rate_review_months","next_review_date","opening_fee_percent",
     "early_repayment_fee_percent","subrogation_fee_percent","cancellation_fee_percent",
     "remaining_principal","monthly_payment","remaining_months",
 }

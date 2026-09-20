@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..models import Contract, Document, ExtractedFact, Mortgage
 from ..models_analytics import EntityLink, LinkedProduct
-from ..models_extended import InsurancePolicy
+from ..models_extended import InsurancePolicy,MortgageProfileExtra
 from ..domain.engines import MortgageEngine
 
 
@@ -19,6 +19,11 @@ MORTGAGE_KEYS = {
     "early_exit_penalty",
     "nominal_rate",
     "apr_rate",
+    "reference_index",
+    "differential_rate",
+    "rate_review_months",
+    "next_review_date",
+    "opening_fee_percent",
     "remaining_principal",
     "monthly_payment",
     "linked_salary",
@@ -115,7 +120,23 @@ def mortgage_contract_context(session: Session, mortgage_id: str | None = None) 
     }
 
 
+def _mortgage_extra(session: Session, mortgage_id: str) -> MortgageProfileExtra | None:
+    return session.scalar(
+        select(MortgageProfileExtra).where(MortgageProfileExtra.mortgage_id == mortgage_id)
+    )
+
+
 def resolve_prepayment_penalty(session: Session, mortgage: Mortgage, extra_payment: Decimal) -> dict:
+    extra = _mortgage_extra(session, mortgage.id)
+    if extra is not None and extra.early_repayment_fee_percent is not None:
+        pct = extra.early_repayment_fee_percent
+        amount = (extra_payment * pct / Decimal("100")).quantize(Decimal("0.01"))
+        return {
+            "status": "user_profile_formula",
+            "amount": amount,
+            "formula": f"{pct}% × {extra_payment}",
+            "source": {"type":"mortgage_profile_extra","field":"early_repayment_fee_percent"},
+        }
     ctx = mortgage_contract_context(session, mortgage.id)
     by_key = ctx["by_key"]
     pct = _as_decimal((by_key.get("early_repayment_fee_percent") or {}).get("value"))
@@ -138,6 +159,19 @@ def resolve_prepayment_penalty(session: Session, mortgage: Mortgage, extra_payme
 
 
 def resolve_subrogation_penalty(session: Session, mortgage: Mortgage) -> dict:
+    extra = _mortgage_extra(session, mortgage.id)
+    if extra is not None:
+        for key in ("subrogation_fee_percent", "cancellation_fee_percent", "early_repayment_fee_percent"):
+            pct = getattr(extra,key)
+            if pct is not None:
+                amount = (mortgage.remaining_principal * pct / Decimal("100")).quantize(Decimal("0.01"))
+                return {
+                    "status": "user_profile_formula",
+                    "amount": amount,
+                    "formula": f"{pct}% × {mortgage.remaining_principal}",
+                    "source": {"type":"mortgage_profile_extra","field":key},
+                    "fact_key": key,
+                }
     ctx = mortgage_contract_context(session, mortgage.id)
     by_key = ctx["by_key"]
     for key in ("subrogation_fee_percent", "cancellation_fee_percent", "early_repayment_fee_percent"):
@@ -206,16 +240,16 @@ def insurance_switching_context(session: Session) -> list[dict]:
     out = []
     for policy in policies:
         contract = session.get(Contract, policy.contract_id) if policy.contract_id else None
-        source_doc_id = None
+        source_doc_ids = []
         if contract:
-            link = session.scalar(select(EntityLink).where(
+            source_doc_ids = list(session.scalars(select(EntityLink.from_id).where(
                 EntityLink.from_type == "document",
                 EntityLink.relation_type == "evidence_for",
                 EntityLink.to_type == "contract",
                 EntityLink.to_id == contract.id,
-            ))
-            source_doc_id = link.from_id if link else None
-        facts = _confirmed_facts(session, [source_doc_id] if source_doc_id else [])
+            )).all())
+        facts = _confirmed_facts(session, source_doc_ids)
+        source_doc_id = source_doc_ids[0] if source_doc_ids else None
         out.append({
             "policy_id": policy.id,
             "insurance_type": policy.insurance_type,
@@ -228,6 +262,8 @@ def insurance_switching_context(session: Session) -> list[dict]:
             "exit_penalty": None if contract is None or contract.early_exit_penalty is None else str(contract.early_exit_penalty),
             "evidence_status": None if contract is None else contract.evidence_status,
             "source_document_id": source_doc_id,
+            "source_document_ids": source_doc_ids,
+            "document_count": len(source_doc_ids),
             "confirmed_facts": facts,
         })
     return out

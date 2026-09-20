@@ -1,7 +1,7 @@
 # Estado de implementación
 
 Fecha de corte: **2026-09-20**.  
-Schema actual: **v9**.
+Schema actual: **v11**.
 
 Este documento describe únicamente comportamiento ejecutable en `main`. Los planes futuros viven en `ROADMAP.md`.
 
@@ -144,3 +144,13 @@ Un elemento de esta sección no se sustituirá con datos ficticios ni supuestos 
 Cuando un seguro/servicio todavía no tiene datos suficientes para materializar su ficha financiera, un número de póliza/contrato fiable puede crear una agrupación provisional sin inventar prima, fechas ni condiciones. Si no existe identificador fiable, el usuario puede crear explícitamente la ficha de agrupación desde Documentos y enlazar a ella los demás archivos.
 
 Las conclusiones de IA de varios documentos vinculados al mismo producto comparten un único aviso pendiente en `Para ti`. El Dashboard muestra una instrucción breve; el análisis completo permanece en Documentos y el aviso se puede marcar como revisado o descartar allí.
+
+
+### Casa: vivienda e hipoteca
+- Patrimonio incorpora una sección **Casa** inmediatamente después del resumen patrimonial, con valor actual de la vivienda, capital hipotecario pendiente, equity y LTV.
+- La hipoteca se puede completar y corregir con capital/cuota/plazo/TIN, TAE, índice y diferencial, periodicidad/próxima revisión y comisiones de apertura, amortización, subrogación o salida.
+- Los datos confirmados de la documentación pueden cubrir huecos informativos sin sobrescribir silenciosamente los valores introducidos manualmente.
+- Los seguros de hogar/vida/hipoteca relacionados se muestran junto a la vivienda porque pueden modificar el coste efectivo de la financiación.
+- Las comisiones completadas en Casa alimentan de verdad los motores de amortización y cambio de hipoteca, incluido el cálculo de costes de salida y punto de equilibrio.
+- La comparación de mercado se ejecuta bajo demanda y mantiene capital pendiente y plazo para hacer comparables las cuotas. Las referencias públicas se tratan como benchmark; el ahorro neto definitivo exige incorporar la oferta personalizada/FEIN, seguros vinculados y demás costes.
+- La agrupación documental por número de póliza/contrato puede corregir una clasificación inicial distinta y reagrupar anexos procesados antes o después del documento principal.

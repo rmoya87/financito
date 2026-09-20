@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from financito.db import SessionLocal
 from financito.main import app
-from financito.models import Contract, Document, ExtractedFact
+from financito.models import Contract, Document, ExtractedFact, Mortgage
 from financito.models_analytics import EntityLink
 from financito.models_extended import InsurancePolicy
 from financito.services.evidence import (
@@ -156,24 +156,158 @@ def test_dashboard_accepts_explicit_date_range():
         assert response.json()["period"]=={"start":"2040-01-01","end":"2040-01-31"}
 
 
-def test_documents_can_group_by_policy_number_before_premium_is_confirmed():
+def test_incomplete_insurance_group_can_collect_documents_before_premium():
     with SessionLocal() as db:
-        first=_document(db,"seguro-info-1.pdf")
-        second=_document(db,"seguro-info-2.pdf")
-        _fact(db,first.id,"policy_number","POL-PENDING-777")
-        _fact(db,second.id,"policy_number","POL-PENDING-777")
+        contract=Contract(
+            provider_name=f"Aseguradora pendiente {uuid4().hex[:6]}",
+            contract_type="insurance",
+            evidence_status="needs_more_data",
+        )
+        db.add(contract);db.flush()
+        first=_document(db,"nota-informativa.pdf")
+        second=_document(db,"condiciones-generales.pdf")
+        for document in (first,second):
+            _fact(db,document.id,"policy_number","POL-PENDING-777")
+        db.add(EntityLink(
+            from_type="document",from_id=first.id,relation_type="evidence_for",
+            to_type="contract",to_id=contract.id,confidence=Decimal("1"),
+            source_type="user",source_ref=first.id,
+        ))
         db.flush()
 
-        first_group=auto_link_document_entity(db,first)
-        second_group=auto_link_document_entity(db,second)
-        assert first_group is not None
-        assert second_group is not None
-        assert first_group["entity_type"]=="contract"
-        assert second_group["entity_type"]=="contract"
-        assert first_group["entity_id"]==second_group["entity_id"]
+        result=auto_link_document_entity(db,second)
+        assert result is not None
+        assert result["entity_type"]=="contract"
+        assert result["entity_id"]==contract.id
+        second_link=db.scalar(select(EntityLink).where(
+            EntityLink.from_type=="document",
+            EntityLink.from_id==second.id,
+            EntityLink.relation_type=="evidence_for",
+            EntityLink.to_type=="contract",
+            EntityLink.to_id==contract.id,
+        ))
+        assert second_link is not None
 
-        contract=db.get(Contract,first_group["entity_id"])
-        assert contract is not None
-        assert contract.contract_type=="insurance"
-        assert contract.annual_cost is None
-        assert db.scalar(select(InsurancePolicy.id).where(InsurancePolicy.contract_id==contract.id)) is None
+        # Once one document later supplies a confirmed premium, all documents
+        # in the contract group converge on one policy instead of creating one
+        # policy per file.
+        premium=_fact(db,first.id,"annual_cost","480",status="confirmed",verified=True)
+        assert premium.user_verified is True
+        from financito.services.evidence import synchronize_document_evidence
+        synchronize_document_evidence(db,first)
+        synchronize_document_evidence(db,second)
+        policies=db.scalars(select(InsurancePolicy).where(InsurancePolicy.contract_id==contract.id)).all()
+        assert len(policies)==1
+        policy=policies[0]
+        linked_docs=set(db.scalars(select(EntityLink.from_id).where(
+            EntityLink.from_type=="document",
+            EntityLink.relation_type=="evidence_for",
+            EntityLink.to_type=="insurance_policy",
+            EntityLink.to_id==policy.id,
+        )).all())
+        assert {first.id,second.id}.issubset(linked_docs)
+
+
+def test_late_policy_projection_reconciles_previously_unlinked_sibling():
+    with SessionLocal() as db:
+        contract,policy=_policy_group(db)
+        early=_document(db,"nota-mediador-previa.pdf")
+        later=_document(db,"condiciones-que-identifican-poliza.pdf")
+        for document in (early,later):
+            _fact(db,document.id,"policy_number","POL-LATE-777")
+
+        # Simulates the useful document identifying the product after another
+        # file from the same upload batch was already processed.
+        db.add(EntityLink(
+            from_type="document",from_id=later.id,relation_type="evidence_for",
+            to_type="insurance_policy",to_id=policy.id,confidence=Decimal("1"),
+            source_type="document_projection",source_ref=later.id,
+        ))
+        db.add(EntityLink(
+            from_type="document",from_id=later.id,relation_type="evidence_for",
+            to_type="contract",to_id=contract.id,confidence=Decimal("1"),
+            source_type="document_projection",source_ref=later.id,
+        ))
+        db.flush()
+
+        from financito.services.evidence import synchronize_document_evidence
+        result=synchronize_document_evidence(db,later)
+        assert result["grouped_documents"]>=1
+        link=db.scalar(select(EntityLink).where(
+            EntityLink.from_type=="document",
+            EntityLink.from_id==early.id,
+            EntityLink.relation_type=="evidence_for",
+            EntityLink.to_type=="insurance_policy",
+            EntityLink.to_id==policy.id,
+        ))
+        assert link is not None
+
+
+def test_policy_number_groups_document_even_when_classifier_says_contract():
+    with SessionLocal() as db:
+        contract,policy=_policy_group(db)
+        source=_document(db,"poliza.pdf")
+        annex=_document(db,"nota-mediador.pdf")
+        annex.document_type="contract"
+        for document in (source,annex):
+            _fact(db,document.id,"policy_number","POL-CLASSIFIER-999")
+        db.add(EntityLink(
+            from_type="document",from_id=source.id,relation_type="evidence_for",
+            to_type="insurance_policy",to_id=policy.id,confidence=Decimal("1"),
+            source_type="document_projection",source_ref=source.id,
+        ))
+        db.add(EntityLink(
+            from_type="document",from_id=source.id,relation_type="evidence_for",
+            to_type="contract",to_id=contract.id,confidence=Decimal("1"),
+            source_type="document_projection",source_ref=source.id,
+        ))
+        db.flush()
+
+        result=auto_link_document_entity(db,annex)
+        assert result is not None
+        assert result["entity_type"]=="insurance_policy"
+        assert annex.document_type=="insurance"
+        assert _entity_link_for_test(db,annex.id,"insurance_policy")==policy.id
+
+
+def _entity_link_for_test(db,document_id,to_type):
+    link=db.scalar(select(EntityLink).where(
+        EntityLink.from_type=="document",
+        EntityLink.from_id==document_id,
+        EntityLink.relation_type=="evidence_for",
+        EntityLink.to_type==to_type,
+    ))
+    return None if link is None else link.to_id
+
+
+def test_contract_number_groups_mortgage_annex_to_same_mortgage():
+    with SessionLocal() as db:
+        mortgage=Mortgage(
+            lender=f"Banco {uuid4().hex[:6]}",
+            remaining_principal=Decimal("100000"),
+            currency="EUR",
+            interest_type="fixed",
+            nominal_rate=Decimal("0.03"),
+            monthly_payment=Decimal("700"),
+            remaining_months=180,
+        )
+        db.add(mortgage);db.flush()
+        source=_document(db,"escritura-hipoteca.pdf")
+        source.document_type="mortgage"
+        annex=_document(db,"anexo-condiciones.pdf")
+        annex.document_type="contract"
+        for document in (source,annex):
+            _fact(db,document.id,"contract_number","HIP-2026-12345")
+        db.add(EntityLink(
+            from_type="document",from_id=source.id,relation_type="evidence_for",
+            to_type="mortgage",to_id=mortgage.id,confidence=Decimal("1"),
+            source_type="user",source_ref=source.id,
+        ))
+        db.flush()
+
+        result=auto_link_document_entity(db,annex)
+        assert result is not None
+        assert result["entity_type"]=="mortgage"
+        assert result["entity_id"]==mortgage.id
+        assert annex.document_type=="mortgage"
+        assert _entity_link_for_test(db,annex.id,"mortgage")==mortgage.id

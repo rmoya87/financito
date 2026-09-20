@@ -123,6 +123,7 @@ def insurance_verdict(session:Session,use_ai:bool=True)->dict:
             "source_document_name":None if document is None else document.file_name,
             "source_document_ids":document_ids,
             "source_documents":[{"id":doc_id,"file_name":documents[doc_id].file_name} for doc_id in document_ids if doc_id in documents],
+            "document_count":len(document_ids),
             "contract":None if contract is None else {
                 "provider_name":contract.provider_name,
                 "renewal_date":None if contract.renewal_date is None else str(contract.renewal_date),
@@ -137,12 +138,40 @@ def insurance_verdict(session:Session,use_ai:bool=True)->dict:
             } for f in row_coverage],
         })
 
-    # Insurance documents that cannot yet project to a policy are first-class missing data.
+    # Insurance evidence is reported per consolidated product, not once per PDF.
     insurance_docs=[d for d in documents.values() if d.document_type=="insurance"]
     projected_doc_ids={doc_id for ids in source_by_policy.values() for doc_id in ids}
+    contract_doc_links=session.scalars(select(EntityLink).where(
+        EntityLink.from_type=="document",
+        EntityLink.relation_type=="evidence_for",
+        EntityLink.to_type=="contract",
+    )).all()
+    docs_by_contract:dict[str,list[str]]={}
+    for link in contract_doc_links:
+        docs_by_contract.setdefault(link.to_id,[]).append(link.from_id)
+    policy_contract_ids={p.contract_id for p in policies_list if p.contract_id}
+    for contract_id in policy_contract_ids:
+        projected_doc_ids.update(docs_by_contract.get(contract_id,[]))
+
+    grouped_incomplete=set()
+    for contract in contracts.values():
+        if contract.contract_type!="insurance" or contract.id in policy_contract_ids:
+            continue
+        doc_ids=[doc_id for doc_id in docs_by_contract.get(contract.id,[]) if doc_id in documents]
+        if not doc_ids:
+            continue
+        grouped_incomplete.update(doc_ids)
+        missing.append({
+            "field":"annual_cost",
+            "label":"Prima/coste de la póliza",
+            "policy_id":None,
+            "document_id":doc_ids[0],
+            "why":f"Esta ficha de seguro reúne {len(doc_ids)} documento(s), pero todavía no consta una prima/coste confirmado. Complétalo una sola vez en la evidencia del producto.",
+        })
+
     for document in insurance_docs:
-        if document.id not in projected_doc_ids:
-            missing.append({"field":"annual_cost","label":"Prima/coste de la póliza","policy_id":None,"document_id":document.id,"why":"Este documento no ha podido generar una póliza porque falta un coste confirmado. Complétalo en Documentos."})
+        if document.id not in projected_doc_ids and document.id not in grouped_incomplete:
+            missing.append({"field":"annual_cost","label":"Prima/coste de la póliza","policy_id":None,"document_id":document.id,"why":"Este documento aún no está vinculado a una ficha de seguro con coste confirmado. Vincúlalo en Documentos o completa la prima."})
 
     linked=[]
     facts=session.scalars(select(ExtractedFact).where(
