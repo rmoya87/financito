@@ -82,7 +82,10 @@ def detect_internal_transfers(session: Session) -> int:
     internal_category = categories["internal_transfer"]
     txs = session.scalars(
         select(Transaction)
-        .where(Transaction.is_internal_transfer.is_(False))
+        .where(
+            Transaction.is_internal_transfer.is_(False),
+            Transaction.user_verified.is_(False),
+        )
         .order_by(Transaction.booking_date, Transaction.id)
     ).all()
     marked: set[str] = set()
