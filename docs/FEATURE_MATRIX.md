@@ -15,6 +15,7 @@ Estado:
 | Vault | OCR + HEIC | OK |
 | Vault | idioma y clasificación | OK |
 | Vault | hechos contractuales con página | PARCIAL |
+| Vault | revisión accionable + proyección de facts confirmados | OK |
 | RAG | chunking con página | OK |
 | RAG | FTS5/BM25 | OK |
 | RAG | embeddings locales | OK |
