@@ -24,7 +24,7 @@ def _cell_date(value)->str:
 _XLSX_DATE_FIELDS={
     "completeddate","transactioncompleted","transactioncompletedutc",
     "fechadefinalizacion","fechadecompletado","fechacompletada",
-    "fecha","date","bookingdate","fechacontable",
+    "fecha","date","bookingdate","fechacontable","fechavalor","valuedate",
     "starteddate","transactionstarted","transactionstartedutc","fechadeinicio",
 }
 _XLSX_AMOUNT_FIELDS={"amount","amountpaymentcurrency","importe","cantidad"}
@@ -82,7 +82,7 @@ def _xlsx(content:bytes)->bytes:
         raw_date=pick(
             "completeddate","transactioncompleted","transactioncompletedutc",
             "fechadefinalizacion","fechadecompletado","fechacompletada",
-            "fecha","date","bookingdate","fechacontable",
+            "fecha","date","bookingdate","fechacontable","fechavalor","valuedate",
             "starteddate","transactionstarted","transactionstartedutc","fechadeinicio",
         )
         amount=pick("amount","amountpaymentcurrency","importe","cantidad")
