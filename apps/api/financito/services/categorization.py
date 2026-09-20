@@ -64,6 +64,9 @@ def ensure_categories(session: Session) -> dict[str, Category]:
 def categorize_transaction(session: Session, tx: Transaction) -> None:
     if tx.user_verified:
         return
+    from .transaction_ops import apply_rule
+    if apply_rule(session, tx):
+        return
     categories = ensure_categories(session)
     text = normalize_text(f"{tx.merchant_raw or ''} {tx.description_raw}")
     if tx.amount > 0:
