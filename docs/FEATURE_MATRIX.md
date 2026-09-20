@@ -108,3 +108,29 @@ Leyenda:
 | Governance | workflow estándar | Core |
 | Governance | no-alucinación | Core |
 | Governance | documentación autoritativa | Core |
+
+
+## Forecasting, resiliencia y operabilidad
+
+| Área | Función | Fase |
+|---|---|---|
+| Forecast | mismo periodo año anterior | F2.5 |
+| Forecast | tendencia + estacionalidad | F2.5 |
+| Forecast | gastos previstos | F2.5 |
+| Forecast | ahorro previsto | F2.5 |
+| Forecast | liquidez prevista | F2.5 |
+| Forecast | intervalos y precisión histórica | F2.5 |
+| Forecast | backtesting MAE/WAPE/bias | F2.5 |
+| Commitments | obligaciones futuras | F2.5 |
+| Resilience | cash runway | F2.5 |
+| Resilience | stress testing | F2.5 |
+| Cost Centers | coste por área/activo | F2.5 |
+| Coverage | duplicidades/huecos | F6 |
+| Graph | relaciones financieras | Core |
+| Decisions | resultado esperado vs real | F6+ |
+| Temporal | as-of reproducible | Core |
+| Investments | tax lots | F4 |
+| Actions | Action Center | F2+ |
+| Integrity | Repair Center | Core |
+| AI Quality | model evaluation gates | Core |
+| Runtime | launcher/supervisor local | F1 |
