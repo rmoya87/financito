@@ -61,6 +61,19 @@ def test_document_classification_language_and_fact_source_page():
         assert all(f.source_section for f in facts)
 
 
+def test_document_classifier_prefers_policy_identity_over_mortgage_reference():
+    insurance_kind,_=classify_document(
+        "Póliza de seguro de hogar. Seguro vinculado a la hipoteca de la vivienda asegurada.",
+        "condiciones-poliza-hogar.pdf",
+    )
+    mortgage_kind,_=classify_document(
+        "FEIN préstamo hipotecario. TIN 2,50 %. Cuota mensual 850 euros.",
+        "fein-bankinter.pdf",
+    )
+    assert insurance_kind=="insurance"
+    assert mortgage_kind=="mortgage"
+
+
 def test_mortgage_fein_extracts_structured_terms():
     text=(
         "FEIN préstamo hipotecario a tipo variable. Índice Euríbor a 12 meses más diferencial del 0,75 %. "
