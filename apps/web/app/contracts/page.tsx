@@ -7,7 +7,7 @@ import {Card} from '@/components/ui/card';
 import {Money} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
 
-type Contract={id:string;provider_name:string;contract_type:string;renewal_date:string|null;cancellation_notice_days:number|null;early_exit_penalty:string|null;annual_cost:string|null;evidence_status:string;source_document_id:string|null};
+type Contract={id:string;provider_name:string;contract_type:string;renewal_date:string|null;cancellation_notice_days:number|null;early_exit_penalty:string|null;annual_cost:string|null;evidence_status:string;source_document_id:string|null;source_document_ids?:string[];document_count?:number};
 type InsightItem={title:string;detail:string;pages:number[];impact?:string};
 type DocInsight={document_id:string;file_name:string;document_type:string;analysis:{summary:string;confidence:string;penalties:InsightItem[];risks:InsightItem[];optimization_opportunities:InsightItem[];negotiation_points:InsightItem[];comparison_requirements:InsightItem[];cross_area_impacts:InsightItem[];missing_information?:InsightItem[]}};
 
@@ -24,14 +24,14 @@ export default function ContractsPage(){
 
     <Card>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><h2 className="font-bold">Contratos estructurados desde documentación</h2><p className="mt-1 text-sm text-[var(--muted)]">Si un importe, fecha, preaviso o penalización no aparece, complétalo dentro del documento origen. No se mantiene una ficha paralela que pueda quedar desactualizada.</p></div>
+        <div><h2 className="font-bold">Contratos estructurados desde documentación</h2><p className="mt-1 text-sm text-[var(--muted)]">Aquí solo aparecen contratos y servicios generales. Seguros e hipoteca se gestionan en sus áreas específicas. Varios documentos del mismo contrato se consolidan en una sola ficha.</p></div>
         <Link className="fin-button" href="/documents/">Añadir o revisar documentos</Link>
       </div>
 
       <div className="mt-4 space-y-3">
         {q.isLoading?<Loading/>:q.error?<ErrorState error={q.error}/>:q.data?.length?q.data.map(c=><div key={c.id} className="rounded-xl bg-[var(--surface-2)] p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div><div className="font-bold">{c.provider_name}</div><div className="text-sm text-[var(--muted)]">{typeLabel[c.contract_type]||c.contract_type} · {evidenceLabel[c.evidence_status]||'Requiere revisión'}</div></div>
+            <div><div className="font-bold">{c.provider_name}</div><div className="text-sm text-[var(--muted)]">{typeLabel[c.contract_type]||c.contract_type} · {evidenceLabel[c.evidence_status]||'Requiere revisión'}{(c.document_count??0)>0?' · '+c.document_count+' documento(s)':''}</div></div>
             <div className="text-right text-sm">{c.annual_cost!==null?<div className="font-semibold"><Money value={c.annual_cost}/>/año</div>:<div className="text-[var(--muted)]">Coste pendiente</div>}</div>
           </div>
           <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
