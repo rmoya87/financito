@@ -1,7 +1,7 @@
 from __future__ import annotations
 from sqlalchemy import text
 from .db import Base,engine
-MIGRATION_VERSION=5
+MIGRATION_VERSION=6
 
 def _fts(conn):
     conn.execute(text("""CREATE VIRTUAL TABLE IF NOT EXISTS document_chunk_fts USING fts5(chunk_id UNINDEXED, document_id UNINDEXED, text, heading, section, tokenize='unicode61 remove_diacritics 2')"""))
