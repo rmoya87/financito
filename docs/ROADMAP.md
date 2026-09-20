@@ -43,15 +43,26 @@ Criterio:
 - CSV/OFX/QIF;
 - cuentas manuales;
 - movimientos;
-- categorías;
+- taxonomía completa;
+- categorización automática;
+- normalización de comercios;
 - reglas;
+- splits;
+- transferencias internas;
+- reembolsos;
+- cola de revisión;
+- anomalías;
 - recurrentes;
 - presupuestos;
+- forecast;
+- analytics;
+- gráficas de decisión;
 - dashboard;
-- net worth básico.
+- net worth básico;
+- data quality center.
 
 Criterio:
-“Puedo entender mis ingresos, gastos y patrimonio sin conexión bancaria.”
+“Todos mis movimientos están explicados o pendientes de revisión explícita, puedo entender en qué gasto, cómo cambia y qué decisiones tienen impacto.”
 
 ## Fase 3 — Open Banking
 
@@ -84,6 +95,20 @@ Criterio:
 - scoring;
 - recomendaciones explicables;
 - historial de tesis.
+
+## Fase 5.5 — Motor de decisiones
+
+- DecisionCase;
+- alternativas;
+- impacto mensual/anual/acumulado;
+- escenarios;
+- sensibilidad;
+- evidencia;
+- confidence de datos;
+- historial de decisiones.
+
+Criterio:
+“Cualquier recomendación importante puede compararse, recalcularse y auditarse.”
 
 ## Fase 6 — Optimización
 
