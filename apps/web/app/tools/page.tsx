@@ -18,6 +18,8 @@ type RatePath={mortgage:MortgageProfile;total_payments:string;total_interest:str
 type Contract={id:string;provider_name:string;contract_type:string;annual_cost:string|null;early_exit_penalty:string|null;evidence_status:string;renewal_date:string|null};
 type Opt={status:string;net_annual_benefit:string|null;break_even_months:string|null};
 type Context={generated_at:string;real_data_only:boolean;liquidity:string;cash_flow_current_month:{start:string;end:string;income:string;expenses:string;savings:string;savings_rate:string|null};cash_flow_last_90_days:{start:string;end:string;income:string;expenses:string;savings:string;savings_rate:string|null;average_monthly_income:string;average_monthly_expenses:string;average_monthly_savings:string};tracked_assets:any[];rules:string[]};
+type SwitchingReadiness={ready:boolean;missing:string[];mortgage:null|{id:string;lender:string;remaining_principal:string;nominal_rate:string;monthly_payment:string;remaining_months:number;subrogation_penalty:{status:string;amount:string|null;formula:string|null;source:any};linked_product_signals:string[]};insurance:{policy_id:string;insurance_type:string;annual_premium:string;provider:string|null;renewal_date:string|null;cancellation_notice_days:number|null;exit_penalty:string|null;evidence_status:string|null;source_document_id:string|null}[];hypotheses:{key:string;label:string}[];rule:string};
+type MarketScan={generated_at:string;current_mortgage_rate_percent:string|null;leads:{source_id:string;provider:string;kind:string;status:string;public_tin_min:number|null;benchmark_difference_pp:number|null;promo_percent:string|null;claims:string[];url:string;retrieved_at:string;requires_personalized_quote:boolean}[];disclaimer:string};
 
 function parseRatePath(raw:string){
   if(!raw.trim())return [];
@@ -37,6 +39,8 @@ export default function ToolsPage(){
   const mortgages=useQuery({queryKey:['mortgages'],queryFn:()=>apiGet<MortgageProfile[]>('/api/v1/mortgages')});
   const contracts=useQuery({queryKey:['contracts'],queryFn:()=>apiGet<Contract[]>('/api/v1/contracts')});
   const context=useQuery({queryKey:['decision-lab-context'],queryFn:()=>apiGet<Context>('/api/v1/decision-lab/context')});
+  const readiness=useQuery({queryKey:['switching-readiness',selectedMortgage],queryFn:()=>apiGet<SwitchingReadiness>('/api/v1/decision-lab/switching-readiness'+(selectedMortgage?'?mortgage_id='+encodeURIComponent(selectedMortgage):''))});
+  const marketScan=useMutation({mutationFn:()=>apiGet<MarketScan>('/api/v1/decision-lab/market-scan')});
   const [selectedMortgage,setSelectedMortgage]=useState('');
   const [mortgageForm,setMortgageForm]=useState(EMPTY_MORTGAGE);
 
@@ -122,6 +126,33 @@ export default function ToolsPage(){
     </Card>
 
     <div className="mt-4 grid gap-4 xl:grid-cols-2">
+      <Card>
+        <h2 className="font-bold">Costes contractuales antes de cambiar</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">Financito resuelve penalizaciones y preavisos desde los PDF confirmados. Si falta un dato material, la comparación queda bloqueada en vez de asumir 0 €.</p>
+        {readiness.isLoading?<div className="mt-3"><Loading/></div>:readiness.error?<div className="mt-3"><ErrorState error={readiness.error}/></div>:readiness.data?<div className="mt-4 space-y-3 text-sm">
+          {readiness.data.mortgage?<div className="rounded-xl bg-[var(--surface-2)] p-3"><strong>{readiness.data.mortgage.lender}</strong><div className="mt-1 text-xs text-[var(--muted)]">Capital {readiness.data.mortgage.remaining_principal} € · TIN {(Number(readiness.data.mortgage.nominal_rate)*100).toFixed(3)}% · penalización subrogación {readiness.data.mortgage.subrogation_penalty.amount===null?'pendiente de confirmar':readiness.data.mortgage.subrogation_penalty.amount+' €'}</div>{readiness.data.mortgage.subrogation_penalty.formula&&<div className="mt-1 text-xs text-[var(--muted)]">{readiness.data.mortgage.subrogation_penalty.formula}</div>}</div>:<EmptyState>No hay hipoteca guardada.</EmptyState>}
+          {readiness.data.insurance.map(p=><div key={p.policy_id} className="rounded-xl bg-[var(--surface-2)] p-3"><strong>Seguro {p.insurance_type}</strong><div className="mt-1 text-xs text-[var(--muted)]">{p.provider||'Proveedor sin identificar'} · {p.annual_premium} €/año · preaviso {p.cancellation_notice_days===null?'desconocido':p.cancellation_notice_days+' días'} · penalización {p.exit_penalty===null?'desconocida':p.exit_penalty+' €'}</div>{p.source_document_id&&<a className="mt-1 inline-block text-xs underline" href={'/documents/?document='+encodeURIComponent(p.source_document_id)}>Ver evidencia</a>}</div>)}
+          <div className={readiness.data.ready?'text-xs':'text-xs font-medium'}>{readiness.data.ready?'Datos contractuales suficientes para comparar escenarios.':'Faltan datos: '+readiness.data.missing.join(' · ')}</div>
+        </div>:null}
+      </Card>
+
+      <Card>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div><h2 className="font-bold">Mercado actual</h2><p className="mt-1 text-sm text-[var(--muted)]">Consulta bajo demanda páginas oficiales de bancos y aseguradoras. Las ofertas públicas se tratan como referencia; una FEIN o presupuesto personalizado es lo que permite calcular ahorro real.</p></div>
+          <button className="fin-button secondary" onClick={()=>marketScan.mutate()} disabled={marketScan.isPending}>{marketScan.isPending?'Consultando…':'Buscar mercado ahora'}</button>
+        </div>
+        {marketScan.error&&<div className="mt-3"><ErrorState error={marketScan.error}/></div>}
+        {marketScan.data&&<div className="mt-4 space-y-2">{marketScan.data.leads.map(x=><div key={x.source_id} className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="flex items-start justify-between gap-3"><div><strong>{x.provider}</strong><div className="text-xs text-[var(--muted)]">{x.kind} · {x.status}</div></div><a className="text-xs underline" href={x.url} target="_blank" rel="noreferrer">Fuente oficial</a></div><div className="mt-2 text-xs">{x.public_tin_min===null?'Sin TIN público fiable extraíble':('TIN público detectado desde '+x.public_tin_min.toFixed(2)+'%')}{x.benchmark_difference_pp!==null?' · diferencia frente a tu TIN: '+x.benchmark_difference_pp.toFixed(2)+' pp':''}{x.promo_percent?' · promoción pública '+x.promo_percent+'%':''}</div><div className="mt-1 text-[11px] text-[var(--muted)]">{x.requires_personalized_quote?'Requiere oferta personalizada para calcular ahorro neto.':''}</div></div>)}
+          <p className="text-xs text-[var(--muted)]">{marketScan.data.disclaimer}</p>
+        </div>}
+      </Card>
+
+      <Card className="xl:col-span-2">
+        <h2 className="font-bold">Hipótesis que Financito debe comparar</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">No se limita a “cambiar de banco”. Se evalúan por separado hipoteca, seguros y uso de liquidez.</p>
+        <div className="mt-3 grid gap-2 md:grid-cols-2">{readiness.data?.hypotheses.map(h=><div key={h.key} className="rounded-xl bg-[var(--surface-2)] p-3 text-sm">{h.label}</div>)}</div>
+      </Card>
+
       <Card className="xl:col-span-2">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
