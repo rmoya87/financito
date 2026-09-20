@@ -28,6 +28,19 @@ El dashboard muestra:
 
 Todos los widgets deben mostrar fecha de actualización cuando el dato no sea instantáneo.
 
+El dashboard debe incluir únicamente visualizaciones que ayuden a decidir. Como mínimo:
+- evolución de ingresos, gastos y ahorro;
+- gasto por categoría;
+- fijos vs variables;
+- presupuesto vs real y forecast;
+- evolución de patrimonio;
+- deuda;
+- cartera/riesgo cuando exista;
+- oportunidades priorizadas;
+- próximas obligaciones.
+
+Las reglas completas de visualización están en VISUALIZATION_AND_INSIGHTS.md.
+
 ## 2. Cuentas
 
 Funciones:
@@ -62,12 +75,25 @@ Campos normalizados:
 - fuente.
 
 Funciones:
-- edición de categoría;
+- categorización automática de todos los movimientos;
+- subcategorización;
+- normalización y agrupación de comercios;
+- edición manual;
 - reglas de categorización;
+- clasificación esencial/importante/discrecional configurable;
+- clasificación fijo/semi-fijo/variable;
+- splits;
+- detección de transferencias internas;
+- relación de reembolsos;
 - detección de duplicados;
+- detección de anomalías;
 - búsqueda y filtros;
 - agrupación por comercio;
-- aprendizaje a partir de correcciones.
+- aprendizaje a partir de correcciones;
+- cola de revisión para baja confianza;
+- trazabilidad de método, confianza y versión.
+
+La taxonomía, prioridad de clasificación y reglas completas se definen en EXPENSES_AND_CATEGORIZATION.md.
 
 ## 4. Recurrentes y suscripciones
 
@@ -370,7 +396,27 @@ Preguntas objetivo:
 
 El chat debe usar tools, RAG y motores financieros. Toda respuesta debe poder mostrar evidencia.
 
-## 20. Memoria y decisiones
+## 20. Motor de decisiones
+
+Toda decisión material debe poder modelarse como un caso con estado actual, alternativas, assumptions, restricciones, fuentes e impacto.
+
+El usuario debe poder comparar:
+- impacto mensual;
+- impacto anual;
+- impacto acumulado por horizonte;
+- liquidez;
+- patrimonio;
+- riesgo;
+- esfuerzo;
+- reversibilidad;
+- fiscalidad cuando aplique;
+- break-even.
+
+No presentar escenarios futuros como certezas.
+
+El comportamiento autoritativo se define en DECISION_ENGINE.md.
+
+## 21. Memoria y decisiones
 
 Guardar por separado:
 - hechos;
@@ -380,7 +426,7 @@ Guardar por separado:
 
 Las preferencias no pueden cambiar datos objetivos.
 
-## 21. Onboarding y configuración inicial
+## 22. Onboarding y configuración inicial
 
 El primer arranque debe guiar al usuario sin exigir integraciones externas.
 
@@ -399,7 +445,7 @@ Wizard:
 
 El usuario puede saltar integraciones y usar Demo Mode.
 
-## 22. Centro de calidad y reconciliación
+## 23. Centro de calidad y reconciliación
 
 Crear una vista específica para detectar y resolver:
 - movimientos duplicados;
@@ -414,7 +460,7 @@ Crear una vista específica para detectar y resolver:
 
 Las correcciones manuales deben conservar auditoría y prevalecer sobre inferencias automáticas hasta que el usuario las cambie.
 
-## 23. Calendario financiero y alertas
+## 24. Calendario financiero y alertas
 
 Crear Financial Calendar con:
 - recibos previstos;
@@ -439,7 +485,7 @@ Alertas locales:
 
 Las notificaciones son locales. No usar servicios push cloud propios.
 
-## 24. Objetivos financieros
+## 25. Objetivos financieros
 
 Permitir crear objetivos:
 - fondo de emergencia;
@@ -460,7 +506,7 @@ Campos:
 
 El sistema puede simular progreso, pero no mover dinero automáticamente.
 
-## 25. Laboratorio de escenarios
+## 26. Laboratorio de escenarios
 
 Crear Scenario Lab para comparar decisiones:
 - ahorrar vs invertir;
@@ -474,7 +520,7 @@ Crear Scenario Lab para comparar decisiones:
 
 Todo escenario debe conservar assumptions y diferenciar datos conocidos de hipótesis.
 
-## 26. Fiscalidad
+## 27. Fiscalidad
 
 Crear Tax Center modular.
 
@@ -492,7 +538,7 @@ La normativa específica por país debe implementarse como módulo versionado po
 
 Nunca presentar una estimación fiscal como declaración oficial.
 
-## 27. Multi-divisa
+## 28. Multi-divisa
 
 Soportar múltiples monedas desde el inicio.
 
@@ -505,7 +551,7 @@ Toda cantidad externa debe conservar:
 
 No reescribir históricos al cambiar el FX actual.
 
-## 28. Propiedad y ámbito familiar
+## 29. Propiedad y ámbito familiar
 
 Aunque la primera versión tenga un único usuario local, cuentas, activos, pasivos y gastos deben poder indicar ownership:
 - personal;
@@ -517,7 +563,7 @@ Esto evita rehacer el modelo si se incorpora visión familiar.
 
 No implica multiusuario remoto.
 
-## 29. Valoración de activos manuales
+## 30. Valoración de activos manuales
 
 Permitir activos no conectables:
 - vivienda;
@@ -536,7 +582,7 @@ Cada valoración:
 
 No actualizar una valoración estimada sin conservar histórico.
 
-## 30. Backup, restore y exportabilidad
+## 31. Backup, restore y exportabilidad
 
 Funciones:
 - backup cifrado local;
@@ -548,7 +594,7 @@ Funciones:
 
 El usuario debe poder recuperar sus datos sin depender de Financito.
 
-## 31. Auditoría y actividad
+## 32. Auditoría y actividad
 
 Crear Activity/Audit Center local:
 - imports;
@@ -563,7 +609,7 @@ Crear Activity/Audit Center local:
 
 No registrar secretos ni contenido sensible innecesario.
 
-## 32. Salud del sistema e integraciones
+## 33. Salud del sistema e integraciones
 
 Crear Health Center:
 - estado DB;
@@ -580,7 +626,7 @@ Crear Health Center:
 
 Debe diferenciar claramente un fallo técnico de un dato desactualizado.
 
-## 33. Gestión de modelos IA locales
+## 34. Gestión de modelos IA locales
 
 Desde Configuración:
 - listar modelos instalados;
@@ -595,7 +641,7 @@ Desde Configuración:
 
 La descarga nunca debe ejecutar código arbitrario del repositorio del modelo.
 
-## 34. Reglas y automatizaciones locales
+## 35. Reglas y automatizaciones locales
 
 Permitir reglas deterministas:
 - categorizar comercio;
@@ -608,7 +654,7 @@ Permitir reglas deterministas:
 
 No permitir reglas que ejecuten transferencias o trading en la primera versión.
 
-## 35. Búsqueda global
+## 36. Búsqueda global
 
 Cmd/Ctrl+K debe localizar:
 - cuentas;
@@ -624,7 +670,7 @@ Cmd/Ctrl+K debe localizar:
 
 La búsqueda semántica se usa donde aporta valor; no sustituye filtros exactos.
 
-## 36. Privacidad, retención y borrado
+## 37. Privacidad, retención y borrado
 
 El usuario debe poder:
 - bloquear Financito;
@@ -639,7 +685,7 @@ El usuario debe poder:
 
 Diferenciar siempre dato original, copia gestionada y derivado.
 
-## 37. Fuera de alcance inicial
+## 38. Fuera de alcance inicial
 
 - ejecución automática de transferencias;
 - trading automático;
