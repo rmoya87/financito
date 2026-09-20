@@ -39,3 +39,13 @@ class CostCenterCreate(BaseModel):
     name:str; center_type:str; metadata:dict={}
 class CoverageCompareRequest(BaseModel):
     left_id:str; right_id:str
+
+
+class CorporateActionCreate(BaseModel):
+    portfolio_id:str
+    security_id:str
+    action_type:str=Field(pattern="^(dividend|split)$")
+    effective_date:date
+    value:Decimal=Field(gt=0)
+    currency:str="EUR"
+    notes:str|None=None
