@@ -8,6 +8,7 @@ from ..models import Account,Contract,Transaction
 from .local_ai import ask,status
 from .financial_analytics import cash_flow
 from .rag import search
+from .evidence import structured_evidence_context
 from .wealth import summary as wealth_summary
 
 def answer(session:Session,question:str)->dict:
@@ -16,8 +17,14 @@ def answer(session:Session,question:str)->dict:
     wealth=wealth_summary(session)
     contracts=session.scalars(select(Contract)).all()
     evidence=search(session,question,limit=6)
-    structured={"period":{"start":str(start),"end":str(today)},"cash_flow":{"income":str(flow["income"]),"expenses":str(flow["expenses"]),"savings":str(flow["savings"])},"wealth":wealth,"contracts":[{"provider":c.provider_name,"type":c.contract_type,"renewal":None if c.renewal_date is None else str(c.renewal_date),"penalty":None if c.early_exit_penalty is None else str(c.early_exit_penalty),"evidence_status":c.evidence_status} for c in contracts]}
-    context=json.dumps(structured,ensure_ascii=False)+"\nEVIDENCIA DOCUMENTAL:\n"+"\n\n".join(f"[{i+1}] {e['document_name']}: {e['text'][:1200]}" for i,e in enumerate(evidence))
+    structured={
+        "period":{"start":str(start),"end":str(today)},
+        "cash_flow":{"income":str(flow["income"]),"expenses":str(flow["expenses"]),"savings":str(flow["savings"])},
+        "wealth":wealth,
+        "contracts":[{"provider":c.provider_name,"type":c.contract_type,"renewal":None if c.renewal_date is None else str(c.renewal_date),"penalty":None if c.early_exit_penalty is None else str(c.early_exit_penalty),"evidence_status":c.evidence_status} for c in contracts],
+        "document_evidence":structured_evidence_context(session),
+    }
+    context=json.dumps(structured,ensure_ascii=False)+"\nFRAGMENTOS DOCUMENTALES RECUPERADOS (pueden requerir revisión):\n"+"\n\n".join(f"[{i+1}] {e['document_name']}: {e['text'][:1200]}" for i,e in enumerate(evidence))
     ai=status()
     if ai["available"] and ai["configured_model"]:
         try:result=ask(question,context)
