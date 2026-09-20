@@ -68,6 +68,6 @@ Estado:
 | Tax | normativa legal versionada por jurisdicción | PENDIENTE |
 | Runtime | launcher local | OK |
 | Runtime | app macOS firmada/notarizada | EXTERNO |
-| Accessibility | objetivo WCAG AA verificado | PENDIENTE |
-| E2E | journeys Playwright | PENDIENTE |
-| Temporal | provenance/freshness por fuente | PARCIAL |
+| Accessibility | axe WCAG AA en journeys core | PARCIAL |
+| E2E | journeys core Playwright | PARCIAL |
+| Temporal | provenance/freshness + wealth as-of conservador | PARCIAL |

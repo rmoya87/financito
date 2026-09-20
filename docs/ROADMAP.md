@@ -18,9 +18,9 @@ La mayor parte del runtime v1 está implementada. Este roadmap enumera trabajo r
 ## Próxima prioridad: calidad y distribución
 
 ### Testing de experiencia
-- Playwright: onboarding, importación, Vault/cita, banking mock, decisión y restore;
-- tests de componentes UI;
-- axe/accessibility en CI;
+- Playwright: ampliar desde los journeys core ya automatizados a importación, Vault/cita, banking mock, decisión y restore;
+- ampliar tests de componentes UI existentes;
+- mantener axe/accessibility en CI y extender cobertura a formularios complejos;
 - datasets RAG de answerable/unanswerable/contradicción.
 
 ### Distribución macOS
@@ -54,9 +54,9 @@ Estas tareas requieren identidad/certificados Apple y no se pueden completar sol
 - news entity-linking e impacto con evaluación.
 
 ## Producto
-- auditoría WCAG AA;
-- Developer Mode/freshness inspector más detallado;
-- as-of universal/reconstrucción temporal;
+- auditoría WCAG AA completa de todas las rutas (las rutas core ya pasan axe en CI);
+- ampliar Developer Mode/freshness a latencias/cache hits por request;
+- extender as-of desde patrimonio/mercado a contratos, deuda y facts versionados;
 - perfiles/reglas multiusuario si se decide ampliar el modelo local single-user.
 
 ## Regla permanente

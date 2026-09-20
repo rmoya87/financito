@@ -176,3 +176,9 @@ Es una estimación parametrizada, no un motor normativo legal por jurisdicción/
 
 ## Compatibilidad
 Los nombres y payloads de OpenAPI son la referencia última. Si este documento y `/api/openapi.json` difieren, debe corregirse la documentación en el mismo cambio.
+
+## Observabilidad y temporalidad
+- `GET /developer/snapshot`: contadores, runtime, freshness y provenance sin valores de secretos.
+- `GET /temporal/wealth?as_of=YYYY-MM-DD`: reconstrucción conservadora del patrimonio conocido a una fecha, con metodología, warnings y componentes desconocidos.
+
+La reconstrucción histórica no reutiliza deuda actual como si fuera histórica. Cuando un componente no dispone de ledger/valoración pasada suficiente, se excluye del total conocido y se marca como desconocido.
