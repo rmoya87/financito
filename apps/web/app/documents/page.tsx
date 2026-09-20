@@ -161,7 +161,7 @@ export default function DocumentsPage(){
       </div>
       {upload.error&&<div className="mt-3"><ErrorState error={upload.error}/></div>}
       {upload.data&&<div className="mt-3 text-sm text-[var(--muted)]">{upload.data.documents.length} documento(s) añadido(s). El análisis de IA local se ejecuta automáticamente en segundo plano.</div>}
-      <details className="mt-4">
+      <details className="mt-4" open>
         <summary className="cursor-pointer text-sm font-medium">Importar manualmente una ruta ya existente en el Vault</summary>
         <form onSubmit={submit} className="mt-3 grid gap-3 md:grid-cols-[1fr_auto]">
         <input
