@@ -1,0 +1,16 @@
+from datetime import date
+from decimal import Decimal
+from financito.domain.engines import CashFlowEngine, MortgageEngine, OptimizationEngine, comparable_period_last_year
+
+def test_cashflow_excludes_internal_transfers():
+    result=CashFlowEngine.calculate([(Decimal("3000"),False),(Decimal("-1000"),False),(Decimal("-500"),True)])
+    assert result.income==Decimal("3000.00") and result.expenses==Decimal("1000.00") and result.savings==Decimal("2000.00")
+
+def test_optimization_requires_penalty_evidence():
+    result=OptimizationEngine.calculate(Decimal("500"),Decimal("0"),None,Decimal("0"),Decimal("0"),Decimal("0")); assert result.status=="needs_more_data" and result.net_annual_benefit is None
+
+def test_mortgage_zero_rate():
+    result=MortgageEngine.amortization(Decimal("120000"),Decimal("0"),120); assert result.monthly_payment==Decimal("1000.00") and result.total_interest==Decimal("0.00")
+
+def test_comparable_leap_day():
+    start,end=comparable_period_last_year(date(2028,2,29),date(2028,3,31)); assert start==date(2027,2,28) and end==date(2027,3,31)
