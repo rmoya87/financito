@@ -117,13 +117,17 @@ def extract_contract_facts(text:str,source_page:int|None=None)->list[dict]:
     return facts
 
 def _derive_facts(session:Session,doc:Document,text_value:str,pages:list[str]|None)->int:
-    session.execute(delete(ExtractedFact).where(ExtractedFact.document_id==doc.id))
+    session.execute(delete(ExtractedFact).where(ExtractedFact.document_id==doc.id,ExtractedFact.user_verified.is_(False)))
+    verified_keys={(r.key,r.source_page) for r in session.scalars(select(ExtractedFact).where(ExtractedFact.document_id==doc.id,ExtractedFact.user_verified.is_(True))).all()}
     lang,lang_conf=detect_language(text_value)
-    session.add(ExtractedFact(document_id=doc.id,fact_type="document_metadata",key="language",value_json=json.dumps({"value":lang},ensure_ascii=False),confidence=str(lang_conf),status="inferred",source_page=1,user_verified=False))
+    if ("language",1) not in verified_keys:
+        session.add(ExtractedFact(document_id=doc.id,fact_type="document_metadata",key="language",value_json=json.dumps({"value":lang},ensure_ascii=False),confidence=str(lang_conf),status="inferred",source_page=1,user_verified=False))
     count=0
     units=list(enumerate(pages,1)) if pages else [(1,text_value)]
     for page_number,body in units:
         for fact in extract_contract_facts(body,page_number):
+            if (fact["key"],fact["source_page"]) in verified_keys:
+                continue
             session.add(ExtractedFact(document_id=doc.id,fact_type=fact["fact_type"],key=fact["key"],value_json=json.dumps({"value":fact["value"],"unit":fact["unit"]},ensure_ascii=False),confidence=str(fact["confidence"]),status="inferred",source_page=fact["source_page"],source_section=fact["source_section"],user_verified=False));count+=1
     return count
 
