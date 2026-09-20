@@ -15,6 +15,7 @@ type Exposure={portfolio_id:string;market_value:string;by_asset_class:{asset_cla
 type Performance={portfolio_id:string;mwr:number|null;twr:number|null;observations:number;coverage:number;current_value:string;first_trade?:string;last_trade?:string;assumptions:string[]};
 type Fit={fit_score:number;proposed_weight:string;post_asset_class_weight:string;post_security_weight:string;components:Record<string,number>;warnings:string[];notice:string};
 type ImportResult={file_name:string;inserted:number;skipped:number;created_securities:number;realized_pnl:string};
+type CorpAction={id:string;security_id:string;action_type:string;effective_date:string;value:string;currency:string;notes:string|null;applied:boolean};
 
 export default function InvestmentsPage(){
   const qc=useQueryClient();
@@ -27,16 +28,19 @@ export default function InvestmentsPage(){
   const [fitSecurity,setFitSecurity]=useState('');
   const [fitWeight,setFitWeight]=useState('0.10');
   const [brokerFile,setBrokerFile]=useState<File|null>(null);
+  const [action,setAction]=useState({security_id:'',action_type:'dividend',effective_date:new Date().toISOString().slice(0,10),value:'',notes:''});
 
   const exposure=useQuery({queryKey:['portfolio-exposure',selectedPortfolio],queryFn:()=>apiGet<Exposure>('/api/v1/portfolios/'+selectedPortfolio+'/exposure'),enabled:!!selectedPortfolio});
   const performance=useQuery({queryKey:['portfolio-performance',selectedPortfolio],queryFn:()=>apiGet<Performance>('/api/v1/portfolios/'+selectedPortfolio+'/performance'),enabled:!!selectedPortfolio});
   const fit=useQuery({queryKey:['portfolio-fit',selectedPortfolio,fitSecurity,fitWeight],queryFn:()=>apiGet<Fit>('/api/v1/portfolios/'+selectedPortfolio+'/fit/'+fitSecurity+'?proposed_weight='+encodeURIComponent(fitWeight)),enabled:!!selectedPortfolio&&!!fitSecurity});
+  const actions=useQuery({queryKey:['corporate-actions',selectedPortfolio],queryFn:()=>apiGet<CorpAction[]>('/api/v1/portfolios/'+selectedPortfolio+'/corporate-actions'),enabled:!!selectedPortfolio});
 
   const addP=useMutation({mutationFn:()=>apiMutate('/api/v1/portfolios','POST',{name:pn,base_currency:'EUR'}),onSuccess:()=>qc.invalidateQueries({queryKey:['portfolios']})});
   const addS=useMutation({mutationFn:()=>apiMutate('/api/v1/securities','POST',{...sec,currency:'EUR',isin:null}),onSuccess:()=>qc.invalidateQueries({queryKey:['securities']})});
   const addT=useMutation({mutationFn:()=>apiMutate('/api/v1/trades','POST',{...trade,fx_rate:'1',currency:'EUR',executed_at:new Date(trade.executed_at).toISOString()}),onSuccess:()=>{qc.invalidateQueries({queryKey:['portfolios']});qc.invalidateQueries({queryKey:['portfolio-exposure']});qc.invalidateQueries({queryKey:['portfolio-performance']})}});
   const refresh=useMutation({mutationFn:(securityId:string)=>apiMutate('/api/v1/market/security/'+securityId+'/refresh?include_history=true','POST'),onSuccess:()=>{qc.invalidateQueries({queryKey:['portfolios']});qc.invalidateQueries({queryKey:['portfolio-exposure']});qc.invalidateQueries({queryKey:['portfolio-performance']})}});
   const broker=useMutation<ImportResult>({mutationFn:async()=>{if(!brokerFile||!selectedPortfolio)throw new Error('Selecciona cartera y CSV');const form=new FormData();form.append('file',brokerFile);return apiUpload<ImportResult>('/api/v1/portfolios/'+selectedPortfolio+'/imports/broker',form)},onSuccess:()=>{qc.invalidateQueries({queryKey:['portfolios']});qc.invalidateQueries({queryKey:['securities']});qc.invalidateQueries({queryKey:['portfolio-exposure']});qc.invalidateQueries({queryKey:['portfolio-performance']})}});
+  const addAction=useMutation({mutationFn:()=>apiMutate('/api/v1/portfolios/'+selectedPortfolio+'/corporate-actions','POST',{portfolio_id:selectedPortfolio,...action,currency:'EUR',notes:action.notes||null}),onSuccess:()=>{setAction({...action,value:'',notes:''});qc.invalidateQueries({queryKey:['corporate-actions',selectedPortfolio]});qc.invalidateQueries({queryKey:['portfolios']});qc.invalidateQueries({queryKey:['portfolio-performance',selectedPortfolio]})}});
 
   return <>
     <PageHeader title="Inversiones" description="Carteras, FIFO, importación de broker, valoración, performance y concentración. Los indicadores de fit no son recomendaciones de inversión."/>
@@ -82,6 +86,21 @@ export default function InvestmentsPage(){
         <button className="fin-button" disabled={!brokerFile||!selectedPortfolio||broker.isPending} onClick={()=>broker.mutate()}>Importar</button>
       </div>
       {broker.data&&<div className="mt-3 text-sm text-[var(--muted)]">{broker.data.inserted} operaciones nuevas · {broker.data.skipped} omitidas · {broker.data.created_securities} activos creados · P&L realizado importado <Money value={broker.data.realized_pnl}/></div>}
+    </Card>
+
+    <Card className="mt-4">
+      <h2 className="font-bold">Dividendos y splits</h2>
+      <p className="mt-1 text-sm text-[var(--muted)]">Para dividendos, el valor es el efectivo total recibido. Para splits, el valor es el ratio nuevas/antiguas (2 para 2:1, 0.5 para 1:2). Al guardar se reconstruyen FIFO y posiciones cronológicamente.</p>
+      <form className="mt-3 grid gap-2 md:grid-cols-5" onSubmit={(e:FormEvent)=>{e.preventDefault();addAction.mutate()}}>
+        <select aria-label="Cartera de corporate action" className="fin-input" value={selectedPortfolio} onChange={e=>setSelectedPortfolio(e.target.value)}><option value="">Cartera…</option>{ps.data?.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select>
+        <select aria-label="Activo de corporate action" className="fin-input" value={action.security_id} onChange={e=>setAction({...action,security_id:e.target.value})}><option value="">Activo…</option>{ss.data?.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select>
+        <select aria-label="Tipo de corporate action" className="fin-input" value={action.action_type} onChange={e=>setAction({...action,action_type:e.target.value})}><option value="dividend">Dividendo</option><option value="split">Split</option></select>
+        <input aria-label="Fecha corporate action" type="date" className="fin-input" value={action.effective_date} onChange={e=>setAction({...action,effective_date:e.target.value})}/>
+        <input aria-label={action.action_type==='split'?'Ratio split':'Efectivo recibido'} className="fin-input" value={action.value} onChange={e=>setAction({...action,value:e.target.value})} placeholder={action.action_type==='split'?'Ratio (2 = 2:1)':'Efectivo total'}/>
+        <input aria-label="Notas corporate action" className="fin-input md:col-span-4" value={action.notes} onChange={e=>setAction({...action,notes:e.target.value})} placeholder="Notas / fuente"/>
+        <button className="fin-button" disabled={!selectedPortfolio||!action.security_id||!action.value||addAction.isPending}>Guardar</button>
+      </form>
+      <div className="mt-3 space-y-2">{actions.data?.length?actions.data.map(a=>{const s=ss.data?.find(x=>x.id===a.security_id);return <div key={a.id} className="flex flex-wrap justify-between gap-2 rounded-xl bg-[var(--surface-2)] p-3 text-sm"><span><strong>{a.action_type==='split'?'Split':'Dividendo'}</strong> · {s?.name||a.security_id} · {a.effective_date}</span><span>{a.action_type==='split'?'ratio '+a.value:<Money value={a.value}/>} · {a.applied?'aplicado':'pendiente'}</span></div>}):<EmptyState>Sin dividendos o splits registrados para la cartera seleccionada.</EmptyState>}</div>
     </Card>
 
     <div className="mt-4 space-y-4">
