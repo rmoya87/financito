@@ -24,6 +24,7 @@ from .services.wealth import summary as wealth_summary
 from .services.financial_analytics import cash_flow
 from .services.snapshots import record_snapshot
 from .services.decision_context import live_decision_context,mortgage_row
+from .services.contractual_costs import resolve_prepayment_penalty,switching_readiness
 from .services.investment_tracking import save_tracked_asset,tracked_assets
 from .services.broker_import import import_broker_csv
 from .services.corporate_actions import add_action,list_actions
@@ -43,6 +44,10 @@ def _document_sources(db:Session,to_type:str)->dict[str,str]:
         EntityLink.to_type==to_type,
     )).all()
     return {link.to_id:link.from_id for link in links}
+
+@router.get("/decision-lab/switching-readiness")
+def decision_lab_switching_readiness(mortgage_id:str|None=None,db:Session=Depends(dbdep)):
+    return switching_readiness(db,mortgage_id)
 
 @router.get("/decision-lab/context")
 def decision_lab_context(db:Session=Depends(dbdep)):
@@ -101,15 +106,22 @@ def mortgage_current(p:StoredMortgageScenarioRequest,db:Session=Depends(dbdep)):
 def mortgage_prepayment_real(p:StoredMortgagePrepaymentRequest,db:Session=Depends(dbdep)):
     r=db.get(Mortgage,p.mortgage_id)
     if not r:raise HTTPException(404,"Mortgage not found")
-    if r.early_repayment_fee is None:
-        raise HTTPException(409,"Falta la comisión total de amortización anticipada de la hipoteca guardada")
+    penalty=resolve_prepayment_penalty(db,r,p.extra_payment)
+    if penalty["amount"] is None:
+        raise HTTPException(409,"Falta confirmar en la documentación la comisión/fórmula de amortización anticipada")
     result=MortgagePrepaymentEngine.compare(
-        r.remaining_principal,r.nominal_rate,r.remaining_months,p.extra_payment,r.early_repayment_fee
+        r.remaining_principal,r.nominal_rate,r.remaining_months,p.extra_payment,penalty["amount"]
     )
     return {
         "mortgage":mortgage_row(r),
         **{k:(str(v) if not isinstance(v,int) else v) for k,v in result.__dict__.items()},
-        "source":"saved_mortgage",
+        "source":"saved_mortgage+confirmed_contract_evidence",
+        "penalty_trace":{
+            "status":penalty["status"],
+            "amount":str(penalty["amount"]),
+            "formula":penalty["formula"],
+            "source":penalty["source"],
+        },
         "assumption":{"extra_payment":str(p.extra_payment)},
     }
 
