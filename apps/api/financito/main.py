@@ -106,7 +106,7 @@ def create_account(payload: AccountCreate, db: Session = Depends(get_db)):
 
 
 @app.get("/api/v1/transactions", response_model=list[TransactionOut])
-def transactions(account_id:str|None=None,start:date|None=None,end:date|None=None,limit:int=Query(200,ge=1,le=1000),db:Session=Depends(get_db)):
+def transactions(account_id:str|None=None,start:date|None=None,end:date|None=None,limit:int=Query(200,ge=1,le=5000),db:Session=Depends(get_db)):
     stmt=select(Transaction).order_by(Transaction.booking_date.desc(),Transaction.created_at.desc()).limit(limit)
     if account_id: stmt=stmt.where(Transaction.account_id==account_id)
     if start: stmt=stmt.where(Transaction.booking_date>=start)
