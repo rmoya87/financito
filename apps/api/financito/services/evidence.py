@@ -202,20 +202,32 @@ def auto_link_document_entity(session: Session, document: Document) -> dict | No
             if _normalize_identity(_payload(fact).get("value")) != policy_number:
                 continue
             link = _entity_link(session, fact.document_id, "insurance_policy")
-            if link is None:
-                continue
             document.document_type = "insurance"
-            _add_evidence_link(
-                session, document.id, "insurance_policy", link.to_id,
-                confidence=Decimal("0.98"), source_type="document_identity",
-            )
-            policy = session.get(InsurancePolicy, link.to_id)
-            if policy and policy.contract_id:
+            if link is not None:
                 _add_evidence_link(
-                    session, document.id, "contract", policy.contract_id,
+                    session, document.id, "insurance_policy", link.to_id,
                     confidence=Decimal("0.98"), source_type="document_identity",
                 )
-            return {"entity_type": "insurance_policy", "entity_id": link.to_id, "matched_by": "policy_number"}
+                policy = session.get(InsurancePolicy, link.to_id)
+                if policy and policy.contract_id:
+                    _add_evidence_link(
+                        session, document.id, "contract", policy.contract_id,
+                        confidence=Decimal("0.98"), source_type="document_identity",
+                    )
+                return {"entity_type": "insurance_policy", "entity_id": link.to_id, "matched_by": "policy_number"}
+
+            # A policy may not exist yet when the first files only contain
+            # general conditions/mediator information. Keep them together on
+            # the same insurance contract until a later document confirms a
+            # premium and the single policy can be projected.
+            contract_link = _entity_link(session, fact.document_id, "contract")
+            contract = session.get(Contract, contract_link.to_id) if contract_link else None
+            if contract is not None and contract.contract_type == "insurance":
+                _add_evidence_link(
+                    session, document.id, "contract", contract.id,
+                    confidence=Decimal("0.96"), source_type="document_identity",
+                )
+                return {"entity_type": "contract", "entity_id": contract.id, "matched_by": "policy_number"}
 
     contract_number = identities.get("contract_number")
     if contract_number:
