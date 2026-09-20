@@ -2,7 +2,7 @@
 
 **Financito** es una plataforma financiera personal 360º, local-first y orientada a privacidad. Centraliza cuentas, movimientos, documentos, contratos, seguros, hipoteca, patrimonio, inversiones, bolsa, criptomonedas, noticias financieras y oportunidades de optimización, utilizando IA local como capa de comprensión y motores deterministas como fuente de verdad financiera.
 
-> Estado: **base documental y arquitectura funcional inicial**. La documentación de `/docs` es la fuente de verdad para la implementación.
+> Estado: **baseline funcional y técnico v1 cerrado para iniciar implementación**. La documentación de `/docs` y `AGENTS.md` es la fuente de verdad. El código ejecutable de las fases todavía debe implementarse siguiendo este contrato.
 
 ## Principios
 
