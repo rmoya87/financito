@@ -216,3 +216,19 @@ class BackupRecord(Base):
     created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=utcnow)
     verified_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
     format_version:Mapped[int]=mapped_column(Integer,default=1)
+
+
+class CorporateAction(Base,TimestampMixin):
+    __tablename__="corporate_action"
+    __table_args__=(UniqueConstraint("portfolio_id","security_id","action_type","effective_date","source_ref",name="uq_corporate_action_source"),)
+    id:Mapped[str]=mapped_column(String(36),primary_key=True,default=uuid_str)
+    portfolio_id:Mapped[str]=mapped_column(ForeignKey("portfolio.id",ondelete="CASCADE"),index=True)
+    security_id:Mapped[str]=mapped_column(ForeignKey("security.id",ondelete="CASCADE"),index=True)
+    action_type:Mapped[str]=mapped_column(String(30),index=True)
+    effective_date:Mapped[date]=mapped_column(Date,index=True)
+    value:Mapped[Decimal]=mapped_column(Numeric(24,10))
+    currency:Mapped[str]=mapped_column(String(3),default="EUR")
+    source_type:Mapped[str]=mapped_column(String(40),default="manual")
+    source_ref:Mapped[str|None]=mapped_column(String(255),nullable=True)
+    notes:Mapped[str|None]=mapped_column(Text,nullable=True)
+    applied:Mapped[bool]=mapped_column(Boolean,default=False)
