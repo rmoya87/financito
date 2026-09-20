@@ -155,6 +155,7 @@ def tracked_asset_add(p:TrackedAssetCreate,db:Session=Depends(dbdep)):
             purchase_price=p.purchase_price,
             purchase_date=p.purchase_date,
             fees=p.fees,
+            fx_rate=p.fx_rate,
             currency=p.currency,
             provider_asset_id=p.provider_asset_id,
             notes=p.notes,
