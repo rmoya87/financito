@@ -43,10 +43,23 @@ Errores:
 ## Movimientos
 
 - GET /transactions
+- GET /transactions/{id}
 - PATCH /transactions/{id}
 - POST /transactions/import
+- POST /transactions/{id}/split
+- DELETE /transactions/{id}/split
+- POST /transactions/{id}/verify-category
+- POST /transactions/reclassify
 - GET /transactions/categories
+- GET /transactions/review-queue
+- GET /transactions/anomalies
+- POST /transactions/anomalies/{id}/resolve
+- GET /merchants
+- PATCH /merchants/{id}
+- GET /transaction-rules
 - POST /transaction-rules
+- PATCH /transaction-rules/{id}
+- DELETE /transaction-rules/{id}
 
 Filtros:
 - from;
@@ -139,3 +152,85 @@ Para análisis:
 ## OpenAPI
 
 FastAPI es fuente del schema. El frontend debe generar/validar tipos a partir de OpenAPI para reducir drift.
+
+
+## Analytics e insights
+
+- GET /analytics/cash-flow
+- GET /analytics/spending/by-category
+- GET /analytics/spending/by-merchant
+- GET /analytics/spending/fixed-vs-variable
+- GET /analytics/spending/essential-vs-discretionary
+- GET /analytics/spending/trends
+- GET /analytics/budget-vs-actual
+- GET /analytics/net-worth
+- GET /analytics/debt
+- GET /insights
+- POST /insights/refresh
+- POST /insights/{id}/dismiss
+
+Toda agregación para gráficas se calcula en backend/SQL. El frontend no recibe datasets completos si puede recibir series agregadas.
+
+## Presupuestos
+
+- GET /budgets
+- POST /budgets
+- PATCH /budgets/{id}
+- DELETE /budgets/{id}
+- GET /budgets/forecast
+
+## Objetivos
+
+- GET /goals
+- POST /goals
+- PATCH /goals/{id}
+- DELETE /goals/{id}
+- GET /goals/{id}/projection
+
+## Decisiones y escenarios
+
+- POST /decisions
+- GET /decisions
+- GET /decisions/{id}
+- POST /decisions/{id}/recalculate
+- POST /decisions/{id}/alternatives
+- POST /decisions/{id}/select
+- GET /decisions/{id}/impact
+
+Las respuestas deben incluir alternatives, assumptions, calculations, sources, confidence y dataFreshness.
+
+## Data quality
+
+- GET /data-quality/issues
+- POST /data-quality/issues/{id}/resolve
+- POST /data-quality/reconcile
+- GET /data-quality/summary
+
+## Calendar y alertas
+
+- GET /calendar/events
+- GET /alerts
+- PATCH /alerts/{id}
+- POST /alerts/{id}/dismiss
+
+## Sistema local
+
+- GET /system/health
+- GET /system/models
+- POST /system/models/verify
+- GET /system/audit
+- POST /backup
+- POST /restore
+- POST /export
+
+## Convención monetaria
+
+Importes monetarios críticos viajan como decimal string o formato tipado acordado, nunca como float de precisión no controlada.
+
+## Convención de paginación
+
+Para colecciones grandes usar cursor pagination. Evitar offset profundo salvo datasets pequeños.
+
+## Idempotencia
+
+Imports, sincronizaciones, reindexados y operaciones repetibles deben aceptar o generar idempotency keys cuando exista riesgo de duplicación.
