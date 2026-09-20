@@ -5,7 +5,7 @@ test.describe.configure({mode:'serial'});
 
 async function expectAccessible(page:import('@playwright/test').Page){
   const result=await new AxeBuilder({page})
-    .withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa'])
+    .withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22a','wcag22aa'])
     .analyze();
   expect(result.violations,JSON.stringify(result.violations,null,2)).toEqual([]);
 }
@@ -121,7 +121,7 @@ test('todas las rutas principales pasan auditoría WCAG AA automatizada',async({
   await page.route('**/api/v1/banking/aspsps?country=ES',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({aspsps:[]})}));
   const routes=[
     '/','/search/','/accounts/','/transactions/','/forecast/','/analytics/','/wealth/','/history/',
-    '/cost-centers/','/investments/','/markets/','/documents/','/contracts/','/insurance/','/tools/',
+    '/cost-centers/','/investments/','/markets/','/tax/','/goals/','/documents/','/contracts/','/insurance/','/tools/',
     '/decisions/','/chat/','/banking/','/actions/','/system/','/settings/','/developer/','/onboarding/'
   ];
   for(const route of routes){
@@ -129,5 +129,27 @@ test('todas las rutas principales pasan auditoría WCAG AA automatizada',async({
     await page.waitForLoadState('networkidle');
     await expect(page.locator('h1')).toBeVisible();
     await expectAccessible(page);
+  }
+});
+
+
+test('skip link y foco de teclado son utilizables',async({page})=>{
+  await page.goto('/');
+  await page.keyboard.press('Tab');
+  const skip=page.getByRole('link',{name:'Saltar al contenido'});
+  await expect(skip).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#main-content')).toBeFocused();
+  const current=page.getByRole('link',{name:'Resumen'});
+  await expect(current).toHaveAttribute('aria-current','page');
+});
+
+test('rutas representativas no provocan scroll horizontal global a 320 CSS px',async({page})=>{
+  await page.setViewportSize({width:320,height:800});
+  for(const route of ['/','/transactions/','/documents/','/tools/','/tax/']){
+    await page.goto(route);
+    await page.waitForLoadState('networkidle');
+    const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>document.documentElement.clientWidth+1);
+    expect(overflow,route).toBe(false);
   }
 });
