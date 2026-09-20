@@ -17,6 +17,7 @@ from .providers.macro import EcbMacroProvider
 from .providers.news import GdeltNewsProvider
 from .services.market_data import history as market_history,portfolio_exposure,refresh_history,refresh_security,security_risk
 from .services.news_analysis import analyze_all,analyze_item,local_news
+from .services.portfolio_analysis import portfolio_fit,portfolio_performance
 
 router=APIRouter(prefix="/api/v1")
 
@@ -281,3 +282,14 @@ def news_local(limit:int=100,db:Session=Depends(dbdep)):
 @router.post("/news/analyze")
 def news_analyze(limit:int=500,db:Session=Depends(dbdep)):
     result=analyze_all(db,limit);db.commit();return result
+
+
+@router.get("/portfolios/{portfolio_id}/performance")
+def portfolio_performance_route(portfolio_id:str,db:Session=Depends(dbdep)):
+    try:return portfolio_performance(db,portfolio_id)
+    except ValueError as exc:raise HTTPException(404,str(exc))
+
+@router.get("/portfolios/{portfolio_id}/fit/{security_id}")
+def portfolio_fit_route(portfolio_id:str,security_id:str,proposed_weight:Decimal=Decimal("0.10"),db:Session=Depends(dbdep)):
+    try:return portfolio_fit(db,portfolio_id,security_id,proposed_weight)
+    except ValueError as exc:raise HTTPException(400,str(exc))
