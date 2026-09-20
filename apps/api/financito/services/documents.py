@@ -140,8 +140,8 @@ def extract_contract_facts(text:str,source_page:int|None=None)->list[dict]:
         if match:
             facts.append({"fact_type":"linked_product","key":key,"value":"mentioned","unit":"boolean_signal","confidence":.62,"source_page":source_page,"source_section":_context(text,match.start(),match.end())})
     for key,pattern in [
-        ("permanence_end_date",r"(?:fin de )?permanencia.{0,100}(\d{1,2}[/-]\d{1,2}[/-]\d{4})"),
-        ("renewal_date",r"renovaci[oó]n.{0,100}(\d{1,2}[/-]\d{1,2}[/-]\d{4})"),
+        ("permanence_end_date",r"(?:fin de )?permanencia.{0,100}?(\d{1,2}[/-]\d{1,2}[/-]\d{4})"),
+        ("renewal_date",r"renovaci[oó]n.{0,100}?(\d{1,2}[/-]\d{1,2}[/-]\d{4})"),
     ]:
         for match in re.finditer(pattern,lowered,re.I):
             facts.append({"fact_type":"contract_term","key":key,"value":match.group(1),"unit":"date","confidence":.70,"source_page":source_page,"source_section":_context(text,match.start(),match.end())})
