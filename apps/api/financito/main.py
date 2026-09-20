@@ -30,7 +30,7 @@ from .routes_privacy import router as privacy_router
 from .routes_observability import router as observability_router
 from .services.vault_watcher import VaultWatcher
 from .services.categorization import ensure_categories,propagate_verified_merchant
-from .services.transaction_ops import apply_category_semantics,detect_internal_transfers,detect_refunds
+from .services.transaction_ops import apply_category_semantics,detect_internal_transfers,detect_refunds,synchronize_transaction_semantics
 from .services.documents import index_document,reprocess_document,safe_path,store_uploaded_document
 from .services.evidence import review_summary,synchronize_all_document_evidence,synchronize_document_evidence
 from .services.document_ai import analyze_document_by_id,domain_insights,latest_analysis
@@ -49,6 +49,7 @@ async def lifespan(_: FastAPI):
     migrate()
     with SessionLocal() as db:
         ensure_categories(db)
+        synchronize_transaction_semantics(db)
         synchronize_all_document_evidence(db)
         db.commit()
     watcher=VaultWatcher(); watcher.start()
