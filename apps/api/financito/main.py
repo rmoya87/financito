@@ -17,9 +17,10 @@ from .db import SessionLocal
 from .migrations import migrate,MIGRATION_VERSION
 from .domain.engines import MortgageEngine, MortgagePrepaymentEngine, MortgageRatePathEngine, OptimizationEngine
 from .services.financial_analytics import cash_flow,category_spending
-from .models import Account, ActionItem, AuditEvent, Budget, CategorizationAudit, Category, Commitment, Document, ExtractedFact, Mortgage, Transaction
+from .models import Account, ActionItem, AuditEvent, Budget, CategorizationAudit, Category, Commitment, Contract, Document, ExtractedFact, Mortgage, Transaction
 from .models_analytics import EntityLink
-from .schemas import AccountCreate, AccountOut, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentIndexRequest, DocumentMortgageLinkUpdate, FactUpdate, ForecastRequest, ManualFactCreate, MortgageScenarioRequest, MortgagePrepaymentRequest, MortgageRatePathRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
+from .models_extended import InsurancePolicy
+from .schemas import AccountCreate, AccountOut, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentEntityLinkUpdate, DocumentIndexRequest, DocumentMortgageLinkUpdate, FactUpdate, ForecastRequest, ManualFactCreate, MortgageScenarioRequest, MortgagePrepaymentRequest, MortgageRatePathRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
 from .security import LocalSecurityMiddleware, create_session
 from .routes_extended import router as extended_router
 from .routes_analytics import router as analytics_router
@@ -32,7 +33,7 @@ from .services.vault_watcher import VaultWatcher
 from .services.categorization import ensure_categories,propagate_verified_merchant
 from .services.transaction_ops import apply_category_semantics,detect_internal_transfers,detect_refunds,pair_internal_transfer_counterpart,set_category_for_same_concept,synchronize_transaction_semantics
 from .services.documents import index_document,reprocess_document,safe_path,store_uploaded_document
-from .services.evidence import review_summary,synchronize_all_document_evidence,synchronize_document_evidence
+from .services.evidence import confirm_document_coherent_evidence,confirm_entity_coherent_evidence,link_document_to_entity,review_summary,synchronize_all_document_evidence,synchronize_document_evidence
 from .services.document_ai import analyze_document_by_id,domain_insights,latest_analysis
 from .services.forecast import forecast
 from .services.month_end import month_end_projection
