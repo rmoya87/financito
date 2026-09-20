@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta
 from contextlib import asynccontextmanager
 from decimal import Decimal
 import json
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
@@ -25,7 +26,7 @@ from .routes_domain import router as domain_router
 from .routes_config import router as config_router
 from .services.vault_watcher import VaultWatcher
 from .services.categorization import ensure_categories
-from .services.documents import index_document
+from .services.documents import index_document,reprocess_document,safe_path
 from .services.forecast import forecast
 from .services.imports import import_csv
 from .services.local_ai import status as ai_status
@@ -179,7 +180,25 @@ def documents(db:Session=Depends(get_db)):
 @app.get("/api/v1/documents/{document_id}/facts")
 def document_facts(document_id:str,db:Session=Depends(get_db)):
     rows=db.scalars(select(ExtractedFact).where(ExtractedFact.document_id==document_id)).all()
-    return [{"id":r.id,"key":r.key,"value":json.loads(r.value_json),"confidence":str(r.confidence),"status":r.status,"user_verified":r.user_verified} for r in rows]
+    return [{"id":r.id,"fact_type":r.fact_type,"key":r.key,"value":json.loads(r.value_json),"confidence":str(r.confidence),"status":r.status,"source_page":r.source_page,"source_section":r.source_section,"user_verified":r.user_verified} for r in rows]
+
+
+@app.post("/api/v1/documents/{document_id}/reprocess")
+def reprocess_doc(document_id:str,db:Session=Depends(get_db)):
+    row=db.get(Document,document_id)
+    if not row: raise HTTPException(404,"Document not found")
+    try: indexed=reprocess_document(db,row)
+    except (FileNotFoundError,ValueError) as exc: raise HTTPException(400,str(exc))
+    db.add(AuditEvent(event_type="document_reprocessed",entity_type="document",entity_id=row.id));db.commit()
+    return {"id":row.id,"document_type":row.document_type,"facts_created":indexed.facts_created,"chunks_created":indexed.chunks_created}
+
+@app.get("/api/v1/documents/{document_id}/file")
+def document_file(document_id:str,db:Session=Depends(get_db)):
+    row=db.get(Document,document_id)
+    if not row: raise HTTPException(404,"Document not found")
+    try: path=safe_path(Path(row.file_path))
+    except (FileNotFoundError,ValueError) as exc: raise HTTPException(404,str(exc))
+    return FileResponse(path,media_type=row.mime_type or "application/octet-stream",filename=row.file_name,content_disposition_type="inline")
 
 
 @app.patch("/api/v1/facts/{fact_id}")
