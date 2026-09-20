@@ -254,6 +254,31 @@ def auto_link_document_entity(session: Session, document: Document) -> dict | No
 
 
 
+def create_document_evidence_group(session: Session, document: Document) -> dict:
+    """Create an explicit grouping shell without inventing financial facts."""
+    if document.document_type not in {"insurance", "contract", "loan", "energy", "telecom"}:
+        raise ValueError("Este tipo de documento no admite una ficha contractual provisional")
+    existing = _entity_link(session, document.id, "contract")
+    if existing is not None:
+        return {"entity_type": "contract", "entity_id": existing.to_id}
+
+    contract = Contract(
+        provider_name=_label(document),
+        contract_type=document.document_type,
+        currency="EUR",
+        evidence_status="needs_more_data",
+    )
+    session.add(contract)
+    session.flush()
+    _add_evidence_link(
+        session, document.id, "contract", contract.id,
+        confidence=Decimal("1"), source_type="user_group",
+    )
+    session.flush()
+    synchronize_document_evidence(session, document)
+    return {"entity_type": "contract", "entity_id": contract.id}
+
+
 def _cleanup_orphan_projection(
     session: Session, entity_type: str, entity_id: str, source_type: str
 ) -> None:
