@@ -9,6 +9,8 @@ from financito.models import Account, Transaction
 from financito.models_analytics import TransactionRule
 from financito.services.categorization import ensure_categories
 from financito.services.financial_analytics import cash_flow
+from financito.services.month_end import month_end_projection
+from financito.services.tax import estimate as tax_estimate
 from financito.services.imports import import_csv
 from financito.services.transaction_ops import (
     apply_category_semantics,
@@ -142,3 +144,21 @@ def test_transfer_detector_does_not_reclassify_salary_pair():
         assert salary.is_internal_transfer is False
         flow=cash_flow(db,date(2040,1,6),date(2040,1,6))
         assert flow["income"]==Decimal("2000.00")
+
+
+def test_salary_semantics_are_consistent_in_month_end_and_tax():
+    with SessionLocal() as db:
+        account=_account(db)
+        import_csv(db,account.id,_csv("07/01/2040","NOMINA EMPRESA","1800,00","EMPRESA"),"salary-cross-sections.csv")
+        categories=ensure_categories(db)
+        tx=db.scalar(select(Transaction).where(Transaction.account_id==account.id,Transaction.booking_date==date(2040,1,7)))
+        tx.category_id=categories["salary"].id
+        tx.is_internal_transfer=True
+        db.flush()
+
+        closing=month_end_projection(db,date(2040,1,15))
+        assert Decimal(closing["actual_to_date"]["income"])==Decimal("1800.00")
+
+        tax=tax_estimate(db,"ES",2040)
+        assert Decimal(tax["known_information"]["employment_income"])==Decimal("1800.00")
+        assert tax["known_information"]["employment_income_source"]=="nóminas categorizadas"
