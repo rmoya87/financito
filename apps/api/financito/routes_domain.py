@@ -4,7 +4,7 @@ from decimal import Decimal
 import json
 from pydantic import BaseModel,Field
 from fastapi import APIRouter,Depends,HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete,select
 from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .domain.risk import risk_metrics
@@ -141,6 +141,15 @@ def add_decision(p:DecisionIn,db:Session=Depends(dbdep)):
     snapshot={"captured_from":"live_financito_data","context":live}
     if p.current_state:snapshot["user_input"]=p.current_state
     r=DecisionCase(decision_type=p.decision_type,question=p.question,current_state_json=json.dumps(snapshot),assumptions_json=json.dumps(p.assumptions),constraints_json=json.dumps(p.constraints),calculation_version="real-context-v1",status="draft");db.add(r);db.commit();return {"id":r.id}
+@router.delete("/decisions/{decision_id}")
+def delete_decision(decision_id:str,db:Session=Depends(dbdep)):
+    row=db.get(DecisionCase,decision_id)
+    if not row:raise HTTPException(404,"Decision not found")
+    db.execute(delete(DecisionOutcome).where(DecisionOutcome.decision_case_id==decision_id))
+    db.execute(delete(DecisionAlternative).where(DecisionAlternative.decision_case_id==decision_id))
+    db.delete(row);db.commit()
+    return {"deleted":decision_id}
+
 @router.post("/decisions/{decision_id}/alternatives")
 def add_alt(decision_id:str,p:AlternativeIn,db:Session=Depends(dbdep)):
     if not db.get(DecisionCase,decision_id):raise HTTPException(404,"Decision not found")
