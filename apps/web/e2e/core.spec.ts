@@ -60,7 +60,7 @@ test('cuenta e importación de extracto funcionan de extremo a extremo',async({p
   await page.getByRole('button',{name:'Importar extracto'}).click();
   await expect(page.getByText(/Importación terminada:/)).toBeVisible();
   await expect(page.getByText(/1 nuevos/)).toBeVisible();
-  await expect(page.getByRole('cell',{name:'Compra E2E',exact:true})).toBeVisible();
+  await expect(page.getByText('Compra E2E',{exact:true})).toBeVisible();
   await expect(page.getByRole('searchbox',{name:'Buscar movimientos'})).toBeVisible();
   await page.getByRole('button',{name:'Ver reglas'}).click();
   await expect(page.getByRole('dialog',{name:'Reglas automáticas'})).toBeVisible();
