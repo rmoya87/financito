@@ -265,14 +265,18 @@ def index_doc(payload:DocumentIndexRequest,db:Session=Depends(get_db)):
 @app.get("/api/v1/documents")
 def documents(db:Session=Depends(get_db)):
     rows=db.scalars(select(Document).order_by(Document.created_at.desc())).all()
-    mortgage_links={
-        link.from_id:link.to_id
-        for link in db.scalars(select(EntityLink).where(
-            EntityLink.from_type=="document",
-            EntityLink.relation_type=="evidence_for",
-            EntityLink.to_type=="mortgage",
-        )).all()
-    }
+    links=db.scalars(select(EntityLink).where(
+        EntityLink.from_type=="document",
+        EntityLink.relation_type=="evidence_for",
+    )).all()
+    by_document:dict[str,list[dict]]={}
+    for link in links:
+        by_document.setdefault(link.from_id,[]).append({
+            "entity_type":link.to_type,
+            "entity_id":link.to_id,
+            "confidence":str(link.confidence),
+            "source_type":link.source_type,
+        })
     return [
         {
             "id":r.id,
@@ -282,54 +286,103 @@ def documents(db:Session=Depends(get_db)):
             "page_count":r.page_count,
             "review":review_summary(db,r.id),
             "ai_analysis":"ready" if latest_analysis(db,r.id) is not None else "not_analyzed",
-            "mortgage_id":mortgage_links.get(r.id),
+            "mortgage_id":next((x["entity_id"] for x in by_document.get(r.id,[]) if x["entity_type"]=="mortgage"),None),
+            "evidence_links":by_document.get(r.id,[]),
         }
         for r in rows
     ]
+
+
+@app.get("/api/v1/evidence-groups")
+def evidence_groups(db:Session=Depends(get_db)):
+    documents={row.id:row for row in db.scalars(select(Document)).all()}
+    links=db.scalars(select(EntityLink).where(
+        EntityLink.from_type=="document",
+        EntityLink.relation_type=="evidence_for",
+    )).all()
+    grouped:dict[tuple[str,str],list[EntityLink]]={}
+    for link in links:
+        grouped.setdefault((link.to_type,link.to_id),[]).append(link)
+
+    contracts={row.id:row for row in db.scalars(select(Contract)).all()}
+    result=[]
+    for policy in db.scalars(select(InsurancePolicy)).all():
+        contract=contracts.get(policy.contract_id or "")
+        docs=grouped.get(("insurance_policy",policy.id),[])
+        provider=contract.provider_name if contract else "Aseguradora pendiente"
+        label=f"Seguro {policy.insurance_type} · {provider}"
+        result.append({
+            "entity_type":"insurance_policy","entity_id":policy.id,"kind":"insurance",
+            "label":label,"provider":provider,"document_count":len(docs),
+            "documents":[{"id":x.from_id,"file_name":documents[x.from_id].file_name} for x in docs if x.from_id in documents],
+        })
+    for mortgage in db.scalars(select(Mortgage).order_by(Mortgage.lender)).all():
+        docs=grouped.get(("mortgage",mortgage.id),[])
+        result.append({
+            "entity_type":"mortgage","entity_id":mortgage.id,"kind":"mortgage",
+            "label":f"Hipoteca · {mortgage.lender}","provider":mortgage.lender,
+            "document_count":len(docs),
+            "documents":[{"id":x.from_id,"file_name":documents[x.from_id].file_name} for x in docs if x.from_id in documents],
+        })
+    for contract in contracts.values():
+        if contract.contract_type in {"insurance","mortgage"}:
+            continue
+        docs=grouped.get(("contract",contract.id),[])
+        result.append({
+            "entity_type":"contract","entity_id":contract.id,"kind":contract.contract_type,
+            "label":f"{contract.provider_name} · {contract.contract_type}",
+            "provider":contract.provider_name,"document_count":len(docs),
+            "documents":[{"id":x.from_id,"file_name":documents[x.from_id].file_name} for x in docs if x.from_id in documents],
+        })
+    return sorted(result,key=lambda x:(x["kind"],x["label"].lower()))
+
+
+@app.put("/api/v1/documents/{document_id}/entity-link")
+def set_document_entity_link(document_id:str,payload:DocumentEntityLinkUpdate,db:Session=Depends(get_db)):
+    document=db.get(Document,document_id)
+    if not document: raise HTTPException(404,"Document not found")
+    try:
+        sync=link_document_to_entity(db,document,payload.entity_type,payload.entity_id)
+    except ValueError as exc:
+        raise HTTPException(400,str(exc))
+    db.add(AuditEvent(
+        event_type="document_entity_link_updated",
+        entity_type="document",
+        entity_id=document_id,
+        metadata_json=json.dumps({"entity_type":payload.entity_type,"entity_id":payload.entity_id}),
+    ))
+    db.commit()
+    return {"document_id":document_id,"entity_type":payload.entity_type,"entity_id":payload.entity_id,"evidence_sync":sync}
 
 
 @app.put("/api/v1/documents/{document_id}/mortgage-link")
 def set_document_mortgage_link(document_id:str,payload:DocumentMortgageLinkUpdate,db:Session=Depends(get_db)):
     document=db.get(Document,document_id)
     if not document: raise HTTPException(404,"Document not found")
-    if document.document_type!="mortgage":
-        raise HTTPException(409,"Solo los documentos hipotecarios pueden vincularse a una hipoteca")
-    links=db.scalars(select(EntityLink).where(
-        EntityLink.from_type=="document",
-        EntityLink.from_id==document_id,
-        EntityLink.relation_type=="evidence_for",
-        EntityLink.to_type=="mortgage",
-    )).all()
-    current_id=links[0].to_id if links else None
-    if payload.mortgage_id==current_id:
-        sync=synchronize_document_evidence(db,document)
-        db.commit()
-        return {"document_id":document_id,"mortgage_id":current_id,"evidence_sync":sync}
-    for link in links:
-        db.delete(link)
-    if payload.mortgage_id:
-        mortgage=db.get(Mortgage,payload.mortgage_id)
-        if not mortgage: raise HTTPException(404,"Mortgage not found")
-        db.add(EntityLink(
-            from_type="document",
-            from_id=document_id,
-            relation_type="evidence_for",
-            to_type="mortgage",
-            to_id=mortgage.id,
-            confidence=Decimal("1"),
-            source_type="user",
-            source_ref=document_id,
-        ))
-        db.flush()
-    sync=synchronize_document_evidence(db,document)
-    db.add(AuditEvent(
-        event_type="document_mortgage_link_updated",
-        entity_type="document",
-        entity_id=document_id,
-        metadata_json=json.dumps({"previous_mortgage_id":current_id,"mortgage_id":payload.mortgage_id}),
-    ))
+    try:
+        sync=link_document_to_entity(db,document,"mortgage",payload.mortgage_id)
+    except ValueError as exc:
+        raise HTTPException(400,str(exc))
     db.commit()
     return {"document_id":document_id,"mortgage_id":payload.mortgage_id,"evidence_sync":sync}
+
+
+@app.post("/api/v1/documents/{document_id}/confirm-coherent")
+def confirm_document_coherent(document_id:str,db:Session=Depends(get_db)):
+    if not db.get(Document,document_id): raise HTTPException(404,"Document not found")
+    result=confirm_document_coherent_evidence(db,document_id)
+    db.commit()
+    return result
+
+
+@app.post("/api/v1/evidence-groups/{entity_type}/{entity_id}/confirm-coherent")
+def confirm_group_coherent(entity_type:str,entity_id:str,db:Session=Depends(get_db)):
+    try:
+        result=confirm_entity_coherent_evidence(db,entity_type,entity_id)
+    except ValueError as exc:
+        raise HTTPException(400,str(exc))
+    db.commit()
+    return result
 
 
 @app.get("/api/v1/documents/{document_id}/facts")
