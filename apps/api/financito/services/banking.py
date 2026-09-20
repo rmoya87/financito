@@ -13,6 +13,7 @@ from ..models_analytics import BankingAccountLink,BankingConnection
 from ..providers.enable_banking import EnableBankingProvider
 from .categorization import categorize_transaction,normalize_text
 from .snapshots import record_snapshot
+from .transaction_ops import detect_internal_transfers,detect_refunds
 
 def _dt(value:str|None)->datetime|None:
     if not value:
@@ -222,10 +223,12 @@ def sync_connection(session:Session,connection_id:str,provider:EnableBankingProv
                 break
         account.sync_status="synced"
         link.last_sync_at=datetime.now(timezone.utc)
-    session.add(AuditEvent(event_type="banking_connection_synced",entity_type="banking_connection",entity_id=connection.id,metadata_json=json.dumps({"inserted":inserted,"skipped":skipped,"accounts":len(links)})))
+    transfer_pairs=detect_internal_transfers(session)
+    refunds=detect_refunds(session)
+    session.add(AuditEvent(event_type="banking_connection_synced",entity_type="banking_connection",entity_id=connection.id,metadata_json=json.dumps({"inserted":inserted,"skipped":skipped,"accounts":len(links),"transfer_pairs":transfer_pairs,"refunds":refunds})))
     _ensure_consent_action(session,connection)
     session.flush()
-    return {"connection_id":connection.id,"status":connection.status,"inserted":inserted,"skipped":skipped,"accounts":len(links),"consent_expires_at":connection.consent_expires_at}
+    return {"connection_id":connection.id,"status":connection.status,"inserted":inserted,"skipped":skipped,"accounts":len(links),"transfer_pairs":transfer_pairs,"refunds":refunds,"consent_expires_at":connection.consent_expires_at}
 
 def close_connection(session:Session,connection_id:str,provider:EnableBankingProvider|None=None)->dict:
     provider=provider or EnableBankingProvider()
