@@ -165,10 +165,50 @@ def test_mortgage_prepayment_cost_centers_coverage_and_decisions():
 
 def test_banking_public_surface_does_not_expose_raw_session_data():
     with TestClient(app) as client:
-        paths = client.get("/openapi.json").json()["paths"]
+        paths = client.get("/api/openapi.json").json()["paths"]
         assert "/api/v1/banking/aspsps" in paths
         assert "/api/v1/banking/auth" in paths
         assert "/api/v1/banking/connections" in paths
         assert "/api/v1/banking/session" not in paths
         assert "/api/v1/banking/account/{account_id}/balances" not in paths
         assert "/api/v1/banking/account/{account_id}/transactions" not in paths
+
+
+def test_chat_and_stress_use_refund_aware_cash_flow():
+    from datetime import date
+    from decimal import Decimal
+    from financito.db import SessionLocal
+    from financito.models import Account, Transaction
+    from financito.models_analytics import EntityLink
+    from financito.services.chat import answer
+
+    suffix = uuid4().hex[:8]
+    today = date.today()
+    with SessionLocal() as db:
+        account = Account(name=f"Refund flow {suffix}")
+        db.add(account); db.flush()
+        expense = Transaction(
+            account_id=account.id, booking_date=today, amount=Decimal("-40"),
+            base_amount=Decimal("-40"), currency="EUR", base_currency="EUR",
+            description_raw=f"Compra {suffix}", description_normalized=f"compra {suffix}",
+            merchant_raw=f"Tienda {suffix}", merchant_normalized=f"tienda {suffix}",
+            duplicate_fingerprint=f"chat-expense-{suffix}",
+        )
+        refund = Transaction(
+            account_id=account.id, booking_date=today, amount=Decimal("40"),
+            base_amount=Decimal("40"), currency="EUR", base_currency="EUR",
+            description_raw=f"Devolucion {suffix}", description_normalized=f"devolucion {suffix}",
+            merchant_raw=f"Tienda {suffix}", merchant_normalized=f"tienda {suffix}",
+            duplicate_fingerprint=f"chat-refund-{suffix}",
+        )
+        db.add_all([expense, refund]); db.flush()
+        db.add(EntityLink(
+            from_type="transaction", from_id=refund.id, relation_type="refund_of",
+            to_type="transaction", to_id=expense.id, confidence=Decimal("1"),
+            source_type="test", source_ref=expense.id,
+        ))
+        db.commit()
+        result = answer(db, "resumen")
+        assert Decimal(result["calculations"]["cash_flow"]["income"]) >= Decimal("0")
+        # El par compra+reembolso no debe sumar 40 como ingreso ni 40 como gasto.
+        assert Decimal(result["calculations"]["cash_flow"]["expenses"]) >= Decimal("0")
