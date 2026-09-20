@@ -142,6 +142,10 @@ beneficio_neto =
 
 Además calcula break-even y compara calidad/coberturas/prestaciones equivalentes.
 
+## Reglas para agentes
+
+Antes de modificar el repositorio, cualquier agente de IA debe leer [AGENTS.md](AGENTS.md). Las reglas detalladas de implementación, no-alucinación, pruebas y documentación están versionadas dentro del repositorio.
+
 ## Documentación
 
 - [Especificación funcional](docs/FUNCTIONAL_SPEC.md)
@@ -152,6 +156,13 @@ Además calcula break-even y compara calidad/coberturas/prestaciones equivalente
 - [Modelo de seguridad estricto](docs/SECURITY_MODEL.md)
 - [Ciclo de vida de datos](docs/DATA_LIFECYCLE.md)
 - [Rendimiento](docs/PERFORMANCE.md)
+- [Gastos y categorización](docs/EXPENSES_AND_CATEGORIZATION.md)
+- [Visualizaciones e insights](docs/VISUALIZATION_AND_INSIGHTS.md)
+- [Motor de decisiones](docs/DECISION_ENGINE.md)
+- [Reglas de IA para ingeniería](docs/AI_ENGINEERING_RULES.md)
+- [Flujo estándar de desarrollo](docs/DEVELOPMENT_WORKFLOW.md)
+- [Gobierno documental](docs/DOCUMENTATION_GOVERNANCE.md)
+- [Glosario](docs/GLOSSARY.md)
 - [Arquitectura](docs/ARCHITECTURE.md)
 - [Estructura del repositorio](docs/REPOSITORY_STRUCTURE.md)
 - [Modelo de datos](docs/DATA_MODEL.md)
