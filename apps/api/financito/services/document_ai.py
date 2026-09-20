@@ -396,7 +396,7 @@ REGLAS OBLIGATORIAS:
 - Señala impactos cruzados: por ejemplo, quitar un seguro puede encarecer una hipoteca.
 - No decidas por el usuario. Explica oportunidades y riesgos de forma neutral.
 - Los hechos con status=confirmed y user_verified=true son confirmados. Los demás son indicios.
-- En proposed_material_facts incluye SOLO condiciones numéricas/textuales explícitas de estas claves: ${Array.from(ALLOWED_MATERIAL_FACT_KEYS).sort().join(', ')}.
+- En proposed_material_facts incluye SOLO condiciones numéricas/textuales explícitas de estas claves: {', '.join(sorted(ALLOWED_MATERIAL_FACT_KEYS))}.
 - Cada proposed_material_fact requiere una página concreta; si no puedes citarla, no lo propongas.
 - En coverage_facts incluye SOLO coberturas explícitas del seguro, con página concreta. No inventes límites, franquicias, condiciones ni exclusiones ausentes.
 - Devuelve SOLO JSON válido.
