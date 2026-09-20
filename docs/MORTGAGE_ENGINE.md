@@ -1,45 +1,59 @@
 # Mortgage Engine
 
-## Implementado
+## Motores disponibles
 
 ### Amortización estándar
-Input:
-- principal;
-- TIN anual decimal;
-- meses.
-
-Output:
-- cuota;
-- pagos totales;
-- intereses totales.
+Entrada: principal, TIN anual decimal y meses.  
+Salida: cuota, pagos totales e intereses.
 
 ### Amortización extraordinaria
-Input adicional:
-- importe extraordinario;
-- comisión total conocida.
+Compara mantener plazo/reducir cuota frente a mantener aproximadamente la cuota/reducir plazo. La comisión debe ser explícita.
 
-Compara:
-1. **reducir cuota** manteniendo plazo;
-2. **reducir plazo** manteniendo aproximadamente la cuota original.
+### Senda libre de tipos
+`MortgageRatePathEngine` recalcula la cuota en cada cambio de tipo indicado. Sirve para escenarios deterministas, no para predicción.
 
-Devuelve para ambos:
-- nueva cuota o nuevo plazo;
-- intereses restantes;
-- ahorro de intereses neto de la comisión indicada.
+### Variable/mixta indexada
+`MortgageIndexedRateEngine` modela:
 
-No se presupone una comisión legal: el valor debe proceder de evidencia/entrada explícita.
+- tipo variable;
+- tipo mixto con tramo fijo inicial;
+- índice + diferencial;
+- frecuencia contractual de revisión;
+- suelo y techo opcionales;
+- recalculo de cuota en cada revisión.
 
-### Switching genérico
-El motor de optimización calcula:
-`ahorro bruto - coste cambio - penalizaciones - beneficios perdidos - coste recurrente adicional - impacto fiscal`
+La curva de índice se proporciona como `mes -> valor`. El motor calcula qué meses de revisión son obligatorios y, si falta cualquiera, devuelve `needs_more_data`. No interpola ni extrapola.
 
-Si la penalización es desconocida, el resultado es `needs_more_data`.
+Endpoint:
 
-## No implementado como automatismo completo
-- FEIN/FIAE estructurada en todos sus campos;
-- curvas variables/mixtas y revisiones de índice;
-- novación/subrogación;
-- costes legales por jurisdicción/fecha;
-- ofertas bancarias comerciales automáticas.
+```text
+POST /api/v1/mortgage/indexed-path
+```
 
-Estos elementos deben añadirse como facts versionados y nunca como constantes “universales”.
+La WebApp lo expone en **Simuladores → Hipoteca variable o mixta por índice**.
+
+## Evidencia FEIN/FIAE
+
+La extracción documental reconoce, cuando el texto lo contiene:
+
+- FEIN/FIAE;
+- capital y cuota;
+- tipo fijo/variable/mixto;
+- TIN/TAE;
+- índice y diferencial;
+- plazo y revisión;
+- tramo fijo;
+- suelo/techo;
+- apertura y reembolso anticipado;
+- subrogación y novación;
+- nómina, seguros, tarjeta y plan de pensiones vinculados;
+- fórmula temporal de reembolso anticipado.
+
+Los facts son inferidos, conservan página/contexto y requieren confirmación humana antes de tratarlos como evidencia contractual.
+
+## Límites deliberados
+
+- no se predice Euríbor;
+- no se inventa comisión legal;
+- no se supone que una condición ausente valga cero;
+- una novación/subrogación concreta debe evaluarse con sus hechos contractuales y fiscales vigentes.
