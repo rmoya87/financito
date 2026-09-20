@@ -60,6 +60,20 @@ TYPE_FOCUS = {
         "Analiza costes, renovaciones, preavisos, penalizaciones, permanencias, obligaciones, ventajas y "
         "condiciones que afecten a una decisión de mantener, renegociar o cambiar."
     ),
+    "bank_statement": (
+        "Analiza comisiones, intereses, cargos recurrentes, servicios cobrados, posibles duplicidades y "
+        "condiciones visibles. No reclasifiques movimientos ni inventes saldos; señala qué podría alimentar "
+        "Cuentas, Movimientos o una revisión de costes bancarios."
+    ),
+    "investment_statement": (
+        "Analiza comisiones de custodia/gestión, costes explícitos, posiciones, liquidez, dividendos y "
+        "condiciones del producto. Señala impactos en Patrimonio e Inversiones sin inferir rentabilidades futuras."
+    ),
+    "tax": (
+        "Resume únicamente datos fiscales explícitos, importes, fechas, bases y conceptos visibles. Señala "
+        "posibles datos útiles para planificación o revisión, pero no presentes una interpretación como asesoramiento "
+        "fiscal ni inventes deducciones o reglas que no figuren en la documentación."
+    ),
 }
 
 
