@@ -17,7 +17,7 @@ from sqlalchemy import delete,select
 from sqlalchemy.orm import Session
 
 from ..config import settings
-from ..models import ActionItem,Document,ExtractedFact
+from ..models import Document,ExtractedFact
 
 register_heif_opener()
 Image.MAX_IMAGE_PIXELS=50_000_000
@@ -162,19 +162,17 @@ def _derive_facts(session:Session,doc:Document,text_value:str,pages:list[str]|No
             session.add(ExtractedFact(document_id=doc.id,fact_type=fact["fact_type"],key=fact["key"],value_json=json.dumps({"value":fact["value"],"unit":fact["unit"]},ensure_ascii=False),confidence=str(fact["confidence"]),status="inferred",source_page=fact["source_page"],source_section=fact["source_section"],user_verified=False));count+=1
     return count
 
-def _ensure_review_action(session:Session,doc:Document,count:int)->None:
-    existing=session.scalar(select(ActionItem.id).where(ActionItem.action_type=="review_document_evidence",ActionItem.related_entity_id==doc.id,ActionItem.status.in_(["pending","in_progress"])))
-    if count and not existing:
-        session.add(ActionItem(action_type="review_document_evidence",title=f"Revisar {count} dato(s) contractual(es) extraído(s) de {doc.file_name}",related_entity_type="document",related_entity_id=doc.id,priority="high",source_type="document",source_ref=doc.id,notes="Los datos extraídos son inferidos y no deben usarse como evidencia confirmada hasta su revisión."))
 
 def reprocess_document(session:Session,doc:Document)->IndexedDocument:
     path=safe_path(Path(doc.file_path));text_value,page_count,pages=extract_content(path)
     doc.extracted_text=text_value;doc.page_count=page_count;doc.sha256=sha256(path.read_bytes()).hexdigest();doc.status="indexed"
     kind,_=classify_document(text_value,path.name)
     if doc.document_type in {"unknown","contract"} or kind!="unknown":doc.document_type=kind
-    count=_derive_facts(session,doc,text_value,pages);_ensure_review_action(session,doc,count)
+    count=_derive_facts(session,doc,text_value,pages)
     from .rag import index_document_chunks
+    from .evidence import synchronize_document_evidence
     chunks=index_document_chunks(session,doc,pages)
+    synchronize_document_evidence(session,doc)
     session.flush();return IndexedDocument(doc,count,chunks)
 
 def index_document(session:Session,source_path:str,document_type:str="unknown")->IndexedDocument:
@@ -188,7 +186,8 @@ def index_document(session:Session,source_path:str,document_type:str="unknown")-
     session.add(doc);session.flush()
     count=_derive_facts(session,doc,text_value,pages)
     session.add(ExtractedFact(document_id=doc.id,fact_type="document_metadata",key="document_type_confidence",value_json=json.dumps({"value":str(type_conf)},ensure_ascii=False),confidence=str(type_conf),status="inferred",source_page=1,user_verified=False))
-    _ensure_review_action(session,doc,count)
     from .rag import index_document_chunks
+    from .evidence import synchronize_document_evidence
     chunks=index_document_chunks(session,doc,pages)
+    synchronize_document_evidence(session,doc)
     return IndexedDocument(doc,count,chunks)
