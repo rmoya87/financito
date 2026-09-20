@@ -52,6 +52,12 @@ jobs:
       - name: Start local Financito
         run: |
           mkdir -p /tmp/financito-e2e/vault
+          cat > /tmp/financito-e2e/vault/e2e-policy.txt <<'EOF'
+          Póliza de seguro de hogar E2E.
+          Prima anual 240 euros.
+          Franquicia 150 euros.
+          Preaviso de 30 días para cancelar.
+          EOF
           PYTHONPATH=apps/api \
           FINANCITO_ALLOW_PLAINTEXT_SQLITE=1 \
           FINANCITO_DATA_DIR=/tmp/financito-e2e \
