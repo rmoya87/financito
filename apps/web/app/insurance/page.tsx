@@ -13,6 +13,7 @@ type CoverageRequirement={id:string;insurance_type:string|null;coverage_type:str
 type Policy={
   id:string;insurance_type:string;annual_premium:string;monthly_equivalent:string;deductible:string|null;
   source_document_id:string|null;source_document_name:string|null;
+  source_document_ids?:string[];source_documents?:{id:string;file_name:string}[];
   contract:null|{provider_name:string;renewal_date:string|null;cancellation_notice_days:number|null;early_exit_penalty:string|null;evidence_status:string};
   coverages:{id:string;coverage_type:string;limit_amount:string|null;deductible:string|null;confidence:string;user_verified:boolean;source_page:number|null}[];
 };
@@ -92,8 +93,8 @@ export default function InsurancePage(){
 
       <div className="mt-4 grid gap-4 xl:grid-cols-2">
         <Card>
-          <h2 className="font-bold">Pólizas desde documentación</h2>
-          <p className="mt-1 text-sm text-[var(--muted)]">No se crean pólizas paralelas aquí. Si falta un dato, complétalo en el documento original y se propagará automáticamente.</p>
+          <h2 className="font-bold">Pólizas consolidadas</h2>
+          <p className="mt-1 text-sm text-[var(--muted)]">Una póliza puede tener varios PDFs, anexos o condiciones. Financito los reúne en una sola ficha y combina su evidencia sin multiplicar seguros.</p>
           <div className="mt-4 space-y-3">{data.policies.length?data.policies.map(p=><div key={p.id} className="rounded-xl bg-[var(--surface-2)] p-4">
             <div className="flex items-start justify-between gap-3"><div><strong>{insuranceLabel[p.insurance_type]||p.insurance_type}</strong><div className="text-xs text-[var(--muted)]">{p.contract?.provider_name||p.source_document_name||'Proveedor pendiente'}</div></div><div className="text-right"><strong><Money value={p.annual_premium}/>/año</strong><div className="text-xs text-[var(--muted)]"><Money value={p.monthly_equivalent}/>/mes equivalente</div></div></div>
             <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
@@ -103,7 +104,10 @@ export default function InsurancePage(){
               <div>Penalización: <strong><Money value={p.contract?.early_exit_penalty}/></strong></div>
             </div>
             {p.coverages.length>0&&<div className="mt-3 flex flex-wrap gap-1">{p.coverages.map(c=><span key={c.id} className="rounded-full bg-white px-2 py-1 text-[11px]">{c.coverage_type}{c.limit_amount?' · '+new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(Number(c.limit_amount)):''}</span>)}</div>}
-            {p.source_document_id&&<Link className="mt-3 inline-block text-xs underline" href={'/documents/?document='+encodeURIComponent(p.source_document_id)}>Ver y completar evidencia</Link>}
+            {(p.source_documents?.length??0)>0?<div className="mt-3 rounded-xl border border-[var(--border)] p-3 text-xs">
+              <div className="font-medium">{p.source_documents!.length} documento(s) forman esta póliza</div>
+              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">{p.source_documents!.map(d=><Link key={d.id} className="underline" href={'/documents/?document='+encodeURIComponent(d.id)}>{d.file_name}</Link>)}</div>
+            </div>:p.source_document_id&&<Link className="mt-3 inline-block text-xs underline" href={'/documents/?document='+encodeURIComponent(p.source_document_id)}>Ver y completar evidencia</Link>}
           </div>):<EmptyState>Añade tus pólizas en Documentos y confirma los datos extraídos.</EmptyState>}</div>
         </Card>
 
@@ -145,7 +149,7 @@ export default function InsurancePage(){
     </Card>
 
     <Card className="mt-4">
-      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Lectura de cada póliza</h2><p className="mt-1 text-sm text-[var(--muted)]">Resumen interpretativo de la IA local sobre cada documento; nunca sustituye los campos confirmados de arriba.</p></div><Link className="text-xs underline" href="/documents/">Añadir o revisar documentos</Link></div>
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Lectura de los documentos de las pólizas</h2><p className="mt-1 text-sm text-[var(--muted)]">Cada archivo conserva su análisis para trazabilidad, pero los datos confirmados se consolidan arriba en una única ficha por póliza.</p></div><Link className="text-xs underline" href="/documents/">Añadir o revisar documentos</Link></div>
       <div className="mt-4 grid gap-3 md:grid-cols-2">{insights.data?.length?insights.data.map(x=><div key={x.document_id} className="rounded-xl border border-[var(--border)] p-4"><div className="flex items-start justify-between gap-3"><div><strong>{x.file_name}</strong><div className="mt-1 text-xs text-[var(--muted)]">Confianza interpretativa {Math.round(Number(x.analysis.confidence)*100)}%</div></div><Link className="text-xs underline" href={'/documents/?document='+encodeURIComponent(x.document_id)}>Evidencia</Link></div><p className="mt-3 text-sm">{x.analysis.summary}</p>{x.analysis.exclusions_or_limits.length>0&&<div className="mt-3 text-xs"><strong>Límites:</strong> {x.analysis.exclusions_or_limits.slice(0,3).map(i=>i.title||i.detail).join(' · ')}</div>}{x.analysis.optimization_opportunities.length>0&&<div className="mt-3 rounded-xl bg-[var(--brand-soft)] p-3 text-xs"><strong>A revisar:</strong> {x.analysis.optimization_opportunities.slice(0,3).map(i=>i.title||i.detail).join(' · ')}</div>}{x.analysis.cross_area_impacts.length>0&&<div className="mt-3 text-xs text-[var(--muted)]"><strong>Impactos en otras áreas:</strong> {x.analysis.cross_area_impacts.slice(0,3).map(i=>i.title||i.detail).join(' · ')}</div>}</div>):<EmptyState>Añade tus pólizas en Documentos para obtener conclusiones locales.</EmptyState>}</div>
     </Card>
   </>;
