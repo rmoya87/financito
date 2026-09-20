@@ -12,6 +12,7 @@ from ..models import Account,ActionItem,AuditEvent,Transaction
 from ..models_analytics import BankingAccountLink,BankingConnection
 from ..providers.enable_banking import EnableBankingProvider
 from .categorization import categorize_transaction,normalize_text
+from .snapshots import record_snapshot
 
 def _dt(value:str|None)->datetime|None:
     if not value:
@@ -208,6 +209,7 @@ def sync_connection(session:Session,connection_id:str,provider:EnableBankingProv
         if balance is not None:
             account.current_balance=balance
             account.available_balance=balance
+            record_snapshot(session,"account",account.id,{"balance":str(balance),"available_balance":str(balance),"currency":currency or account.currency},source="banking_sync")
         if currency:
             account.currency=currency
         continuation=None
