@@ -46,12 +46,12 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 - no se exponen endpoints públicos de sesión/balances/transacciones crudos.
 
 ### Documentos y RAG
-- subida múltiple desde la WebApp mediante selector/drag & drop al Vault privado, más watcher de Vault en segundo plano.
+- subida múltiple desde la WebApp mediante selector/drag & drop al Vault privado, accesible directamente desde Inicio y desde las áreas relacionadas, más watcher de Vault en segundo plano.
 - PDF, TXT, CSV, JSON, DOCX, XLSX/XLSM, PNG/JPEG/HEIC/TIFF/BMP.
 - SHA-256, deduplicación, OCR, detección ES/EN y clasificación conservadora.
 - hechos contractuales con página y contexto; confirmación humana persistente; los facts confirmados se proyectan automáticamente a Contratos y, cuando existe prima confirmada, a Pólizas, manteniendo enlace al documento fuente.
-- análisis interpretativo con LLM local: resumen, ventajas, penalizaciones, obligaciones, riesgos, exclusiones/límites, vinculaciones, oportunidades, impactos cruzados y datos faltantes; visible en Documentos, Seguros, Hipoteca/Laboratorio y Contratos.
-- propuestas de hechos materiales y coberturas por IA local con whitelist + página obligatoria; permanecen inferidas hasta confirmación. Las coberturas confirmadas se proyectan a CoverageFact y alimentan huecos/duplicidades.
+- análisis interpretativo con LLM local: resumen, ventajas, penalizaciones, obligaciones, riesgos, exclusiones/límites, vinculaciones, oportunidades, puntos de negociación, requisitos para comparar ofertas, impactos cruzados y datos faltantes; visible en Documentos, Seguros, Hipoteca/Laboratorio, Contratos, Cuentas, Inversiones y Fiscalidad.
+- propuestas de hechos materiales y coberturas por IA local con whitelist + página obligatoria; permanecen inferidas hasta confirmación. Las coberturas confirmadas se proyectan a CoverageFact y alimentan huecos/duplicidades. Hechos hipotecarios confirmados pueden alimentar el perfil hipotecario cuando el enlace al préstamo es inequívoco.
 - FTS5/BM25 + embeddings locales opcionales + sqlite-vec/fallback cosine.
 - fusión Reciprocal Rank Fusion y reranking léxico.
 - búsqueda global y citas que abren documento/página; el chat local recibe además un contexto estructurado con el estado confirmado/inferido de la evidencia.
