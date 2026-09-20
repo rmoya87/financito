@@ -8,7 +8,8 @@ import {Card} from '@/components/ui/card';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
 
 type ReviewSummary={total:number;pending:number;confirmed:number;ambiguous:number;reviewed:number};
-type Doc={id:string;file_name:string;document_type:string;status:string;page_count:number;review:ReviewSummary;ai_analysis:'ready'|'not_analyzed'};
+type Doc={id:string;file_name:string;document_type:string;status:string;page_count:number;review:ReviewSummary;ai_analysis:'ready'|'not_analyzed';mortgage_id:string|null};
+type MortgageOption={id:string;lender:string;remaining_principal:string;currency:string};
 type InsightItem={title:string;detail:string;pages:number[];impact?:string};
 type AIAnalysis={id?:string;status?:string;confidence:string;summary:string;advantages:InsightItem[];penalties:InsightItem[];obligations:InsightItem[];risks:InsightItem[];exclusions_or_limits:InsightItem[];linked_products:InsightItem[];optimization_opportunities:InsightItem[];negotiation_points:InsightItem[];comparison_requirements:InsightItem[];cross_area_impacts:InsightItem[];missing_information:InsightItem[];model_role:string};
 type AnalysisResponse={document_id:string;status:'ready'|'not_analyzed';analysis:AIAnalysis|null;ai:{available:boolean;configured_model:string|null;chat_ready?:boolean}};
@@ -30,6 +31,7 @@ export default function DocumentsPage(){
   },[]);
 
   const docs=useQuery({queryKey:['documents'],queryFn:()=>apiGet<Doc[]>('/api/v1/documents')});
+  const mortgages=useQuery({queryKey:['mortgages'],queryFn:()=>apiGet<MortgageOption[]>('/api/v1/mortgages')});
   const facts=useQuery({
     queryKey:['facts',selected],
     queryFn:()=>apiGet<Fact[]>('/api/v1/documents/'+selected+'/facts'),
@@ -54,6 +56,9 @@ export default function DocumentsPage(){
     qc.invalidateQueries({queryKey:['dashboard']});
     qc.invalidateQueries({queryKey:['contracts']});
     qc.invalidateQueries({queryKey:['insurance']});
+    qc.invalidateQueries({queryKey:['mortgages']});
+    qc.invalidateQueries({queryKey:['switching-readiness']});
+    qc.invalidateQueries({queryKey:['decision-lab-context']});
     qc.invalidateQueries({queryKey:['document-insights']});
     qc.invalidateQueries({queryKey:['document-analysis',selected]});
   };
@@ -97,6 +102,10 @@ export default function DocumentsPage(){
   });
   const update=useMutation({
     mutationFn:({id,status}:{id:string;status:string})=>apiMutate('/api/v1/facts/'+id,'PATCH',{status,user_verified:true}),
+    onSuccess:invalidateEvidence,
+  });
+  const linkMortgage=useMutation({
+    mutationFn:({documentId,mortgageId}:{documentId:string;mortgageId:string|null})=>apiMutate('/api/v1/documents/'+documentId+'/mortgage-link','PUT',{mortgage_id:mortgageId}),
     onSuccess:invalidateEvidence,
   });
 
@@ -238,6 +247,24 @@ export default function DocumentsPage(){
           <div className="mt-1 text-xs text-[var(--muted)]">
             {confirmed} confirmados · {ambiguous} dudosos. Los confirmados se sincronizan automáticamente con las áreas de Financito que pueden utilizarlos.
           </div>
+        </div>}
+
+        {selectedDoc?.document_type==='mortgage'&&<div className="mt-4 rounded-xl border border-[var(--border)] p-4">
+          <h3 className="font-semibold">¿A qué hipoteca pertenece?</h3>
+          <p className="mt-1 text-xs text-[var(--muted)]">Asóciala solo si este documento describe tu hipoteca actual. Si es una FEIN/oferta de otro banco, déjala como oferta o referencia: se analizará con IA, pero no podrá modificar capital, TIN, cuota ni penalizaciones de tu hipoteca actual.</p>
+          <select
+            className="fin-input mt-3"
+            aria-label="Hipoteca asociada al documento"
+            value={selectedDoc.mortgage_id||''}
+            onChange={e=>linkMortgage.mutate({documentId:selectedDoc.id,mortgageId:e.target.value||null})}
+            disabled={linkMortgage.isPending}
+          >
+            <option value="">Oferta o referencia — no alimentar hipoteca actual</option>
+            {mortgages.data?.map(m=><option key={m.id} value={m.id}>{m.lender} · capital {Number(m.remaining_principal).toLocaleString('es-ES',{maximumFractionDigits:2})} {m.currency}</option>)}
+          </select>
+          {!mortgages.data?.length&&<div className="mt-2 text-xs text-[var(--muted)]">Aún no hay un perfil hipotecario. Puedes crearlo desde <a className="underline" href="/tools/">Laboratorio de decisiones</a>.</div>}
+          {selectedDoc.mortgage_id&&<div className="mt-2 text-xs font-medium">Los hechos que confirmes en este documento podrán alimentar esa hipoteca y sus cálculos.</div>}
+          {linkMortgage.error&&<div className="mt-3"><ErrorState error={linkMortgage.error}/></div>}
         </div>}
 
         {selected&&<div className="mt-4 rounded-xl border border-[var(--border)] p-4">
