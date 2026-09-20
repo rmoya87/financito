@@ -1,3 +1,4 @@
+import json
 from datetime import date,timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -72,3 +73,19 @@ def test_mortgage_fein_extracts_structured_terms():
         keys={f.key for f in facts}
         assert {"reference_index","interest_type","differential_rate","mortgage_term_years","rate_review_months","opening_fee_percent","early_repayment_fee_percent","linked_salary","linked_home_insurance"} <= keys
         assert all(f.source_page==1 for f in facts if f.key in keys)
+
+
+def test_fein_fiae_deep_terms_and_formula():
+    text=("FIAE y FEIN. Importe total del préstamo 245.000,00 euros. Tipo mixto con periodo fijo de 5 años. "
+          "Cuota mensual 1.125,50 euros. Euríbor a 12 meses más diferencial 0,65 %. Revisión cada 12 meses. "
+          "Tipo mínimo 0,00 % y tipo máximo 8,00 %. Comisión por subrogación 0,15 %. Comisión por novación 0,10 %. "
+          "Compensación por reembolso anticipado 0,25 % durante los primeros 3 años.")
+    path=settings.vault_dir/"fiae-deep-ci.txt";path.write_text(text,encoding="utf-8")
+    with SessionLocal() as db:
+        result=index_document(db,str(path),"unknown");db.commit()
+        facts=db.scalars(select(ExtractedFact).where(ExtractedFact.document_id==result.document.id)).all()
+        by_key={fact.key:fact for fact in facts}
+        expected={"precontract_document_type","loan_principal","monthly_payment","fixed_period_years","rate_floor_percent","rate_cap_percent","subrogation_fee_percent","novation_fee_percent","early_repayment_formula"}
+        assert expected <= set(by_key)
+        formula=json.loads(by_key["early_repayment_formula"].value_json)["value"]
+        assert formula["formula_type"]=="percentage_of_repaid_principal" and formula["applicable_first_years"]==3
