@@ -780,3 +780,41 @@ Detectar jobs interrumpidos, verificar DB/Vault y reconstruir índices/derivados
 ## 47. Evaluación continua de modelos
 
 OCR, embeddings, reranking, LLM, prompts y clasificadores deben evaluarse contra suites versionadas antes de promoción.
+
+
+## 48. Modelo temporal reproducible
+
+Toda entidad relevante debe diferenciar fecha del evento, vigencia y fecha en la que Financito conoció el dato.
+
+Una recomendación histórica debe poder reproducirse sin usar información futura.
+
+## 49. Lotes de inversión
+
+Modelar tax lots desde la primera versión de inversiones:
+- fecha;
+- cantidad;
+- coste;
+- fees;
+- divisa;
+- FX;
+- cantidad restante.
+
+Esto permite P&L realizado, escenarios de venta y fiscalidad modular sin rehacer la cartera.
+
+## 50. Action Center
+
+Alertas y oportunidades deben poder convertirse en acciones con:
+- fecha;
+- prioridad;
+- impacto;
+- estado;
+- entidad relacionada;
+- decisión relacionada.
+
+Financito no ejecuta automáticamente contrataciones, cancelaciones, transferencias o trading.
+
+## 51. Launcher local
+
+El usuario debe poder abrir Financito sin Terminal.
+
+Un launcher/supervisor local debe iniciar API, workers, modelo y navegador, verificar integridad y recuperar jobs interrumpidos.
