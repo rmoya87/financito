@@ -88,3 +88,16 @@ ChatThread, ChatMessage, ChatComposer, SuggestedPrompt, ToolActivity, AnswerEvid
 ## Catálogo visual local
 
 Mantener Storybook o equivalente solo local para primitives, shared components, estados, responsive, light/dark y privacy mode. No publicarlo en Internet.
+
+
+## Evidencia contractual
+
+- ContractEvidencePanel
+- ContractFactRow
+- ContractConflictAlert
+- ClauseSourceLink
+- CalculationTrace
+- CalculationInputSource
+- NeedsMoreDataAlert
+
+Toda cifra material usada en una decisión debe poder navegar desde CalculationTrace hasta el documento/página que la sustenta.
