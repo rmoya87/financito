@@ -7,7 +7,7 @@ from decimal import Decimal
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from ..models import Category, Transaction
+from ..models import CategorizationAudit, Category, Transaction
 from ..models_analytics import EntityLink, TransactionRule, TransactionSplit
 from .categorization import ensure_categories, normalize_text
 
@@ -214,7 +214,7 @@ def set_category_for_same_concept(
             pair_internal_transfer_counterpart(session, tx)
         if previous != category_id:
             session.add(
-                __import__("financito.models", fromlist=["CategorizationAudit"]).CategorizationAudit(
+                CategorizationAudit(
                     transaction_id=tx.id,
                     previous_category_id=previous,
                     new_category_id=category_id,
