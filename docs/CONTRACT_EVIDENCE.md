@@ -375,3 +375,43 @@ Los análisis documentales forman parte del contexto local de:
 - Action Center.
 
 Ejemplo: una póliza puede indicar que cancelarla hace perder una bonificación hipotecaria. Esa relación aparece tanto en Seguros como en el contexto de la decisión hipotecaria, mientras que el coste cuantitativo solo se calcula con hechos contractuales confirmados.
+
+
+## Propagación cruzada entre dominios
+
+Cuando un hecho material se confirma, Financito lo proyecta únicamente a entidades compatibles y con trazabilidad:
+
+- documento de seguro -> Contrato + Póliza + Coberturas;
+- documento hipotecario -> Contrato + Hipoteca cuando el enlace es inequívoco;
+- documento contractual -> Contrato;
+- renovación/preaviso confirmado -> Action Center;
+- coberturas confirmadas -> detección de duplicidades y huecos;
+- cláusulas de vinculación -> Laboratorio de decisiones;
+- conclusiones interpretativas -> secciones de Seguros, Hipoteca, Contratos, Cuentas, Inversiones y Fiscalidad según tipo documental.
+
+### Regla de enlace hipotecario
+
+Un documento hipotecario puede actualizar un perfil de hipoteca si:
+1. ya existe un enlace explícito documento -> hipoteca; o
+2. solo existe una hipoteca en Financito y no hay contradicción evidente de entidad.
+
+Si existen varias hipotecas sin enlace inequívoco, no se actualiza ninguna automáticamente.
+
+Los hechos confirmados que pueden alimentar el perfil incluyen:
+- remaining_principal;
+- nominal_rate;
+- monthly_payment;
+- remaining_months;
+- interest_type;
+- provider_name.
+
+Los porcentajes documentales se convierten a la escala interna decimal antes de entrar en cálculos.
+
+### Separación de capas
+
+- extracción determinista: primera fuente para importes, porcentajes, fechas y cláusulas reconocibles;
+- IA local: interpretación, descubrimiento de relaciones, propuestas de hechos no detectados, negociación y requisitos de comparación;
+- confirmación humana: necesaria antes de que una propuesta de IA material cambie cálculos;
+- engines: solo consumen datos estructurados confirmados o inputs explícitos.
+
+La IA nunca sobrescribe silenciosamente datos financieros confirmados.
