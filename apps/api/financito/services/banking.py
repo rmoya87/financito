@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date,datetime,timezone
+from datetime import date,datetime,timezone,timedelta
 from decimal import Decimal
 from hashlib import sha256
 import json
@@ -8,7 +8,7 @@ import json
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import Account,AuditEvent,Transaction
+from ..models import Account,ActionItem,AuditEvent,Transaction
 from ..models_analytics import BankingAccountLink,BankingConnection
 from ..providers.enable_banking import EnableBankingProvider
 from .categorization import categorize_transaction,normalize_text
@@ -86,6 +86,7 @@ def complete_authorization(session:Session,code:str,provider:EnableBankingProvid
         )
         session.add(link);linked.append({"local_account_id":account.id,"provider_account_uid":uid})
     session.add(AuditEvent(event_type="banking_connection_created",entity_type="banking_connection",entity_id=row.id,metadata_json=json.dumps({"bank":row.bank_name,"accounts":len(linked)})))
+    _ensure_consent_action(session,row)
     session.flush()
     return {"connection_id":row.id,"session_id":row.session_id,"bank_name":row.bank_name,"country":row.country,"consent_expires_at":row.consent_expires_at,"accounts":linked}
 
@@ -220,6 +221,7 @@ def sync_connection(session:Session,connection_id:str,provider:EnableBankingProv
         account.sync_status="synced"
         link.last_sync_at=datetime.now(timezone.utc)
     session.add(AuditEvent(event_type="banking_connection_synced",entity_type="banking_connection",entity_id=connection.id,metadata_json=json.dumps({"inserted":inserted,"skipped":skipped,"accounts":len(links)})))
+    _ensure_consent_action(session,connection)
     session.flush()
     return {"connection_id":connection.id,"status":connection.status,"inserted":inserted,"skipped":skipped,"accounts":len(links),"consent_expires_at":connection.consent_expires_at}
 
@@ -255,3 +257,15 @@ def list_connections(session:Session)->list[dict]:
             "accounts":[{"local_account_id":l.local_account_id,"provider_account_uid":l.provider_account_uid,"last_sync_at":l.last_sync_at} for l in links],
         })
     return out
+
+
+def _ensure_consent_action(session:Session,connection:BankingConnection)->None:
+    expires=connection.consent_expires_at
+    if not expires or connection.status in {"closed","deleted"}:
+        return
+    aware=expires if expires.tzinfo else expires.replace(tzinfo=timezone.utc)
+    if aware>datetime.now(timezone.utc)+timedelta(days=14):
+        return
+    exists=session.scalar(select(ActionItem.id).where(ActionItem.action_type=="banking_consent_renewal",ActionItem.related_entity_id==connection.id,ActionItem.status.in_(["pending","in_progress"])))
+    if not exists:
+        session.add(ActionItem(action_type="banking_consent_renewal",title=f"Renovar consentimiento bancario de {connection.bank_name}",related_entity_type="banking_connection",related_entity_id=connection.id,due_date=aware.date(),priority="high",source_type="banking",source_ref=connection.id,notes="La renovación requiere volver a autorizar el acceso con el banco; Financito no puede renovar el consentimiento sin interacción del usuario."))

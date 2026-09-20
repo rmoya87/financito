@@ -99,3 +99,14 @@ class BankingAccountLink(Base,TimestampMixin):
     identification_hash:Mapped[str|None]=mapped_column(String(512),nullable=True,index=True)
     last_sync_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
     metadata_json:Mapped[str]=mapped_column(Text,default="{}")
+
+
+class CoverageRequirement(Base,TimestampMixin):
+    __tablename__="coverage_requirement"
+    id:Mapped[str]=mapped_column(String(36),primary_key=True,default=uuid_str)
+    insurance_type:Mapped[str|None]=mapped_column(String(60),nullable=True,index=True)
+    coverage_type:Mapped[str]=mapped_column(String(100),index=True)
+    minimum_limit:Mapped[Decimal|None]=mapped_column(Numeric(18,4),nullable=True)
+    currency:Mapped[str]=mapped_column(String(3),default="EUR")
+    notes:Mapped[str|None]=mapped_column(Text,nullable=True)
+    enabled:Mapped[bool]=mapped_column(Boolean,default=True)
