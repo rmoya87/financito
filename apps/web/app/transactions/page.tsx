@@ -82,8 +82,8 @@ export default function TransactionsPage(){
     onSuccess:invalidateTransactions,
   });
   const categoryMutation=useMutation({
-    mutationFn:({id,category_id}:{id:string;category_id:string})=>apiMutate('/api/v1/transactions/'+id+'/category','PATCH',{category_id}),
-    onSuccess:invalidateTransactions,
+    mutationFn:({id,category_id}:{id:string;category_id:string})=>apiMutate<{id:string;reclassified:number}>('/api/v1/transactions/'+id+'/review','POST',{category_id,create_rule:true,apply_to_existing:true}),
+    onSuccess:()=>{invalidateTransactions();qc.invalidateQueries({queryKey:['transaction-rules']})},
   });
   const addRule=useMutation({
     mutationFn:()=>apiMutate<{id:string;reclassified:number}>('/api/v1/transaction-rules','POST',{...rule,enabled:true}),
@@ -149,7 +149,7 @@ export default function TransactionsPage(){
   return <>
     <PageHeader
       title="Movimientos"
-      description="Todos tus movimientos en un único sitio. Recategoriza directamente; Financito aprende mediante reglas y aplica la lógica contable de transferencias propias y reembolsos."
+      description="Todos tus movimientos en un único sitio. Si cambias una categoría, Financito aplica esa corrección a todo el histórico con el mismo concepto y crea una regla para los futuros movimientos iguales."
     />
 
     <Card>
@@ -162,7 +162,7 @@ export default function TransactionsPage(){
         <button className="fin-button" disabled={upload.isPending}>{upload.isPending?'Importando…':'Importar extracto'}</button>
       </form>
       <div className="mt-2 text-xs text-[var(--muted)]">
-        Al importar, Financito intenta identificar automáticamente movimientos entre tus cuentas y reembolsos. Puedes corregir cualquier caso desde la tabla y esa categoría afectará inmediatamente a los cálculos.
+        Al importar, Financito intenta identificar automáticamente movimientos entre tus cuentas y reembolsos. Una corrección de categoría en la tabla se aplica al mismo concepto tanto en movimientos pasados como futuros.
       </div>
       {upload.data&&<div className="mt-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm">
         <div><strong>Importación terminada:</strong> {upload.data.inserted} nuevos · {upload.data.duplicates} duplicados · {upload.data.rejected} rechazados.</div>
@@ -184,6 +184,8 @@ export default function TransactionsPage(){
         {aiCategorize.data.warnings.length>0&&<div className="mt-1 text-xs text-[var(--muted)]">{aiCategorize.data.warnings.join(' ')}</div>}
       </div>}
       {aiCategorize.error&&<div className="mt-3"><ErrorState error={aiCategorize.error}/></div>}
+      {categoryMutation.data&&<div className="mt-3 rounded-xl bg-[var(--brand-soft)] p-3 text-sm">Categoría aplicada al concepto. {categoryMutation.data.reclassified} movimiento(s) histórico(s) actualizado(s); los futuros con el mismo concepto usarán esta categoría automáticamente.</div>}
+      {categoryMutation.error&&<div className="mt-3"><ErrorState error={categoryMutation.error}/></div>}
     </Card>
 
     <Card className="mt-4 overflow-x-auto">
@@ -256,7 +258,7 @@ export default function TransactionsPage(){
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-bold">Reglas automáticas</h2>
-            <p className="mt-1 text-sm text-[var(--muted)]">Se aplican a movimientos futuros y a históricos todavía no confirmados. Tus correcciones manuales nunca se pisan automáticamente.</p>
+            <p className="mt-1 text-sm text-[var(--muted)]">Las reglas manuales se aplican a movimientos futuros. Cuando corriges una categoría desde la tabla, la regla de concepto exacto también actualiza todo el histórico con ese mismo concepto.</p>
           </div>
           <button className="text-sm underline" onClick={()=>setRulesOpen(false)}>Cerrar</button>
         </div>
@@ -265,6 +267,7 @@ export default function TransactionsPage(){
           <select className="fin-input" aria-label="Tipo de regla" value={rule.matcher_type} onChange={e=>setRule({...rule,matcher_type:e.target.value})}>
             <option value="contains">Concepto contiene texto</option>
             <option value="merchant_exact">Comercio exacto</option>
+            <option value="description_exact">Concepto exacto</option>
             <option value="regex">Expresión regular</option>
           </select>
           <input className="fin-input" aria-label="Texto de la regla" placeholder="Texto, comercio o patrón" value={rule.matcher_value} onChange={e=>setRule({...rule,matcher_value:e.target.value})} required/>
