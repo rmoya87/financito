@@ -108,6 +108,25 @@ def extract_contract_facts(text:str,source_page:int|None=None)->list[dict]:
         for match in re.finditer(pattern,lowered,re.I):
             raw=match.group(1).replace(",",".")
             facts.append({"fact_type":"contract_term","key":key,"value":raw,"unit":unit,"confidence":confidence,"source_page":source_page,"source_section":_context(text,match.start(),match.end())})
+    semantic_patterns=[
+        ("reference_index",r"\\b(eur[ií]bor(?:\\s+a\\s+\\d+\\s+meses?)?|irph)\\b","text",.82),
+        ("interest_type",r"\\b(tipo\\s+fijo|tipo\\s+variable|tipo\\s+mixto|inter[eé]s\\s+fijo|inter[eé]s\\s+variable|inter[eé]s\\s+mixto)\\b","text",.72),
+    ]
+    for key,pattern,unit,confidence in semantic_patterns:
+        for match in re.finditer(pattern,lowered,re.I):
+            value=re.sub(r"\\s+"," ",match.group(1)).strip()
+            facts.append({"fact_type":"mortgage_term","key":key,"value":value,"unit":unit,"confidence":confidence,"source_page":source_page,"source_section":_context(text,match.start(),match.end())})
+    linked_patterns=[
+        ("linked_salary",r"(?:domiciliaci[oó]n de n[oó]mina|n[oó]mina domiciliada)"),
+        ("linked_home_insurance",r"(?:seguro de hogar|seguro hogar)"),
+        ("linked_life_insurance",r"(?:seguro de vida|seguro vida)"),
+        ("linked_card",r"(?:tarjeta de cr[eé]dito|tarjeta de d[eé]bito|uso de tarjeta)"),
+        ("linked_pension_plan",r"(?:plan de pensiones|plan de previsi[oó]n)"),
+    ]
+    for key,pattern in linked_patterns:
+        match=re.search(pattern,lowered,re.I)
+        if match:
+            facts.append({"fact_type":"linked_product","key":key,"value":"mentioned","unit":"boolean_signal","confidence":.62,"source_page":source_page,"source_section":_context(text,match.start(),match.end())})
     for key,pattern in [
         ("permanence_end_date",r"(?:fin de )?permanencia.{0,100}(\d{1,2}[/-]\d{1,2}[/-]\d{4})"),
         ("renewal_date",r"renovaci[oó]n.{0,100}(\d{1,2}[/-]\d{1,2}[/-]\d{4})"),
