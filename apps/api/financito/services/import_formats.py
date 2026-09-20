@@ -69,6 +69,8 @@ def _xlsx(content:bytes)->bytes:
     _,_,ws,header_row,header_values=best
     headers=[str(x or "").strip() for x in header_values]
     canonical=[canonical_key(h) for h in headers]
+    header_keys={x for x in canonical if x}
+    bankinter_ledger={"fechacontable","fechavalor","descripcion","importe","saldo","divisa"}.issubset(header_keys)
     rows=[]
     for row in ws.iter_rows(min_row=header_row+1,values_only=True):
         if not any(value not in (None,"") for value in row):
@@ -79,11 +81,15 @@ def _xlsx(content:bytes)->bytes:
                 value=d.get(name)
                 if value not in (None,""):return value
             return ""
-        raw_date=pick(
-            "completeddate","transactioncompleted","transactioncompletedutc",
-            "fechadefinalizacion","fechadecompletado","fechacompletada",
-            "fecha","date","bookingdate","fechacontable","fechavalor","valuedate",
-            "starteddate","transactionstarted","transactionstartedutc","fechadeinicio",
+        raw_date=(
+            pick("fechavalor","fechacontable")
+            if bankinter_ledger
+            else pick(
+                "completeddate","transactioncompleted","transactioncompletedutc",
+                "fechadefinalizacion","fechadecompletado","fechacompletada",
+                "fecha","date","bookingdate","fechacontable","fechavalor","valuedate",
+                "starteddate","transactionstarted","transactionstartedutc","fechadeinicio",
+            )
         )
         amount=pick("amount","amountpaymentcurrency","importe","cantidad")
         description=pick("description","transactiondescription","descripcion","descripciondelatransaccion","concepto","detalle")
