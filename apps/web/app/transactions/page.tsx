@@ -1,6 +1,6 @@
 'use client';
 
-import {FormEvent,useMemo,useState} from 'react';
+import {FormEvent,useEffect,useMemo,useState} from 'react';
 import {useMutation,useQuery,useQueryClient} from '@tanstack/react-query';
 import {apiGet,apiMutate,apiUpload} from '@/lib/api';
 import {PageHeader} from '@/components/page-header';
@@ -40,6 +40,10 @@ export default function TransactionsPage(){
   const [search,setSearch]=useState('');
   const [categoryFilter,setCategoryFilter]=useState('');
   const [rulesOpen,setRulesOpen]=useState(false);
+  useEffect(()=>{
+    const q=new URLSearchParams(window.location.search).get('q');
+    if(q)setSearch(q);
+  },[]);
   const [rule,setRule]=useState({matcher_type:'contains',matcher_value:'',category_id:'',priority:100});
   const [splitTx,setSplitTx]=useState<Tx|null>(null);
   const [splits,setSplits]=useState<Split[]>([{amount:'',category_id:'',note:''},{amount:'',category_id:'',note:''}]);
