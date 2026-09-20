@@ -247,3 +247,85 @@ Imports, sincronizaciones, reindexados y operaciones repetibles deben aceptar o 
 Los facts devuelven documentId, page, section, confidence, status, effective dates y evidencia necesaria para abrir la fuente.
 
 Nunca convertir not_found en 0.
+
+
+## Forecasting
+
+- GET /forecast
+- POST /forecast/recalculate
+- GET /forecast/history
+- GET /forecast/accuracy
+- GET /forecast/categories
+- GET /forecast/compare-last-year
+
+Parámetros:
+- from;
+- to;
+- scenario;
+- include_extraordinary;
+- account;
+- category.
+
+Respuesta:
+- predictedIncome;
+- predictedExpenses;
+- predictedSavings;
+- predictedLiquidity;
+- lowerBound;
+- upperBound;
+- samePeriodLastYear;
+- drivers;
+- accuracy;
+- knownVsEstimated.
+
+## Commitments
+
+- GET /commitments
+- POST /commitments
+- PATCH /commitments/{id}
+- DELETE /commitments/{id}
+- GET /commitments/timeline
+
+## Stress testing
+
+- POST /stress-tests
+- GET /stress-tests/{id}
+
+## Cost centers
+
+- GET /cost-centers
+- POST /cost-centers
+- GET /cost-centers/{id}/analytics
+- POST /cost-centers/{id}/links
+
+## Coverage
+
+- GET /coverage
+- GET /coverage/overlaps
+- GET /coverage/gaps
+- POST /coverage/refresh
+
+## Financial Graph
+
+- GET /entities/{type}/{id}/relations
+- GET /entities/{type}/{id}/impact
+
+## Decision outcomes
+
+- GET /decisions/{id}/outcomes
+- POST /decisions/{id}/outcomes
+- GET /decisions/{id}/change-explanation
+
+## Repair Center
+
+- GET /repair/issues
+- POST /repair/scan
+- POST /repair/issues/{id}/repair
+- POST /repair/rebuild-fts
+- POST /repair/rebuild-vectors
+
+## Model evaluation
+
+- GET /model-evaluations
+- POST /model-evaluations/run
+- GET /model-evaluations/{id}
