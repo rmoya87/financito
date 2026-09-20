@@ -54,3 +54,9 @@ def analytics(start:date|None=None,end:date|None=None,db:Session=Depends(dbdep))
     end=end or _date.today();start=start or end-timedelta(days=365)
     if end<start:raise HTTPException(400,"end must be >= start")
     return analytics_overview(db,start,end)
+
+@router.delete("/transaction-rules/{rule_id}")
+def delete_rule(rule_id:str,db:Session=Depends(dbdep)):
+    row=db.get(TransactionRule,rule_id)
+    if not row:raise HTTPException(404,"Rule not found")
+    db.delete(row);db.commit();return {"deleted":rule_id}
