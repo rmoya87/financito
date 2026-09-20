@@ -1,355 +1,178 @@
-# Contrato API local
+# API local
 
-## Convenciones
+La fuente ejecutable del contrato es **`/api/openapi.json`** y la UI de FastAPI está en **`/api/docs`**.
 
-Base:
-```text
-/api/v1
-```
+Base funcional: `/api/v1`.
 
-JSON salvo streaming/archivos.
+## Seguridad
+1. `GET /api/v1/session` crea una sesión local HttpOnly y devuelve el token CSRF.
+2. Toda ruta `/api/v1/*` salvo `session` requiere cookie de sesión.
+3. POST/PATCH/PUT/DELETE requieren `X-CSRF-Token`.
+4. Host y Origin deben ser loopback.
 
-Errores:
-```json
-{
-  "error": {
-    "code": "MACHINE_CODE",
-    "message": "Mensaje legible",
-    "details": {}
-  }
-}
-```
+## Sistema
+- `GET /session`
+- `GET /health`
+- `GET /audit`
+- `GET /provider-config`
+- `PATCH /provider-config`
+- `GET /ai/config`
+- `PATCH /ai/config`
 
-## Health
-
-- GET /health
-- GET /status
-
-## Perfil
-
-- GET /profile
-- PATCH /profile
-- GET /financial-profile
-- PATCH /financial-profile
-
-## Cuentas
-
-- GET /accounts
-- GET /accounts/{id}
-- POST /banking/connections
-- POST /banking/connections/{id}/sync
-- DELETE /banking/connections/{id}
+## Cuentas y dashboard
+- `GET /accounts`
+- `POST /accounts`
+- `GET /dashboard`
+- `GET /categories`
+- `GET /budgets`
+- `POST /budgets`
+- `GET /commitments`
+- `POST /commitments`
+- `POST /forecast`
+- `GET /forecast/accuracy`
 
 ## Movimientos
+- `GET /transactions`
+- `PATCH /transactions/{id}/category`
+- `POST /imports/csv`
+- `POST /imports/statement?account_id=...`
+- `GET /transaction-rules`
+- `POST /transaction-rules`
+- `DELETE /transaction-rules/{id}`
+- `POST /transactions/detect-transfers`
+- `POST /transactions/detect-refunds`
+- `GET /transactions/review-queue`
+- `GET /transactions/{id}/splits`
+- `PUT /transactions/{id}/splits`
 
-- GET /transactions
-- GET /transactions/{id}
-- PATCH /transactions/{id}
-- POST /transactions/import
-- POST /transactions/{id}/split
-- DELETE /transactions/{id}/split
-- POST /transactions/{id}/verify-category
-- POST /transactions/reclassify
-- GET /transactions/categories
-- GET /transactions/review-queue
-- GET /transactions/anomalies
-- POST /transactions/anomalies/{id}/resolve
-- GET /merchants
-- PATCH /merchants/{id}
-- GET /transaction-rules
-- POST /transaction-rules
-- PATCH /transaction-rules/{id}
-- DELETE /transaction-rules/{id}
+`/imports/statement` soporta los formatos implementados por `import_formats`: CSV/XLSX/XLSM/QIF/OFX/CAMT/XML/MT940/STA.
 
-Filtros:
-- from;
-- to;
-- account;
-- category;
-- merchant;
-- query;
-- recurring;
-- page/cursor.
+## Analytics
+- `POST /analytics/refresh`
+- `GET /analytics/overview`
+- `GET /recurring`
+- `GET /anomalies`
+- `GET /reconciliation`
+- `GET /calendar`
+- `POST /stress`
+- `POST /backtest/ma`
+- `POST /planning/amortize-vs-invest`
+- `POST /recommendation/score`
+- `GET /graph`
 
-## Documentos
+## Search, export y demo
+- `GET /search?q=...`
+- `GET /export/json`
+- `GET /export/transactions.csv`
+- `POST /demo/seed`
 
-- GET /documents
-- GET /documents/{id}
-- POST /documents/scan
-- POST /documents/{id}/reindex
-- PATCH /documents/{id}
-- GET /documents/{id}/facts
-- GET /documents/{id}/pages/{page}
+## Vault, documentos y RAG
+- `POST /documents/index`
+- `GET /documents`
+- `GET /documents/{id}/facts`
+- `POST /documents/{id}/reprocess`
+- `GET /documents/{id}/file`
+- `PATCH /facts/{id}`
+- `POST /rag/search`
+- `POST /rag/rebuild/{document_id}`
+- `POST /chat`
 
-## Vault
+El endpoint `file` valida de nuevo que la ruta pertenezca al Vault y puede abrirse con `#page=N`.
 
-- GET /vault
-- PUT /vault/config
-- POST /vault/rescan
+## Open Banking
+Superficie pública intencionada:
+- `GET /banking/aspsps?country=ES`
+- `POST /banking/auth`
+- `POST /banking/complete?code=...`
+- `GET /banking/connections`
+- `POST /banking/connections/{id}/sync`
+- `DELETE /banking/connections/{id}`
+
+No existen rutas públicas para leer directamente la sesión PSD2, balances provider-crudos ni transacciones provider-crudas. La lectura pasa por sincronización persistida/deduplicada.
 
 ## Patrimonio
-
-- GET /net-worth
-- GET /net-worth/history
-
-## Portfolio
-
-- GET /portfolios
-- GET /portfolios/{id}
-- GET /portfolios/{id}/risk
-- POST /portfolios/import
-
-## Mercado
-
-- GET /market/instruments/{id}
-- GET /market/instruments/{id}/history
-- GET /market/instruments/{id}/fundamentals
-- GET /market/instruments/{id}/news
-
-## Hipoteca
-
-- GET /mortgages
-- GET /mortgages/{id}
-- POST /mortgages/{id}/scenarios
-- POST /mortgages/{id}/compare
-
-## Optimización
-
-- GET /opportunities
-- GET /opportunities/{id}
-- POST /opportunities/refresh
-- POST /opportunities/{id}/decision
-
-## Chat
-
-- POST /chat/sessions
-- GET /chat/sessions
-- GET /chat/sessions/{id}
-- POST /chat/sessions/{id}/messages
-- GET /chat/sessions/{id}/stream
-
-Streaming preferente por SSE.
-
-## Jobs
-
-- GET /jobs/{id}
-- GET /jobs/{id}/events
-- POST /jobs/{id}/cancel cuando sea seguro.
-
-## Respuestas evidenciadas
-
-Para análisis:
-```json
-{
-  "result": {},
-  "sources": [],
-  "calculations": [],
-  "confidence": 0.82,
-  "dataFreshness": {}
-}
-```
-
-## OpenAPI
-
-FastAPI es fuente del schema. El frontend debe generar/validar tipos a partir de OpenAPI para reducir drift.
-
-
-## Analytics e insights
-
-- GET /analytics/cash-flow
-- GET /analytics/spending/by-category
-- GET /analytics/spending/by-merchant
-- GET /analytics/spending/fixed-vs-variable
-- GET /analytics/spending/essential-vs-discretionary
-- GET /analytics/spending/trends
-- GET /analytics/budget-vs-actual
-- GET /analytics/net-worth
-- GET /analytics/debt
-- GET /insights
-- POST /insights/refresh
-- POST /insights/{id}/dismiss
-
-Toda agregación para gráficas se calcula en backend/SQL. El frontend no recibe datasets completos si puede recibir series agregadas.
-
-## Presupuestos
-
-- GET /budgets
-- POST /budgets
-- PATCH /budgets/{id}
-- DELETE /budgets/{id}
-- GET /budgets/forecast
-
-## Objetivos
-
-- GET /goals
-- POST /goals
-- PATCH /goals/{id}
-- DELETE /goals/{id}
-- GET /goals/{id}/projection
-
-## Decisiones y escenarios
-
-- POST /decisions
-- GET /decisions
-- GET /decisions/{id}
-- POST /decisions/{id}/recalculate
-- POST /decisions/{id}/alternatives
-- POST /decisions/{id}/select
-- GET /decisions/{id}/impact
-
-Las respuestas deben incluir alternatives, assumptions, calculations, sources, confidence y dataFreshness.
-
-## Data quality
-
-- GET /data-quality/issues
-- POST /data-quality/issues/{id}/resolve
-- POST /data-quality/reconcile
-- GET /data-quality/summary
-
-## Calendar y alertas
-
-- GET /calendar/events
-- GET /alerts
-- PATCH /alerts/{id}
-- POST /alerts/{id}/dismiss
-
-## Sistema local
-
-- GET /system/health
-- GET /system/models
-- POST /system/models/verify
-- GET /system/audit
-- POST /backup
-- POST /restore
-- POST /export
-
-## Convención monetaria
-
-Importes monetarios críticos viajan como decimal string o formato tipado acordado, nunca como float de precisión no controlada.
-
-## Convención de paginación
-
-Para colecciones grandes usar cursor pagination. Evitar offset profundo salvo datasets pequeños.
-
-## Idempotencia
-
-Imports, sincronizaciones, reindexados y operaciones repetibles deben aceptar o generar idempotency keys cuando exista riesgo de duplicación.
-
-
-## Evidencia contractual
-
-- GET /contracts/{id}/facts
-- GET /contracts/{id}/conflicts
-- POST /contracts/{id}/facts/{factId}/verify
-- PATCH /contracts/{id}/facts/{factId}
-- GET /calculations/{id}/trace
-
-Los facts devuelven documentId, page, section, confidence, status, effective dates y evidencia necesaria para abrir la fuente.
-
-Nunca convertir not_found en 0.
-
-
-## Forecasting
-
-- GET /forecast
-- POST /forecast/recalculate
-- GET /forecast/history
-- GET /forecast/accuracy
-- GET /forecast/categories
-- GET /forecast/compare-last-year
-
-Parámetros:
-- from;
-- to;
-- scenario;
-- include_extraordinary;
-- account;
-- category.
-
-Respuesta:
-- predictedIncome;
-- predictedExpenses;
-- predictedSavings;
-- predictedLiquidity;
-- lowerBound;
-- upperBound;
-- samePeriodLastYear;
-- drivers;
-- accuracy;
-- knownVsEstimated.
-
-## Commitments
-
-- GET /commitments
-- POST /commitments
-- PATCH /commitments/{id}
-- DELETE /commitments/{id}
-- GET /commitments/timeline
-
-## Stress testing
-
-- POST /stress-tests
-- GET /stress-tests/{id}
-
-## Cost centers
-
-- GET /cost-centers
-- POST /cost-centers
-- GET /cost-centers/{id}/analytics
-- POST /cost-centers/{id}/links
-
-## Coverage
-
-- GET /coverage
-- GET /coverage/overlaps
-- GET /coverage/gaps
-- POST /coverage/refresh
-
-## Financial Graph
-
-- GET /entities/{type}/{id}/relations
-- GET /entities/{type}/{id}/impact
-
-## Decision outcomes
-
-- GET /decisions/{id}/outcomes
-- POST /decisions/{id}/outcomes
-- GET /decisions/{id}/change-explanation
-
-## Repair Center
-
-- GET /repair/issues
-- POST /repair/scan
-- POST /repair/issues/{id}/repair
-- POST /repair/rebuild-fts
-- POST /repair/rebuild-vectors
-
-## Model evaluation
-
-- GET /model-evaluations
-- POST /model-evaluations/run
-- GET /model-evaluations/{id}
-
-
-## Investment lots
-
-- GET /portfolios/{id}/lots
-- GET /positions/{id}/lots
-- POST /portfolios/{id}/simulate-disposal
-
-## Action Center
-
-- GET /actions
-- POST /actions
-- PATCH /actions/{id}
-- POST /actions/{id}/complete
-- POST /actions/{id}/snooze
-- POST /actions/{id}/dismiss
-
-## Runtime local
-
-- GET /runtime/status
-- POST /runtime/check
-- POST /runtime/recover
-
-Los endpoints de runtime no pueden habilitar ejecución arbitraria de procesos o comandos.
+- `GET /wealth`
+- `GET /assets`
+- `POST /assets`
+- `GET /liabilities`
+- `POST /liabilities`
+- `GET /cost-centers`
+- `POST /cost-centers`
+- `GET /cost-centers/{id}/summary`
+- `POST /cost-center-links`
+
+## Inversión y mercado
+- `GET /portfolios`
+- `POST /portfolios`
+- `GET /portfolios/{id}/exposure`
+- `GET /securities`
+- `POST /securities`
+- `POST /trades`
+- `GET /market/quote/{symbol}`
+- `GET /market/security/{id}/history`
+- `POST /market/security/{id}/refresh`
+- `GET /market/security/{id}/risk`
+- `POST /risk/calculate`
+- `GET /crypto/price`
+- `GET /crypto/metrics/{coin_id}`
+- `GET /fundamentals/sec/{cik}`
+- `GET /macro/ecb/{flow}/{key}`
+- `GET /news/search`
+- `POST /news/ingest`
+
+## Contratos y seguros
+- `GET /contracts`
+- `POST /contracts`
+- `GET /insurance`
+- `POST /insurance`
+- `GET /coverage`
+- `POST /coverage`
+- `POST /coverage/compare`
+- `GET /coverage/overlaps`
+- `POST /coverage/overlaps/scan`
+- `GET /coverage-requirements`
+- `POST /coverage-requirements`
+- `DELETE /coverage-requirements/{id}`
+- `GET /coverage/gaps`
+- `GET /benefits`
+- `POST /benefits`
+- `POST /linked-products`
+
+## Hipoteca y optimización
+- `POST /mortgage/scenario`
+- `POST /mortgage/prepayment`
+- `POST /optimization/calculate`
+
+La penalización desconocida en optimización se representa como `null` y produce `needs_more_data`.
+
+## Objetivos y decisiones
+- `GET /goals`
+- `POST /goals`
+- `PATCH /goals/{id}`
+- `GET /decisions`
+- `POST /decisions`
+- `GET /decisions/{id}`
+- `PATCH /decisions/{id}`
+- `POST /decisions/{id}/alternatives`
+- `POST /decisions/{id}/outcomes`
+- `GET /model-evaluations`
+- `POST /model-evaluations`
+
+## Acción, integridad, backup y privacidad
+- `GET /actions`
+- `PATCH /actions/{id}`
+- `GET /repair`
+- `POST /repair/{id}`
+- `POST /backups`
+- `POST /backups/restore`
+- `GET /privacy/summary`
+- `POST /privacy/rebuild-derived`
+- `DELETE /privacy/data`
+
+## Fiscalidad
+- `POST /tax/estimate`
+
+Es una estimación parametrizada, no un motor normativo legal por jurisdicción/año.
+
+## Compatibilidad
+Los nombres y payloads de OpenAPI son la referencia última. Si este documento y `/api/openapi.json` difieren, debe corregirse la documentación en el mismo cambio.
