@@ -137,5 +137,5 @@ def test_tracked_asset_uses_real_purchase_data_and_watch_state():
         rows=tracked_assets(db)
         match=next(x for x in rows if x["security_id"]==owned["security_id"])
         assert Decimal(match["cost_basis"])==Decimal("202")
-        assert Decimal(match["current_price"])==Decimal("20")
-        assert Decimal(match["unrealized_pnl"])==Decimal("-2")
+        assert match["current_price"] is None
+        assert match["unrealized_pnl"] is None
