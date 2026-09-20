@@ -88,7 +88,7 @@ def test_public_market_parser_only_extracts_explicit_claims_and_rates():
 
     sample=(
         "Hipoteca fija 2,96% TIN y 3,65% TAE. Sin comisión de apertura. "
-        "Seguro de hogar: pagarás un 40% menos. Estudio personalizado."
+        "Pagarás un 40% menos en tu Seguro de Hogar. Estudio personalizado."
     )
     rates=_rates(sample)
     assert {"type":"TIN","value_percent":"2.96"} in rates
