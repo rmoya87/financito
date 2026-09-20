@@ -1,119 +1,72 @@
 # Providers e integraciones
 
-**Política obligatoria:** ninguna funcionalidad base puede exigir un proveedor de pago. Ver [FREE_CONNECTORS.md](FREE_CONNECTORS.md).
+Ninguna función base exige un proveedor de pago. Los adapters externos son opcionales y los secretos se guardan en el credential store del sistema.
 
-## Patrón
+## IA local — Ollama
+- endpoint permitido: únicamente loopback;
+- modelos de chat y embeddings seleccionables desde Configuración;
+- si no está disponible, la app sigue operativa y el chat devuelve cálculos estructurados sin explicación LLM.
 
-Toda dependencia externa implementa una interfaz estable. El dominio no conoce SDKs concretos.
+## Open Banking — Enable Banking
+Credenciales:
+- App ID;
+- clave RSA privada.
 
-## BankingProvider
+Flujo público:
+1. listar ASPSPs por país;
+2. iniciar autorización en el banco;
+3. completar el callback;
+4. persistir conexión/cuentas;
+5. sincronizar balances/movimientos;
+6. revocar.
 
-Métodos conceptuales:
-- connect
-- refresh_consent
-- list_accounts
-- get_balances
-- get_transactions
-- disconnect
+Características:
+- solo lectura;
+- dedupe estable;
+- paginación;
+- consentimiento con fecha de expiración;
+- aviso de renovación;
+- no se exponen sesiones ni movimientos provider-crudos mediante la API pública.
 
-Requisitos:
-- PSD2/Open Banking;
-- solo lectura inicial;
-- normalización de estados;
-- idempotencia;
-- rate limiting;
-- expiración de consentimiento.
+Que Bankinter, Revolut u otra entidad aparezca depende del catálogo real del proveedor/país.
 
-Bankinter y Revolut se integrarán mediante el mecanismo permitido por el proveedor regulado seleccionado o API oficial cuando aplique.
+## Alpha Vantage
+Uso:
+- quote;
+- histórico diario compacto;
+- actualización manual desde cartera;
+- persistencia local de observaciones.
 
-## MarketDataProvider
+Requiere API key gratuita. No se refresca en background para no consumir cuota sin control.
 
-- quote
-- candles
-- dividends
-- splits
-- instrument metadata
+## CoinGecko
+Uso:
+- simple price;
+- market chart;
+- volatilidad/drawdown y otras métricas calculadas localmente.
 
-## FundamentalDataProvider
+La Demo key se puede guardar en Configuración; el adapter tolera modalidad sin key cuando el endpoint lo permite.
 
-- financial statements
-- ratios
-- estimates si la licencia lo permite
+## SEC EDGAR
+- `companyfacts`;
+- conceptos US-GAAP seleccionados.
 
-## CryptoProvider
+Requiere un User-Agent identificable conforme a las prácticas de SEC. No pretende sustituir un feed global de fundamentales.
 
-- quotes
-- OHLCV
-- market metrics
-- derivatives cuando proceda
-- on-chain cuando sea fiable
+## ECB
+Series SDMX del Banco Central Europeo. No requiere secreto.
 
-## NewsProvider
+## GDELT
+Búsqueda/ingestión de noticias y deduplicación por URL canónica. No existe todavía scoring robusto de impacto/sentimiento.
 
-- búsqueda por entidad;
-- feeds;
-- canonical URL;
-- timestamps;
-- fuente.
+## Seguridad de credenciales
+El frontend nunca lee el valor guardado. `GET /provider-config` solo informa de si existe cada secreto. Variables de entorno se mantienen como fallback de desarrollo.
 
-Priorizar fuentes primarias para resultados, filings y comunicaciones corporativas.
+## Política de frescura
+Cada dato persistido conserva, cuando aplica:
+- provider;
+- timestamp/fecha;
+- fetched_at;
+- delayed.
 
-## MacroProvider
-
-- tipos;
-- inflación;
-- índices;
-- divisas;
-- indicadores oficiales.
-
-## ComparisonProvider
-
-Familias:
-- InsuranceComparisonProvider
-- MortgageComparisonProvider
-- EnergyComparisonProvider
-- TelecomComparisonProvider
-- BankProductComparisonProvider
-
-Una oferta debe distinguir:
-- dato público;
-- estimación;
-- oferta personalizada;
-- fecha;
-- condiciones.
-
-## Caché
-
-Cada provider define TTL por recurso.
-
-Ejemplos:
-- precio: corto durante mercado abierto;
-- fundamentales: días;
-- contratos/documentos: hasta cambio;
-- comparadores: según fecha de consulta.
-
-## Fallos
-
-Aplicar:
-- timeout;
-- retry con backoff;
-- circuit breaker cuando aporte valor;
-- fallback a caché;
-- marca stale.
-
-## Licencias
-
-Antes de producción, documentar términos de uso y permisos de redistribución de cada fuente. No asumir que una API gratuita permite almacenar o mostrar cualquier dato.
-
-
-## Política de coste
-
-Todo adapter debe declarar:
-- free_available;
-- requires_paid_plan;
-- requires_key;
-- official_source;
-- fallback_provider;
-- manual_fallback.
-
-Un provider de pago puede estudiarse en el futuro, pero nunca convertirse en requisito para funcionalidad base sin cambiar explícitamente la política del producto.
+Un dato externo no se presenta como dato en tiempo real si el proveedor lo marca retrasado.

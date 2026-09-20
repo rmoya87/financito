@@ -1,151 +1,45 @@
-# Mortgage Optimization Engine
+# Mortgage Engine
 
-## Objetivo
+## Implementado
 
-Comparar de forma trazable el coste de mantener o modificar una hipoteca.
+### Amortización estándar
+Input:
+- principal;
+- TIN anual decimal;
+- meses.
 
-## Datos actuales
-
-- capital pendiente;
-- plazo restante;
+Output:
 - cuota;
-- TIN;
-- TAE;
-- tipo fijo/variable/mixto;
-- índice;
-- diferencial;
-- fecha de revisión;
-- comisión de amortización;
-- novación;
-- subrogación;
-- vencimiento.
+- pagos totales;
+- intereses totales.
 
-## Vinculaciones
+### Amortización extraordinaria
+Input adicional:
+- importe extraordinario;
+- comisión total conocida.
 
-Modelar individualmente:
-- nómina;
-- seguro hogar;
-- seguro vida;
-- tarjetas;
-- planes;
-- alarma;
-- otros.
+Compara:
+1. **reducir cuota** manteniendo plazo;
+2. **reducir plazo** manteniendo aproximadamente la cuota original.
 
-Cada vinculación:
-- coste anual real;
-- coste alternativo equivalente;
-- descuento sobre tipo;
-- beneficio monetario de la bonificación.
+Devuelve para ambos:
+- nueva cuota o nuevo plazo;
+- intereses restantes;
+- ahorro de intereses neto de la comisión indicada.
 
-## Estrategias
+No se presupone una comisión legal: el valor debe proceder de evidencia/entrada explícita.
 
-Comparar al menos:
-1. mantener;
-2. novación;
-3. subrogación;
-4. cancelación + nueva hipoteca;
-5. amortización parcial;
-6. amortización total cuando tenga sentido.
+### Switching genérico
+El motor de optimización calcula:
+`ahorro bruto - coste cambio - penalizaciones - beneficios perdidos - coste recurrente adicional - impacto fiscal`
 
-## Costes
+Si la penalización es desconocida, el resultado es `needs_more_data`.
 
-Según aplicabilidad:
-- comisión de apertura;
-- amortización;
-- novación;
-- subrogación;
-- tasación;
-- gastos administrativos;
-- productos vinculados;
-- seguros;
-- pérdida de bonificaciones;
-- impuestos o impacto fiscal aplicable.
+## No implementado como automatismo completo
+- FEIN/FIAE estructurada en todos sus campos;
+- curvas variables/mixtas y revisiones de índice;
+- novación/subrogación;
+- costes legales por jurisdicción/fecha;
+- ofertas bancarias comerciales automáticas.
 
-Nunca asumir que un coste legal aplica: las reglas deben ser configurables por jurisdicción y fecha.
-
-## Escenarios
-
-Horizontes:
-- 1 año;
-- 3 años;
-- 5 años;
-- 10 años;
-- vencimiento.
-
-Para variable/mixta:
-- escenario base;
-- subida de índice;
-- bajada de índice;
-- sensibilidad configurable.
-
-No presentar escenarios como predicciones.
-
-## Resultados
-
-- cuota;
-- intereses;
-- costes asociados;
-- coste total;
-- ahorro bruto;
-- coste de cambio;
-- ahorro neto;
-- break-even;
-- cash flow mensual.
-
-## Ejemplo de salida
-
-```text
-Mantener:
-  coste horizonte 10 años: X
-
-Subrogación:
-  coste horizonte 10 años: Y
-  costes iniciales: Z
-
-Ahorro bruto: A
-Costes cambio: B
-Beneficios/vinculaciones: C
-Ahorro neto: D
-Break-even: N meses
-```
-
-## Trazabilidad
-
-Guardar:
-- documento actual;
-- oferta alternativa;
-- fecha;
-- parámetros;
-- curva/índice usado;
-- versión del motor.
-
-## Validación
-
-Tests con:
-- fijo;
-- variable;
-- mixto;
-- amortización;
-- cambios de plazo;
-- comisiones;
-- bonificaciones;
-- escenarios adversos.
-
-
-## Documentación contractual como input
-
-El motor debe construir un MortgageContractSnapshot con la documentación del usuario, incluyendo cuando exista:
-- escritura;
-- FEIN/FIAE;
-- novaciones;
-- anexos;
-- comunicaciones del banco;
-- condiciones de vinculaciones.
-
-Las comisiones y penalizaciones deben extraerse con fuente y vigencia.
-
-Una fórmula contractual se representa de forma estructurada y el motor la evalúa con el capital/fecha actuales.
-
-No asumir comisión 0 cuando no se encuentra la cláusula.
-
-Si una penalización o vinculación material es unknown/ambiguous/conflicting, el escenario puede calcular rangos o marcar needs_more_data, pero no concluir que cambiar de hipoteca compensa de forma firme.
+Estos elementos deben añadirse como facts versionados y nunca como constantes “universales”.

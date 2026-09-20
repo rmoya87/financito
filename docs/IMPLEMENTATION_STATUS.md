@@ -1,77 +1,106 @@
 # Estado de implementación
 
-Fecha de corte: 2026-09-20.
+Fecha de corte: **2026-09-20**.  
+Schema actual: **v5**.
 
-Este documento diferencia explícitamente lo implementado y verificable de lo que sigue requiriendo integración externa o una fase posterior. No sustituye a `FEATURE_MATRIX.md`; describe el código ejecutable presente en el repositorio.
+Este documento describe únicamente comportamiento ejecutable en `main`. Los planes futuros viven en `ROADMAP.md`.
 
-## Implementado en el runtime v1
+## Implementado y verificable
 
-### Seguridad y operación local
-- FastAPI solo admite configuración de bind loopback.
-- Validación de Host y Origin para reducir DNS rebinding y llamadas desde sitios externos.
-- Cookie de sesión HttpOnly/SameSite=Strict y token CSRF para mutaciones.
+### Runtime, seguridad y privacidad
+- FastAPI solo en loopback, validación Host/Origin, sesión local HttpOnly y CSRF.
 - CSP y cabeceras defensivas.
-- Vault limitado por path canónico; se rechazan rutas fuera del root y symlinks.
-- Launcher local que inicia la API y abre el navegador sin exigir comandos al usuario una vez empaquetado.
-- Health Center para DB, Vault, frontend e IA local.
-- Auditoría local de eventos materiales.
+- SQLCipher en runtime estable; la clave se obtiene de entorno explícito o Keychain y se crea en Keychain si no existe.
+- Modo SQLite sin cifrar bloqueado salvo `FINANCITO_ALLOW_PLAINTEXT_SQLITE=1`.
+- secretos de providers mediante keyring; la API solo devuelve estado configurado/no configurado.
+- Vault con path canónico, rechazo de symlinks y límites de tamaño/páginas.
+- borrado de datos de Financito sin borrar silenciosamente los originales externos del Vault.
+- audit log local.
 
-### Datos y finanzas
-- Cuentas manuales y saldo.
-- Importación CSV bancaria con fechas/decimales españoles, deduplicación y procedencia.
-- Categorización determinista inicial con confianza; corrección manual con auditoría y precedencia.
-- Dashboard de ingresos, gastos, ahorro, liquidez, categorías, compromisos y acciones.
-- Presupuestos por categoría.
-- Compromisos futuros.
-- Forecast 7/30/90/180/365 o personalizado mediante API/UI: baseline del mismo periodo del año anterior, tendencia acotada, compromisos conocidos, rango y versión del modelo.
-- Motor hipotecario determinista para escenarios de amortización.
-- Motor de optimización con beneficio neto y break-even. Una penalización desconocida produce `needs_more_data`; nunca se interpreta como 0.
-- Esquema inicial para contratos, hipotecas, portfolio, posiciones, objetivos, decisiones y oportunidades.
+### Movimientos y analítica
+- CSV y formatos bancarios estructurados: XLSX/XLSM, QIF, OFX, CAMT/XML y MT940/STA.
+- deduplicación, normalización, categorías, reglas, corrección manual auditable y review queue.
+- splits exactos, transferencias internas y reembolsos.
+- reembolsos netean gasto y no inflan ingresos en Dashboard, Analytics, Forecast/Stress y Chat.
+- recurrentes y anomalías.
+- presupuestos y compromisos.
+- análisis por categoría/comercio, fijo-variable, esencial-discrecional y series mensuales.
+- forecast con baseline comparable, accuracy histórica y Calendar.
+- stress testing y cash runway.
 
-### Financial Knowledge Vault
-- Indexación por referencia a archivos existentes en el Vault.
-- Soporte inicial para PDF, imágenes OCR, DOCX, XLSX, CSV, TXT y JSON.
-- SHA-256 y deduplicación.
-- Extracción conservadora de hechos contractuales básicos.
-- Todo hecho extraído queda `inferred` hasta revisión humana.
-- Se genera automáticamente una acción de revisión cuando hay evidencia inferida.
+### Banking
+- Enable Banking adapter de solo lectura.
+- listado de ASPSPs e inicio de autorización.
+- intercambio de código por sesión persistida.
+- mapeo provider-account -> cuenta local por `identification_hash`.
+- balances, transacciones paginadas y deduplicación por referencia estable.
+- sync explícita, revocación y estado.
+- Action Item cuando el consentimiento está a 14 días o menos de expirar.
+- no se exponen endpoints públicos de sesión/balances/transacciones crudos.
 
-### WebApp
-- Shell responsive y navegación local.
-- Resumen.
-- Cuentas.
-- Movimientos/importación y revisión de categorías.
-- Previsión y compromisos.
-- Documentos/evidencia.
-- Action Center.
-- Laboratorio de decisiones: hipoteca y cambio de producto.
-- Health Center.
+### Documentos y RAG
+- watcher de Vault.
+- PDF, TXT, CSV, JSON, DOCX, XLSX/XLSM, PNG/JPEG/HEIC/TIFF/BMP.
+- SHA-256, deduplicación, OCR, detección ES/EN y clasificación conservadora.
+- hechos contractuales con página y contexto; confirmación humana persistente.
+- FTS5/BM25 + embeddings locales opcionales + sqlite-vec/fallback cosine.
+- fusión Reciprocal Rank Fusion y reranking léxico.
+- búsqueda global y citas que abren documento/página.
+- reindexado y reconstrucción de derivados conservando evidencia verificada.
 
-## Implementado como contrato/adapters, pendiente de credenciales o software local
+### Patrimonio, inversiones y mercado
+- activos y pasivos manuales, net worth y ownership.
+- portfolios, securities, trades y FIFO tax lots.
+- P&L realizado/no realizado.
+- Alpha Vantage: quote e histórico bajo demanda y caché local.
+- exposición por activo/clase y concentración HHI.
+- risk metrics desde históricos.
+- CoinGecko: precio y métricas de riesgo.
+- SEC EDGAR, ECB y GDELT adapters.
+- backtest MA y escenario amortizar-vs-invertir.
 
-- IA local Ollama: Health detecta modelos y el adapter solo acepta loopback. Requiere que el usuario instale/configure un modelo local.
-- Open Banking: la especificación y estrategia de fallback están documentadas; no se incluyen credenciales ni contrato de un proveedor.
-- Mercado, fundamentales, cripto, noticias y macro: deben activarse mediante adapters gratuitos documentados y credenciales del usuario cuando proceda.
+### Contratos, seguros, hipoteca y decisiones
+- contratos y Action Center de renovación/preaviso.
+- pólizas y hechos de cobertura.
+- duplicidades solo entre coberturas verificadas.
+- requisitos de cobertura definidos por usuario y detección de huecos contra esos requisitos.
+- motor hipotecario de cuota/intereses.
+- amortización extraordinaria: reducir cuota vs reducir plazo, con comisión explícita.
+- motor de switching con costes, penalizaciones, beneficios perdidos, tax impact y break-even.
+- beneficios y productos vinculados.
+- Decision Case, alternativas, estados y resultado esperado vs observado.
+- centros de coste con asignaciones porcentuales y agregación de contratos/pólizas/activos/deuda.
 
-## Pendiente para declarar el alcance 360º completamente terminado
+### Operación
+- backup cifrado AES-256-GCM, clave derivada con scrypt, manifest SHA-256 y extracción TAR segura.
+- restore a staging, verificación y aplicación al siguiente arranque.
+- Repair Center.
+- Health Center con schema real, DB, Vault, frontend, IA y providers.
+- export JSON/CSV.
+- demo sintética.
+- CI backend + frontend.
 
-No se consideran terminadas todavía estas áreas de la especificación completa:
-- sincronización PSD2 real y renovación de consentimientos;
-- parsers específicos de extractos XLSX/OFX/QIF/CAMT/MT940 y perfiles por banco;
-- RAG híbrido FTS5 + sqlite-vec con embeddings/reranking local;
-- chat financiero con tool registry completo y citas navegables;
-- extracción contractual avanzada por página/sección y versionado temporal de cláusulas;
-- seguros/coberturas con comparación estructurada completa;
-- módulo hipotecario con FEIN/FIAE, vinculaciones, novación/subrogación y curvas variables;
-- portfolio completo con trades, tax lots, FX, mercado y riesgo;
-- Tax Center por jurisdicción/ejercicio;
-- noticias, fundamentales, macro y motores de recomendación;
-- stress testing, Financial Graph, cost centers, Decision Outcomes y Repair Center completos;
-- backup cifrado/restauración y empaquetado firmado de macOS;
-- SQLCipher real en distribución estable.
+## Requiere configuración externa, no desarrollo adicional para activarse
+- Enable Banking: registro/credenciales y callback válidos.
+- Alpha Vantage: key gratuita.
+- SEC EDGAR: User-Agent.
+- Ollama y modelos locales.
+- disponibilidad real de cada banco dentro del proveedor PSD2.
 
-Estas áreas no se simulan con datos fake ni se presentan como finalizadas. La aplicación base funciona sin ellas y conserva las interfaces/documentación necesarias para implementarlas por fases.
+## Parcial por diseño
+- extracción contractual: detecta hechos comunes, pero una FEIN/FIAE, póliza o anexo complejo puede requerir revisión/manualización.
+- fundamentals: extracción de conceptos SEC seleccionados, no un terminal financiero completo.
+- news: búsqueda/ingestión; no existe todavía un motor robusto de impacto/sentimiento.
+- portfolio fit/recommendation: scoring determinista disponible, sin asesoramiento personalizado automático.
+- modelo temporal: se conserva fecha/procedencia en fuentes principales, pero no existe aún reconstrucción universal “as-of” de todas las entidades.
+- accesibilidad: UI responsive y semántica básica, sin auditoría WCAG AA completa.
 
-## Cifrado de DB
+## No se declara terminado
+- reglas fiscales legales versionadas por país/año y presentación fiscal.
+- importadores específicos de brokers con todos sus formatos.
+- comparadores comerciales de hipoteca, seguros, energía, telecom y depósitos.
+- curvas hipotecarias variables/mixtas completas y novación/subrogación contractual automatizada.
+- firma, notarización, auto-update y distribución final macOS.
+- E2E Playwright y auditoría accesibilidad automatizada completa.
 
-El repositorio no introduce una falsa sensación de cifrado. El entorno de desarrollo/tests usa SQLite normal únicamente con `FINANCITO_ALLOW_PLAINTEXT_SQLITE=1`. La distribución estable debe integrar SQLCipher (o alternativa auditada) y guardar su clave en Keychain antes de considerar satisfecha la Definition of Done de seguridad.
+Un elemento de esta sección no se sustituirá con datos ficticios ni supuestos silenciosos.

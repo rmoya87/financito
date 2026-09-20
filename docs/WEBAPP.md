@@ -1,209 +1,58 @@
-# WebApp
+# WebApp actual
 
-## Objetivo
+La interfaz es una WebApp Next.js/React exportada estáticamente y servida por FastAPI desde el mismo origen loopback.
 
-La interfaz de Financito se implementará como WebApp responsive con Next.js, React, TypeScript, TailwindCSS y shadcn/ui.
+## Navegación implementada
+- Resumen
+- Buscar
+- Cuentas
+- Movimientos
+- Previsión
+- Análisis
+- Patrimonio
+- Centros de coste
+- Inversiones
+- Mercados
+- Documentos
+- Contratos
+- Seguros
+- Simuladores
+- Decisiones
+- Chat
+- Banca conectada
+- Acciones
+- Sistema/privacidad
+- Configuración
 
-## Rutas objetivo
+## Estado y datos
+TanStack Query gestiona reads, mutations, cache e invalidación. Los cálculos financieros no se duplican en React: la UI consume resultados del backend.
 
-```text
-/
-  /dashboard
-  /accounts
-  /transactions
-  /budget
-  /net-worth
-  /investments
-  /markets
-  /crypto
-  /documents
-  /contracts
-  /insurance
-  /mortgage
-  /services
-  /opportunities
-  /news
-  /chat
-  /settings
-```
+## Patrones
+- loading/empty/error;
+- cards responsive;
+- tablas con overflow en pantallas estrechas;
+- formularios validados por API/Pydantic;
+- enlaces de evidencia abren archivo/página;
+- secrets se introducen como inputs pero nunca se vuelven a renderizar desde backend.
 
-## App shell
-
-- Sidebar
-- Topbar
-- Breadcrumb contextual cuando aporte valor
-- Main content
-- Inspector lateral opcional
-- Command palette Cmd/Ctrl+K
-
-## Dashboard
-
-Componentes:
-- NetWorthHero
-- LiquidityCard
-- InvestableCapitalCard
-- CashFlowCard
-- SavingsRateCard
-- PortfolioSummary
-- RiskSummary
-- UpcomingPayments
-- RenewalAlerts
-- OptimizationOpportunities
-- RelevantNews
-
-## Accounts
-
-- AccountsList
-- AccountCard
-- BalanceHistory
-- SyncStatus
-- ConsentStatus
-
-## Transactions
-
-- TransactionDataTable
-- TransactionFilters
-- CategoryEditor
-- MerchantGroup
-- RecurringBadge
-- RuleBuilder
-- ImportDialog
-
-## Documents
-
-- VaultStatus
-- DocumentDataTable
-- IndexingStatus
-- DocumentPreview
-- ExtractedFacts
-- CitationInspector
-- ReindexAction
-
-## Investments
-
-- PortfolioHeader
-- AllocationChart
-- PositionsTable
-- PerformanceChart
-- RiskPanel
-- ExposureBreakdown
-
-## Opportunities
-
-- OpportunityList
-- OpportunityCard
-- NetBenefitSummary
-- BreakEvenBadge
-- ComparisonTable
-- CalculationInspector
-- SourcesPanel
-- DecisionDialog
-
-## Mortgage
-
-- MortgageSummary
-- CurrentTerms
-- LinkedProducts
-- ScenarioBuilder
-- ScenarioComparison
-- CumulativeCostChart
-- BreakEvenChart
-- AssumptionsPanel
-
-## Chat
-
-- ChatThread
-- PromptComposer
-- SuggestedQuestions
-- StreamingAnswer
-- EvidenceDrawer
-- SourceCitation
-- CalculationTrace
-
-## Settings
-
-Secciones:
-- General
-- Vault
-- Local AI
-- Embeddings
-- Banking
-- Market Data
-- Crypto
-- News
-- Security
-- Privacy
-- Financial Profile
-- Investment Profile
-- Scoring
-- Schedulers
-- Developer Mode
-
-## Component rules
-
-1. Usar shadcn/ui antes de crear primitives nuevos.
-2. Componentes de negocio viven en feature folders.
-3. Componentes UI no contienen cálculos financieros.
-4. Formularios usan schema compartido/validado.
-5. Queries se encapsulan por feature.
-6. Ningún secreto se persiste en localStorage.
-
-## Estado
-
-TanStack Query:
-- server/local API state;
-- caching;
-- invalidation;
-- mutations.
-
-Zustand solo para:
-- preferencia de sidebar;
-- filtros UI efímeros;
-- inspector;
-- modo privacidad;
-- estado no persistente cuando sea adecuado.
-
-## Diseño responsive
-
-Desktop es el objetivo principal inicial.
-
-Breakpoints:
-- sidebar completa;
-- sidebar compacta;
-- navegación móvil futura.
-
-Las tablas densas deben ofrecer alternativa móvil.
-
-## Skeletons
-
-Cada módulo con carga remota/local costosa debe tener skeleton específico y evitar layout shift.
-
-## Stale data
-
-Badge estándar:
-- actualizado;
-- desactualizado;
-- offline;
-- error de sincronización.
+## Configuración
+Permite:
+- ver Health;
+- seleccionar modelo Ollama y embeddings;
+- guardar secrets de Enable Banking/Alpha Vantage/CoinGecko/SEC en credential store.
 
 ## Privacidad
+Sistema permite:
+- backup/restore;
+- rebuild de derivados;
+- resumen de datos;
+- borrado confirmado de DB/índices/secrets.
 
-Modo privacidad global:
-- enmascara saldos;
-- P&L;
-- IBAN;
-- capital;
-- importes sensibles en gráficas.
+Los originales del Vault no se eliminan silenciosamente.
 
-## Developer Mode
-
-Panel opcional:
-- endpoint;
-- provider;
-- latencia;
-- cache hit;
-- freshness;
-- tools;
-- chunks;
-- scores RAG;
-- modelo local.
+## Límites pendientes
+- command palette global;
+- modo privacidad visual para ocultar importes;
+- Developer Mode completo;
+- tests de componentes/E2E;
+- auditoría WCAG AA formal.

@@ -1,161 +1,60 @@
-# RAG local
+# RAG local — implementación actual
 
 ## Objetivo
-
-Responder sobre documentación y datos privados con recuperación verificable y sin enviar contenido a una IA cloud.
-
-## Pipeline
-
-```text
-Pregunta
-  -> clasificación de intención
-  -> query expansion local
-  -> filtros de metadatos
-  -> BM25/FTS5
-  -> búsqueda vectorial
-  -> fusión
-  -> reranking
-  -> context builder
-  -> tools/cálculos si proceden
-  -> LLM local
-  -> respuesta + citas
-```
+Recuperar evidencia documental privada sin enviar documentos ni consultas financieras a IA cloud.
 
 ## Ingestión
+1. validar que el archivo está dentro del Vault;
+2. rechazar symlinks, >50 MB y PDF >500 páginas;
+3. SHA-256 y deduplicación;
+4. extracción/OCR;
+5. idioma y clasificación;
+6. hechos estructurados conservadores;
+7. chunks con página;
+8. FTS5;
+9. embeddings locales opcionales;
+10. sqlite-vec cuando está disponible.
 
-Para cada fichero:
-1. validar extensión y tamaño;
-2. SHA-256;
-3. deduplicar;
-4. extraer texto;
-5. OCR si el texto es insuficiente;
-6. detectar idioma;
-7. clasificar;
-8. extraer metadatos;
-9. detectar tablas/cláusulas;
-10. chunking semántico;
-11. embeddings;
-12. FTS;
-13. persistir trazabilidad.
+Formatos: PDF, TXT, CSV, JSON, DOCX, XLSX/XLSM, PNG/JPEG/HEIC/TIFF/BMP.
 
-## Chunking
+## Chunking real
+`chunks_for` agrupa párrafos hasta ~2600 caracteres con overlap de 300. En PDF se procesa por página, por lo que `page_start/page_end` se conserva.
 
-No usar únicamente ventanas fijas.
-
-Preservar:
-- documento;
-- página;
-- sección;
-- encabezado;
-- rango;
-- orden.
-
-Orientación inicial:
-- 400–800 tokens;
-- overlap 50–100;
-- tablas y cláusulas indivisibles cuando sea posible.
-
-## Embeddings
-
-Requisitos:
-- local;
-- multilingüe;
-- español/inglés;
-- versión registrada;
-- posibilidad de reindexar al cambiar de modelo.
-
-La implementación debe comparar modelos E5/BGE multilingües u opciones equivalentes antes de fijar uno.
+No se describe como “chunking semántico perfecto”: es un algoritmo determinista por párrafos.
 
 ## Recuperación híbrida
+- FTS5 + BM25;
+- embedding de consulta mediante Ollama si está configurado;
+- sqlite-vec para ANN; si falla/no está disponible, cosine sobre embeddings persistidos;
+- Reciprocal Rank Fusion entre lexical/vector;
+- ajuste final por overlap de tokens de consulta.
 
-Combinar:
-- BM25;
-- similitud vectorial;
-- metadatos;
-- boost por tipo de documento;
-- recencia solo cuando tenga sentido.
+No hay actualmente un cross-encoder/reranker neuronal separado.
 
-Usar Reciprocal Rank Fusion o técnica equivalente.
-
-## Reranking
-
-Aplicar reranker local cuando el coste/latencia lo justifique.
-
-Registrar:
-- score léxico;
-- score vectorial;
-- score final;
-- chunks seleccionados.
-
-## Citas
-
-Toda respuesta documental debe incluir:
+## Evidencia
+Cada resultado incluye:
+- chunk_id;
 - document_id;
 - nombre;
 - página;
-- chunk;
-- fragmento mínimo de soporte.
+- texto;
+- score.
 
-La UI debe poder abrir el documento en la página citada.
+Documentos, Search y Chat abren el archivo original en la página citada.
 
-## Consultas híbridas
+## Hechos contractuales
+La extracción detecta actualmente, cuando el texto lo permite:
+- preaviso;
+- penalización/comisión;
+- coste anual/mensual;
+- franquicia;
+- TIN/TAE;
+- permanencia/renovación.
 
-Una pregunta puede requerir simultáneamente:
-- RAG documental;
-- SQL estructurado;
-- motor financiero;
-- dato de mercado.
+Se guarda página y contexto. Los hechos materiales permanecen `inferred` hasta confirmación y el reprocesado conserva facts verificados.
 
-Ejemplo: “¿Me compensa cambiar la hipoteca?” no se responde solo con embeddings.
+## Regla de seguridad
+“No encontrado” no equivale a cero. Si falta comisión, penalización, cobertura o preaviso necesario para una conclusión, el motor debe exponer falta de evidencia.
 
-## Anti-alucinación
-
-Si la evidencia no contiene un dato:
-- no inferirlo como hecho;
-- declarar ausencia;
-- pedir/configurar la fuente necesaria mediante UI.
-
-Nunca rellenar penalizaciones, tipos o coberturas con supuestos silenciosos.
-
-## Evaluación
-
-Dataset de pruebas:
-- answerable;
-- unanswerable;
-- multi-document;
-- OCR;
-- tablas;
-- español;
-- inglés;
-- documentos contradictorios.
-
-Métricas:
-- recall@k;
-- precision@k;
-- MRR;
-- faithfulness;
-- citation accuracy;
-- latency.
-
-
-## RAG contractual
-
-Los contratos no se tratan solo como texto recuperable.
-
-Para hipotecas, seguros, préstamos, tarjetas y servicios:
-1. recuperar cláusula;
-2. extraer fact estructurado;
-3. asociar vigencia;
-4. asociar página/sección;
-5. validar confidence;
-6. alimentar engine determinista.
-
-El texto recuperado sirve como evidencia; el cálculo usa facts/ContractSnapshot.
-
-Consultar CONTRACT_EVIDENCE.md.
-
-## Regla material
-
-No encontrado != valor cero.
-
-Si una pregunta/cálculo depende de una penalización, comisión, preaviso o vinculación no localizada con suficiente confianza, la respuesta debe marcar falta de evidencia en lugar de inferir.
+## Reindexado
+`privacy/rebuild-derived` puede reconstruir chunks, FTS/vector y derivados manteniendo los datos fuente y hechos confirmados.

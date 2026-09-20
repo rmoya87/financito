@@ -1,53 +1,55 @@
 # Integridad, reparación y recuperación local
 
-## Objetivo
+## Backup
+El backup incluye:
+- DB;
+- contenido del Vault gestionado por Financito;
+- manifest con SHA-256 por fichero.
 
-Financito debe poder recuperarse de cierres inesperados, índices corruptos o derivados inconsistentes sin destruir datos fuente.
+Protección:
+- clave derivada con scrypt;
+- AES-256-GCM;
+- salt y nonce aleatorios;
+- magic/version del formato.
 
-## Principio
+## Restore
+La restauración:
+1. descifra en staging;
+2. valida paths para impedir traversal;
+3. extrae TAR con filtro seguro;
+4. verifica SHA-256 del manifest;
+5. crea `.restore-pending`;
+6. el launcher aplica DB/Vault antes de arrancar FastAPI.
 
-Raw/source data es reconstruible solo desde la fuente; índices, embeddings, agregados e insights deben poder regenerarse.
-
-## Startup checks
-
-- DB integrity;
-- migration state;
-- Vault availability;
-- free disk;
-- interrupted jobs;
-- model availability;
-- orphan derivatives;
-- pending reconciliation.
-
-## Jobs reanudables
-
-Cada job pesado conserva checkpoint cuando sea razonable.
+La UI no sustituye datos activos antes de que el backup haya sido verificado.
 
 ## Repair Center
+El scanner detecta actualmente:
+- documento con texto sin chunks;
+- hash del archivo distinto al indexado;
+- archivo del Vault desaparecido;
+- evidencia inferida sin revisar;
+- backup inexistente o >30 días.
 
-Acciones:
-- rebuild FTS;
-- rebuild vector index;
-- re-extract document;
-- re-embed;
-- reconcile transactions;
-- detect orphan rows;
-- verify Vault hashes;
-- retry failed jobs.
+Reparaciones automáticas soportadas:
+- reindexar documento.
+
+Otros casos producen acción explícita del usuario, en lugar de reparar destructivamente.
+
+## Regeneración de derivados
+La función de privacidad puede regenerar:
+- FTS/vector/chunks;
+- facts inferidos;
+- transferencias/reembolsos;
+- recurrentes/anomalías;
+- Repair Issues.
+
+Se conservan los hechos verificados manualmente.
+
+## Borrado
+“Borrar Financito” elimina las tablas locales y, opcionalmente, credenciales de providers. No borra silenciosamente archivos originales externos al control de la app.
 
 ## Atomicidad
-
-Imports y transformaciones críticas deben usar staging + transaction/commit.
-
-No dejar estado parcialmente visible.
-
-## Crash recovery
-
-Tras cierre inesperado:
-- detectar jobs running sin lease;
-- marcar interrupted;
-- reanudar/reintentar según idempotencia.
-
-## Health
-
-Mostrar problemas y acciones posibles sin exigir conocimiento técnico.
+- DB con WAL, foreign keys y `synchronous=FULL`;
+- preferencias se escriben mediante fichero temporal + fsync + replace;
+- restore usa staging y marker.

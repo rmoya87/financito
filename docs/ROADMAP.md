@@ -1,187 +1,68 @@
 # Roadmap
 
-## Fase 0 — Fundación documental
+La mayor parte del runtime v1 está implementada. Este roadmap enumera trabajo restante; no repite módulos ya finalizados.
 
-Entregables:
-- especificación funcional;
-- arquitectura;
-- modelo de datos;
-- seguridad;
-- RAG/IA;
-- providers;
-- motores;
-- UI/UX;
-- API;
-- ADRs.
+## Cerrado en v1
+- runtime local y seguridad;
+- SQLCipher/Keychain;
+- WebApp y API;
+- Vault, OCR, clasificación, RAG híbrido y chat local;
+- movimientos/imports/categorización/analytics/forecast;
+- Open Banking persistente;
+- patrimonio, portfolio, FIFO, mercado y riesgo;
+- contratos, seguros, hipoteca y optimización;
+- Decision Cases/Outcomes;
+- stress, cost centers, Action/Calendar/Repair;
+- backup/restore, export y privacidad.
 
-Estado: iniciado con esta base.
+## Próxima prioridad: calidad y distribución
 
-## Fase 1 — Knowledge Foundation
+### Testing de experiencia
+- Playwright: onboarding, importación, Vault/cita, banking mock, decisión y restore;
+- tests de componentes UI;
+- axe/accessibility en CI;
+- datasets RAG de answerable/unanswerable/contradicción.
 
-Objetivo: primer producto útil sin bancos.
+### Distribución macOS
+- bundle de frontend/backend/runtime;
+- detección/instalación guiada de Tesseract/Ollama cuando proceda;
+- firma Developer ID;
+- notarización;
+- updater seguro;
+- smoke tests sobre artefacto firmado.
 
-- monorepo;
-- WebApp;
-- FastAPI;
-- DB;
-- cifrado;
-- Vault;
-- ingestión PDF/imágenes;
-- OCR;
-- chunking;
-- embeddings;
-- FTS/vector;
-- chat local;
-- citas;
-- demo mode.
+Estas tareas requieren identidad/certificados Apple y no se pueden completar solo con código genérico.
 
-Criterio:
-“Dejo documentos y puedo preguntar sobre ellos con fuentes.”
+## Fiscalidad
+- motor normativo versionado por jurisdicción y ejercicio;
+- reglas de adquisición/transmisión y compensación verificadas;
+- trazabilidad de fuente legal/fecha;
+- nunca mezclar una estimación parametrizada con una declaración fiscal oficial.
 
-## Fase 2 — Finanzas personales
+## Contratos/hipoteca avanzados
+- parser específico FEIN/FIAE;
+- formulas de comisión estructuradas;
+- tipos variables/mixtos con revisiones;
+- novación/subrogación;
+- vinculaciones derivadas automáticamente de evidencia confirmada.
 
-- CSV/OFX/QIF;
-- cuentas manuales;
-- movimientos;
-- taxonomía completa;
-- categorización automática;
-- normalización de comercios;
-- reglas;
-- splits;
-- transferencias internas;
-- reembolsos;
-- cola de revisión;
-- anomalías;
-- recurrentes;
-- presupuestos;
-- forecast;
-- analytics;
-- gráficas de decisión;
-- dashboard;
-- net worth básico;
-- data quality center.
+## Mercado
+- más cobertura internacional de fundamentales;
+- corporate actions/dividendos;
+- benchmark/performance TWR/MWR;
+- importer de brokers;
+- news entity-linking e impacto con evaluación.
 
-Criterio:
-“Todos mis movimientos están explicados o pendientes de revisión explícita, puedo entender en qué gasto, cómo cambia y qué decisiones tienen impacto.”
+## Producto
+- auditoría WCAG AA;
+- Developer Mode/freshness inspector más detallado;
+- as-of universal/reconstrucción temporal;
+- perfiles/reglas multiusuario si se decide ampliar el modelo local single-user.
 
-## Fase 3 — Open Banking
-
-- adapter;
-- proveedor autorizado;
-- Bankinter;
-- Revolut;
-- consentimientos;
-- sync incremental;
-- reconciliación/deduplicación.
-
-Criterio:
-“Mis cuentas y movimientos se actualizan de forma segura.”
-
-## Fase 4 — Inversión
-
-- portfolios;
-- import broker;
-- market data;
-- acciones/ETF/fondos;
-- cripto;
-- allocation;
-- risk engine.
-
-## Fase 5 — Inteligencia de mercado
-
-- fundamentales;
-- noticias;
-- macro;
-- scoring;
-- recomendaciones explicables;
-- historial de tesis.
-
-## Fase 5.5 — Motor de decisiones
-
-- DecisionCase;
-- alternativas;
-- impacto mensual/anual/acumulado;
-- escenarios;
-- sensibilidad;
-- evidencia;
-- confidence de datos;
-- historial de decisiones.
-
-Criterio:
-“Cualquier recomendación importante puede compararse, recalcularse y auditarse.”
-
-## Fase 6 — Optimización
-
-- contracts;
-- seguros;
-- hipoteca;
-- switching costs;
-- break-even;
-- beneficios;
-- comparadores;
-- oportunidades.
-
-Criterio:
-“Financito identifica cambios con beneficio neto real.”
-
-## Fase 7 — Planificación avanzada
-
-- backtesting;
-- escenarios;
-- amortizar vs invertir;
-- fiscalidad modular;
-- planificación temporal;
-- memoria de decisiones.
-
-## Prioridad permanente
-
-- seguridad;
-- exactitud;
-- trazabilidad;
-- privacidad;
-- rendimiento;
-- UX.
-
-
-## Requisitos transversales desde Fase 1
-
-No son una fase posterior:
-- arquitectura estrictamente local;
-- seguridad;
-- backup/restore;
-- provenance;
-- data quality;
-- multi-divisa;
-- audit log;
-- Health Center;
-- performance budgets;
-- contratos frontend/backend generados;
-- design system reutilizable;
-- gestión de modelos locales.
-
-Las features nuevas deben integrarse sin duplicar componentes, engines ni DTO.
-
-
-## Fase 2.5 — Forecast y resiliencia
-
-- previsión X días/meses;
-- comparación automática con mismo periodo del año anterior;
-- precisión histórica por horizonte/categoría;
-- CommitmentsEngine;
-- liquidez operativa futura;
-- cash runway;
-- stress testing básico;
-- cost centers;
-- alertas predictivas.
-
-Criterio:
-“Puedo saber cuánto probablemente gastaré/ahorraré, qué parte está confirmada, cómo se compara con el mismo periodo del año anterior y qué precisión histórica tiene la estimación.”
-
-## Requisitos técnicos adicionales
-
-Desde el inicio preparar:
-- Financial Graph lógico;
-- Repair Center;
-- model evaluation gates;
-- Decision Outcomes;
-- Coverage Engine extensible.
+## Regla permanente
+Cualquier nueva función debe:
+1. mantener privacidad local;
+2. usar motor determinista para cifras;
+3. conservar provenance/frescura;
+4. no introducir proveedor de pago obligatorio;
+5. añadir test y actualizar documentación en el mismo cambio.

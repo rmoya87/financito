@@ -1,57 +1,54 @@
-# Cost centers y Coverage Engine
+# Cost Centers y Coverage
 
 ## Cost Centers
+Se pueden crear áreas de coste arbitrarias y vincular:
+- contratos;
+- pólizas;
+- activos;
+- pasivos;
+- commitments;
+- transactions mediante API.
 
-Permitir agrupar costes por objeto/área de vida:
-- vivienda;
-- vehículo;
-- hijo/familia;
-- mascota;
-- viaje;
-- tecnología;
-- salud;
-- otro configurable.
+Cada vínculo tiene `allocation_percentage`.
 
-Ejemplo vehículo:
-- financiación;
-- seguro;
-- combustible/carga;
-- parking;
-- peajes;
-- impuesto;
-- mantenimiento;
-- reparaciones.
+El resumen calcula:
+- gasto observado enlazado;
+- compromisos/costes anuales;
+- valor de activos de referencia;
+- deuda de referencia;
+- vínculos sin dato valorable.
 
-Outputs:
-- coste mensual;
-- anual;
-- histórico;
-- coste por km cuando haya dato;
-- forecast.
+No se mezclan valor patrimonial y gasto como si fueran la misma métrica.
 
-## Coverage Engine
+## Coverage
+Los `CoverageFact` contienen:
+- tipo;
+- límite;
+- franquicia;
+- vigencia;
+- evidencia/documento;
+- confidence;
+- flag verificado.
 
-Objetivo:
-detectar huecos, solapamientos y duplicidades de coberturas.
+### Duplicidades
+Solo se generan overlaps cuando:
+- cobertura está verificada;
+- tipo coincide;
+- procede de pólizas/contratos diferentes;
+- vigencias no son incompatibles.
 
-Fuentes:
-- seguros;
-- tarjetas;
-- cuentas premium;
-- viajes;
-- garantías;
-- servicios.
+No se estima coste redundante si no puede atribuirse.
 
-Detectar:
-- cobertura duplicada;
-- misma asistencia pagada varias veces;
-- cobertura que desaparece al cambiar producto;
-- límites inferiores;
-- franquicia mayor;
-- exclusiones nuevas.
+### Huecos
+Un hueco solo existe frente a un `CoverageRequirement` definido por el usuario:
+- tipo de póliza opcional;
+- coverage_type;
+- límite mínimo opcional.
 
-Nunca concluir que una cobertura es equivalente sin comparar facts estructurados.
+Resultados:
+- `missing_verified_coverage`;
+- `limit_unknown`;
+- `limit_below_requirement`;
+- covered.
 
-## UX
-
-Mostrar coste ahorrable potencial separado del riesgo/cobertura perdida.
+Financito no inventa qué cobertura “debería” contratar el usuario.

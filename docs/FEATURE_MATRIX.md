@@ -1,136 +1,73 @@
 # Matriz funcional
 
-Leyenda:
-- F1–F7: fase objetivo.
-- Core: requisito transversal.
+Estado:
+- **OK**: implementado y ejecutable.
+- **PARCIAL**: implementado con alcance acotado explícito.
+- **EXTERNO**: código listo; necesita credenciales, proveedor, certificado u otra fuente externa.
+- **PENDIENTE**: no se considera terminado.
 
-| Área | Función | Fase |
+| Área | Función | Estado |
 |---|---|---|
-| Seguridad | DB cifrada | F1 |
-| Seguridad | secretos seguros | F1 |
-| Seguridad | API loopback | F1 |
-| Vault | vigilancia de carpeta | F1 |
-| Vault | SHA/deduplicación | F1 |
-| Vault | OCR | F1 |
-| Vault | clasificación | F1 |
-| RAG | chunking semántico | F1 |
-| RAG | embeddings locales | F1 |
-| RAG | BM25 + vector | F1 |
-| RAG | reranking | F1 |
-| Chat | respuestas con citas | F1 |
-| Demo | dataset ficticio | F1 |
-| Movimientos | CSV/OFX/QIF | F2 |
-| Movimientos | categorización | F2 |
-| Movimientos | reglas | F2 |
-| Recurrentes | detección | F2 |
-| Recurrentes | subidas/anomalías | F2 |
-| Presupuesto | categorías/objetivos | F2 |
-| Patrimonio | net worth | F2 |
-| Banking | adapter PSD2 | F3 |
-| Banking | Bankinter | F3 |
-| Banking | Revolut | F3 |
-| Banking | consentimientos | F3 |
-| Portfolio | posiciones | F4 |
-| Markets | cotizaciones/históricos | F4 |
-| Crypto | métricas específicas | F4 |
-| Risk | exposición/riesgo | F4/F5 |
-| Fundamentals | estados/ratios | F5 |
-| News | ingestión/dedupe | F5 |
-| News | impacto/sentimiento | F5 |
-| Recommendation | scoring determinista | F5 |
-| Recommendation | portfolio fit | F5 |
-| Contracts | extracción | F6 |
-| Insurance | comparación | F6 |
-| Mortgage | escenarios | F6 |
-| Optimization | switching costs | F6 |
-| Optimization | break-even | F6 |
-| Optimization | puntos/beneficios | F6 |
-| Optimization | vinculaciones | F6 |
-| Optimization | oportunidades ahorro | F6 |
-| Optimization | rendimiento liquidez | F6 |
-| Backtest | motor | F7 |
-| Planning | amortizar vs invertir | F7 |
-| Memory | decisiones históricas | F5+ |
-| Observability | Developer Mode | Core |
-| Freshness | timestamps/stale | Core |
-| Offline | datos locales | Core |
-| Accessibility | WCAG AA objetivo | Core |
-
-
-## Funciones transversales añadidas
-
-| Área | Función | Fase |
-|---|---|---|
-| Onboarding | wizard local | F1 |
-| Data Quality | reconciliación | F2+ |
-| Calendar | eventos financieros | F2+ |
-| Alerts | alertas locales | F2+ |
-| Goals | objetivos financieros | F2+ |
-| Scenarios | laboratorio de escenarios | F6/F7 |
-| Tax | centro fiscal modular | F7 |
-| Currency | multi-divisa | Core |
-| Ownership | propiedad personal/compartida | Core |
-| Assets | valoración manual | F2 |
-| Backup | backup/restore cifrado | F1 |
-| Portability | export abierto | F1+ |
-| Audit | actividad local | Core |
-| Health | salud de sistema/providers | Core |
-| AI | gestor de modelos locales | F1 |
-| Rules | automatizaciones locales seguras | F2+ |
-| Search | búsqueda global | F1+ |
-| Privacy | borrado/retención | Core |
-| Performance | presupuestos y profiling | Core |
-
-
-## Categorización, análisis y decisiones
-
-| Área | Función | Fase |
-|---|---|---|
-| Transactions | taxonomía jerárquica | F2 |
-| Transactions | merchant normalization | F2 |
-| Transactions | clasificación automática | F2 |
-| Transactions | confidence + review queue | F2 |
-| Transactions | splits | F2 |
-| Transactions | transferencias internas | F2 |
-| Transactions | reembolsos | F2 |
-| Transactions | anomalías | F2 |
-| Analytics | cash-flow temporal | F2 |
-| Analytics | gastos por categoría/comercio | F2 |
-| Analytics | fijo vs variable | F2 |
-| Analytics | esencial vs discrecional | F2 |
-| Analytics | forecast | F2 |
-| Visualization | gráficas compartidas | F2+ |
-| Decision | DecisionCase | F5.5 |
-| Decision | alternativas e impacto | F5.5 |
-| Decision | sensibilidad | F5.5 |
-| Decision | confidence de evidencia | F5.5 |
-| Governance | AGENTS.md | Core |
-| Governance | workflow estándar | Core |
-| Governance | no-alucinación | Core |
-| Governance | documentación autoritativa | Core |
-
-
-## Forecasting, resiliencia y operabilidad
-
-| Área | Función | Fase |
-|---|---|---|
-| Forecast | mismo periodo año anterior | F2.5 |
-| Forecast | tendencia + estacionalidad | F2.5 |
-| Forecast | gastos previstos | F2.5 |
-| Forecast | ahorro previsto | F2.5 |
-| Forecast | liquidez prevista | F2.5 |
-| Forecast | intervalos y precisión histórica | F2.5 |
-| Forecast | backtesting MAE/WAPE/bias | F2.5 |
-| Commitments | obligaciones futuras | F2.5 |
-| Resilience | cash runway | F2.5 |
-| Resilience | stress testing | F2.5 |
-| Cost Centers | coste por área/activo | F2.5 |
-| Coverage | duplicidades/huecos | F6 |
-| Graph | relaciones financieras | Core |
-| Decisions | resultado esperado vs real | F6+ |
-| Temporal | as-of reproducible | Core |
-| Investments | tax lots | F4 |
-| Actions | Action Center | F2+ |
-| Integrity | Repair Center | Core |
-| AI Quality | model evaluation gates | Core |
-| Runtime | launcher/supervisor local | F1 |
+| Seguridad | SQLCipher + clave segura | OK |
+| Seguridad | secretos providers en credential store | OK |
+| Seguridad | API loopback + Host/Origin + CSRF | OK |
+| Vault | vigilancia, SHA y deduplicación | OK |
+| Vault | OCR + HEIC | OK |
+| Vault | idioma y clasificación | OK |
+| Vault | hechos contractuales con página | PARCIAL |
+| RAG | chunking con página | OK |
+| RAG | FTS5/BM25 | OK |
+| RAG | embeddings locales | OK |
+| RAG | sqlite-vec + fallback cosine | OK |
+| RAG | RRF + reranking léxico | OK |
+| Chat | cálculo estructurado + citas navegables | OK |
+| Demo | dataset sintético | OK |
+| Movimientos | CSV/XLSX/QIF/OFX/CAMT/MT940 | OK |
+| Movimientos | categorización/reglas/review queue | OK |
+| Movimientos | splits/transferencias/reembolsos | OK |
+| Recurrentes | detección y anomalías | OK |
+| Analytics | categoría/comercio/fijo-variable/esencial | OK |
+| Forecast | baseline, compromisos y accuracy | OK |
+| Presupuesto | categorías y budget-vs-actual | OK |
+| Patrimonio | net worth/activos/deuda | OK |
+| Banking | adapter PSD2 persistente | OK |
+| Banking | Bankinter/Revolut u otro banco disponible | EXTERNO |
+| Banking | consentimiento, aviso, sync y revocación | OK |
+| Portfolio | posiciones/trades/FIFO tax lots | OK |
+| Markets | quotes/histórico/caché | EXTERNO |
+| Crypto | precio y riesgo | OK |
+| Risk | vol/Sharpe/Sortino/drawdown/VaR/CVaR | OK |
+| Risk | exposición y concentración | OK |
+| Fundamentals | SEC companyfacts seleccionados | PARCIAL |
+| Macro | ECB | OK |
+| News | búsqueda e ingestión GDELT | OK |
+| News | impacto/sentimiento robusto | PENDIENTE |
+| Recommendation | scoring determinista | OK |
+| Recommendation | portfolio fit automático | PARCIAL |
+| Contracts | extracción + renovación/preaviso | PARCIAL |
+| Insurance | pólizas/coberturas/duplicidades | OK |
+| Insurance | requisitos y huecos definidos por usuario | OK |
+| Mortgage | cuota/intereses | OK |
+| Mortgage | amortización parcial cuota/plazo | OK |
+| Mortgage | FEIN/FIAE compleja y novación/subrogación | PARCIAL |
+| Optimization | switching costs + break-even | OK |
+| Optimization | benefits/linked products | OK |
+| Optimization | comparadores comerciales | EXTERNO |
+| Backtest | media móvil | OK |
+| Planning | amortizar vs invertir | OK |
+| Decisions | casos/alternativas/outcomes | OK |
+| Cost Centers | asignaciones y agregación | OK |
+| Stress | shocks y cash runway | OK |
+| Calendar | eventos financieros | OK |
+| Search | búsqueda global | OK |
+| Backup | cifrado + restore verificado | OK |
+| Privacy | export, rebuild, borrado | OK |
+| Repair | integridad y reparaciones soportadas | OK |
+| AI | gestor modelos Ollama | EXTERNO |
+| Tax | FIFO y estimación parametrizada | PARCIAL |
+| Tax | normativa legal versionada por jurisdicción | PENDIENTE |
+| Runtime | launcher local | OK |
+| Runtime | app macOS firmada/notarizada | EXTERNO |
+| Accessibility | objetivo WCAG AA verificado | PENDIENTE |
+| E2E | journeys Playwright | PENDIENTE |
+| Temporal | provenance/freshness por fuente | PARCIAL |
