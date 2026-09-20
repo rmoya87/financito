@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hmac
 import secrets
+import time
 from hashlib import sha256
 from typing import Callable
 
@@ -9,6 +10,7 @@ from fastapi import HTTPException, Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .config import settings
+from .services.runtime_metrics import record as record_runtime_metric
 
 
 ALLOWED_HOSTS = {"localhost", "127.0.0.1", "[::1]", "::1", f"localhost:{settings.port}", f"127.0.0.1:{settings.port}"}
@@ -48,7 +50,15 @@ class LocalSecurityMiddleware(BaseHTTPMiddleware):
                 csrf = request.headers.get("x-csrf-token")
                 if not csrf or not hmac.compare_digest(csrf, csrf_for(session_id)):
                     return Response("CSRF validation failed", status_code=403)
-        response = await call_next(request)
+        started=time.perf_counter()
+        try:
+            response = await call_next(request)
+        except Exception:
+            if request.url.path.startswith("/api/"):
+                record_runtime_metric(request.method,request.url.path,500,(time.perf_counter()-started)*1000)
+            raise
+        if request.url.path.startswith("/api/"):
+            record_runtime_metric(request.method,request.url.path,response.status_code,(time.perf_counter()-started)*1000)
         response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
