@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .domain.risk import risk_metrics
 from .models import DecisionCase
-from .models_extended import CostCenter,CostCenterLink,DecisionAlternative,DecisionOutcome,ModelEvaluationRun,NewsItem
-from .models_analytics import Benefit,LinkedProduct
+from .models_extended import CostCenter,CostCenterLink,DecisionAlternative,DecisionOutcome,NewsItem
+from .models_analytics import Benefit,LinkedProduct,ModelEvaluationRun
 from .providers.crypto import CoinGeckoDemoProvider
 from .providers.fundamentals import SecFundamentalsProvider
 from .providers.macro import EcbMacroProvider
