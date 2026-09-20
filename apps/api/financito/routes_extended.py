@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .models import Account,Contract,FinancialGoal,Portfolio,Security
 from .models_extended import Asset,BackupRecord,CoverageFact,InsurancePolicy,Liability,RepairIssue,Trade
-from .schemas_extended import AssetCreate,BackupCreate,BackupRestore,ChatRequest,ContractCreate,CoverageCompareRequest,CoverageCreate,CorporateActionCreate,GoalCreate,GoalProgressUpdate,InsuranceCreate,LiabilityCreate,PortfolioCreate,RagSearchRequest,SecurityCreate,StressRequest,TaxEstimateRequest,TradeCreate
+from .schemas_extended import AssetCreate,BackupCreate,BackupRestore,ChatRequest,ContractCreate,CoverageCompareRequest,CoverageCreate,CorporateActionCreate,GoalCreate,GoalProgressUpdate,InsuranceCreate,LiabilityCreate,PortfolioCreate,RagSearchRequest,SecurityCreate,StressRequest,TaxEstimateRequest,TaxSavingsRequest,CommercialComparisonRequest,TradeCreate
 from .domain.portfolio import apply_trade,portfolio_summary
 from .domain.stress import run_stress
 from .services.backup import create_backup,stage_restore
@@ -17,7 +17,9 @@ from .services.contracts import compare_coverages,refresh_contract_actions,scan_
 from .services.import_formats import import_statement
 from .services.rag import index_document_chunks,search
 from .services.repair import repair,scan
-from .services.tax import estimate
+from .services.tax import estimate,calculate_savings
+from .services.comparisons import comparison_matrix
+from .providers.comparisons import CommercialOffer
 from .services.wealth import summary as wealth_summary
 from .services.financial_analytics import cash_flow
 from .services.snapshots import record_snapshot
@@ -159,6 +161,14 @@ def repair_run(issue_id:str,db:Session=Depends(dbdep)):
 
 @router.post("/tax/estimate")
 def tax(p:TaxEstimateRequest,db:Session=Depends(dbdep)):return estimate(db,p.jurisdiction,p.tax_year,p.assumed_rate)
+
+@router.post("/tax/savings/calculate")
+def tax_savings(p:TaxSavingsRequest):return calculate_savings(p.jurisdiction,p.tax_year,p.investment_income_net,p.capital_gains_net)
+
+@router.post("/comparisons/evaluate")
+def commercial_comparison(p:CommercialComparisonRequest):
+    offers=[CommercialOffer(category=o.category,provider_name=o.provider_name,product_name=o.product_name,source=o.source,source_url=o.source_url,fetched_at=o.fetched_at,valid_until=o.valid_until,currency=o.currency,attributes=o.attributes,missing_fields=tuple(o.missing_fields)) for o in p.offers]
+    return comparison_matrix(offers,p.required_fields,max_age_days=p.max_age_days)
 @router.get("/market/quote/{symbol}")
 def quote(symbol:str):
     try:return AlphaVantageProvider().quote(symbol)
