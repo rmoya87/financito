@@ -14,6 +14,7 @@
 6. **Solo lectura inicialmente**: Open Banking y brokers se integran para consulta, no para ejecutar operaciones.
 7. **Optimización neta**: cualquier cambio de seguro, hipoteca, banco o servicio considera costes de salida, permanencias, vinculaciones, puntos, beneficios perdidos, fiscalidad y break-even.
 8. **Arquitectura intercambiable**: bancos, mercados, noticias, LLM y embeddings se implementan mediante adapters.
+9. **Cero coste recurrente obligatorio**: ninguna funcionalidad base puede depender de una API o agregador de pago; siempre debe existir una ruta gratuita o importación local.
 
 ## Stack objetivo
 
@@ -170,6 +171,7 @@ Antes de modificar el repositorio, cualquier agente de IA debe leer [AGENTS.md](
 - [IA local](docs/AI.md)
 - [Seguridad](docs/SECURITY.md)
 - [Providers](docs/PROVIDERS.md)
+- [Estrategia de conectores gratuitos](docs/FREE_CONNECTORS.md)
 - [Motores financieros](docs/FINANCIAL_ENGINES.md)
 - [Optimización](docs/OPTIMIZATION_ENGINE.md)
 - [Hipoteca](docs/MORTGAGE_ENGINE.md)
