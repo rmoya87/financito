@@ -204,7 +204,15 @@ def wealth_home(db:Session=Depends(dbdep)):
     }
     for target,key in evidence_map.items():
         if extra_payload.get(target) is None and by_key.get(key):
-            extra_payload[target]=by_key[key].get("value")
+            raw=by_key[key].get("value")
+            if target in {"apr_rate","differential_rate"} and raw not in {None,""}:
+                try:extra_payload[target]=str(Decimal(str(raw).replace(",","."))/Decimal("100"))
+                except Exception:extra_payload[target]=raw
+            elif target=="rate_review_months" and raw not in {None,""}:
+                try:extra_payload[target]=int(Decimal(str(raw).replace(",",".")))
+                except Exception:extra_payload[target]=raw
+            else:
+                extra_payload[target]=raw
 
     equity=None;ltv=None
     if home is not None:
