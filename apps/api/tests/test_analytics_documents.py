@@ -54,3 +54,21 @@ def test_document_classification_language_and_fact_source_page():
         assert {f.key for f in facts}>={"annual_cost","deductible","cancellation_notice_days"}
         assert all(f.source_page==1 for f in facts)
         assert all(f.source_section for f in facts)
+
+
+def test_mortgage_fein_extracts_structured_terms():
+    text=(
+        "FEIN préstamo hipotecario a tipo variable. Índice Euríbor a 12 meses más diferencial del 0,75 %. "
+        "TIN 3,10 %. TAE 3,45 %. Plazo de 25 años. Revisión cada 12 meses. "
+        "Comisión de apertura 0,50 %. Compensación por reembolso anticipado 0,25 %. "
+        "Bonificación mediante domiciliación de nómina y seguro de hogar."
+    )
+    path=settings.vault_dir/"fein-ci.txt"
+    path.write_text(text,encoding="utf-8")
+    with SessionLocal() as db:
+        result=index_document(db,str(path),"unknown");db.commit()
+        assert result.document.document_type=="mortgage"
+        facts=db.scalars(select(ExtractedFact).where(ExtractedFact.document_id==result.document.id)).all()
+        keys={f.key for f in facts}
+        assert {"reference_index","interest_type","differential_rate","mortgage_term_years","rate_review_months","opening_fee_percent","early_repayment_fee_percent","linked_salary","linked_home_insurance"} <= keys
+        assert all(f.source_page==1 for f in facts if f.key in keys)
