@@ -60,7 +60,8 @@ def decision_lab_context(db:Session=Depends(dbdep)):
 
 @router.get("/mortgages")
 def mortgages(db:Session=Depends(dbdep)):
-    return [mortgage_row(r) for r in db.scalars(select(Mortgage).order_by(Mortgage.updated_at.desc())).all()]
+    sources=_document_sources(db,"mortgage")
+    return [{**mortgage_row(r),"source_document_id":sources.get(r.id)} for r in db.scalars(select(Mortgage).order_by(Mortgage.updated_at.desc())).all()]
 
 @router.post("/mortgages")
 def add_mortgage(p:MortgageProfileCreate,db:Session=Depends(dbdep)):
