@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
 
@@ -14,9 +14,13 @@ def uuid_str() -> str:
     return str(uuid4())
 
 
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 class TimestampMixin:
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
 
 class Account(Base, TimestampMixin):
@@ -81,7 +85,7 @@ class CategorizationAudit(Base):
     method: Mapped[str] = mapped_column(String(40))
     confidence: Mapped[Decimal] = mapped_column(Numeric(5, 4), default=Decimal("1"))
     changed_by: Mapped[str] = mapped_column(String(40), default="user")
-    changed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    changed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class Budget(Base, TimestampMixin):
@@ -116,7 +120,7 @@ class ForecastRun(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     horizon_start: Mapped[date] = mapped_column(Date)
     horizon_end: Mapped[date] = mapped_column(Date)
-    generated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    generated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     model_version: Mapped[str] = mapped_column(String(40))
     scenario: Mapped[str] = mapped_column(String(20), default="base")
     predicted_income: Mapped[Decimal] = mapped_column(Numeric(18, 4))
@@ -279,4 +283,4 @@ class AuditEvent(Base):
     entity_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
     entity_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     metadata_json: Mapped[str] = mapped_column(Text, default="{}")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
