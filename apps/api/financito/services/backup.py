@@ -43,7 +43,7 @@ def stage_restore(passphrase:str,path:str)->dict:
         for member in tar.getmembers():
             target=(staging/member.name).resolve()
             if staging.resolve() not in target.parents and target!=staging.resolve():raise ValueError("Unsafe backup path")
-        tar.extractall(staging)
+        tar.extractall(staging, filter="data")
     payload=staging/"payload";manifest=json.loads((payload/"manifest.json").read_text())
     for rel,digest in manifest["files"].items():
         f=(payload/rel).resolve()
