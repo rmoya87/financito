@@ -192,3 +192,24 @@ Reglas:
 - facts materiales deben conservar documento/página;
 - fórmulas contractuales se modelan, no se resumen solo como texto;
 - un dato crítico ambiguo o ausente debe producir needs_more_data.
+
+
+## 17. Forecasting
+
+Leer docs/FORECASTING_AND_COMMITMENTS.md antes de implementar previsiones.
+
+Reglas:
+- mismo periodo del año anterior es baseline cuando existe;
+- no copiar histórico literalmente;
+- separar known/estimated;
+- no repetir extraordinarios automáticamente;
+- intervalos basados en error/variabilidad histórica;
+- medir MAE/WAPE/bias;
+- no usar datos futuros en backtesting;
+- el LLM no genera cifras de forecast.
+
+## 18. Integridad y evaluación
+
+Leer RECOVERY_AND_INTEGRITY.md y MODEL_EVALUATION.md.
+
+Todo derivado crítico debe ser reconstruible. Cambiar un modelo requiere evaluación comparativa.
