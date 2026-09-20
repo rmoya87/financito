@@ -7,9 +7,10 @@ from sqlalchemy import select
 
 from financito.config import settings
 from financito.db import SessionLocal
-from financito.models import Account,ActionItem,Category,Contract,Document,ExtractedFact,Transaction
+from financito.models import Account,ActionItem,Category,Contract,Document,ExtractedFact,Mortgage,Transaction
 from financito.models_analytics import EntityLink
 from financito.services.categorization import ensure_categories
+from financito.services.contractual_costs import mortgage_contract_context
 from financito.services.documents import classify_document,detect_language,index_document,store_uploaded_document
 from financito.services.financial_analytics import overview
 from financito.services.evidence import structured_evidence_context,synchronize_document_evidence
@@ -226,3 +227,79 @@ def test_local_ai_document_analysis_is_persisted_and_shared(monkeypatch):
         assert coverage is not None
         assert coverage.coverage_type=="Responsabilidad civil"
         assert coverage.user_verified is True
+
+
+
+def test_european_mortgage_amounts_are_normalized():
+    from financito.services.documents import extract_contract_facts
+    facts=extract_contract_facts(
+        "Capital pendiente 125.000,50 euros. Cuota mensual 1.245,67 euros. Quedan 180 meses.",
+        3,
+    )
+    by_key={x["key"]:x for x in facts}
+    assert by_key["remaining_principal"]["value"]=="125000.50"
+    assert by_key["monthly_payment"]["value"]=="1245.67"
+    assert by_key["remaining_months"]["value"]=="180"
+
+
+def test_confirmed_mortgage_document_updates_single_profile_and_links_source():
+    suffix=uuid4().hex[:8]
+    path=settings.vault_dir/f"hipoteca-sync-{suffix}.txt"
+    path.write_text(
+        "Hipoteca Bankinter. Capital pendiente 125.000,50 euros. "
+        "TIN 2,50 %. Cuota mensual 850,25 euros. Quedan 180 meses. Tipo fijo.",
+        encoding="utf-8",
+    )
+    with SessionLocal() as db:
+        mortgage=Mortgage(
+            lender="Bankinter",
+            remaining_principal=Decimal("130000"),
+            currency="EUR",
+            interest_type="fixed",
+            nominal_rate=Decimal("0.03"),
+            monthly_payment=Decimal("900"),
+            remaining_months=190,
+            early_repayment_fee=None,
+        )
+        db.add(mortgage);db.flush()
+        indexed=index_document(db,str(path),"unknown")
+        doc=indexed.document
+        facts=db.scalars(select(ExtractedFact).where(
+            ExtractedFact.document_id==doc.id,
+            ExtractedFact.key.in_(["remaining_principal","nominal_rate","monthly_payment","remaining_months","interest_type"]),
+        )).all()
+        assert {f.key for f in facts}>={"remaining_principal","nominal_rate","monthly_payment","remaining_months","interest_type"}
+        for fact in facts:
+            fact.status="confirmed";fact.user_verified=True
+        sync=synchronize_document_evidence(db,doc)
+        db.commit()
+        db.refresh(mortgage)
+        assert sync["mortgage_id"]==mortgage.id
+        assert mortgage.remaining_principal==Decimal("125000.5000")
+        assert mortgage.nominal_rate==Decimal("0.025000")
+        assert mortgage.monthly_payment==Decimal("850.2500")
+        assert mortgage.remaining_months==180
+        link=db.scalar(select(EntityLink).where(
+            EntityLink.from_type=="document",
+            EntityLink.from_id==doc.id,
+            EntityLink.relation_type=="evidence_for",
+            EntityLink.to_type=="mortgage",
+            EntityLink.to_id==mortgage.id,
+        ))
+        assert link is not None
+
+
+def test_mortgage_context_does_not_mix_linked_documents_across_profiles():
+    with SessionLocal() as db:
+        a=Mortgage(lender="A",remaining_principal=Decimal("100000"),currency="EUR",interest_type="fixed",nominal_rate=Decimal("0.02"),monthly_payment=Decimal("500"),remaining_months=240)
+        b=Mortgage(lender="B",remaining_principal=Decimal("90000"),currency="EUR",interest_type="fixed",nominal_rate=Decimal("0.03"),monthly_payment=Decimal("550"),remaining_months=200)
+        db.add_all([a,b]);db.flush()
+        da=Document(file_path="/tmp/a.pdf",file_name="a.pdf",mime_type="application/pdf",sha256=uuid4().hex+uuid4().hex,document_type="mortgage",status="indexed",page_count=1,extracted_text="")
+        db.add(da);db.flush()
+        db.add(EntityLink(from_type="document",from_id=da.id,relation_type="evidence_for",to_type="mortgage",to_id=a.id,confidence=Decimal("1"),source_type="test",source_ref=da.id))
+        db.add(ExtractedFact(document_id=da.id,fact_type="mortgage_term",key="nominal_rate",value_json='{"value":"2.00","unit":"percent"}',confidence=Decimal("1"),status="confirmed",source_page=1,user_verified=True))
+        db.flush()
+        ctx_a=mortgage_contract_context(db,a.id)
+        ctx_b=mortgage_contract_context(db,b.id)
+        assert ctx_a["by_key"]["nominal_rate"]["value"]=="2.00"
+        assert "nominal_rate" not in ctx_b["by_key"]
