@@ -391,11 +391,11 @@ Cuando un hecho material se confirma, Financito lo proyecta únicamente a entida
 
 ### Regla de enlace hipotecario
 
-Un documento hipotecario puede actualizar un perfil de hipoteca si:
-1. ya existe un enlace explícito documento -> hipoteca; o
-2. solo existe una hipoteca en Financito y no hay contradicción evidente de entidad.
+Un documento hipotecario solo puede actualizar un perfil de hipoteca si existe un enlace explícito documento -> hipoteca elegido por el usuario.
 
-Si existen varias hipotecas sin enlace inequívoco, no se actualiza ninguna automáticamente.
+Una FEIN, simulación u oferta de otra entidad puede permanecer como **oferta o referencia**: se indexa, se analiza con IA local y puede usarse para comparar, pero no modifica capital, TIN, cuota, plazo ni penalizaciones de la hipoteca actual.
+
+No se enlazan documentos hipotecarios automáticamente por el mero hecho de existir una única hipoteca.
 
 Los hechos confirmados que pueden alimentar el perfil incluyen:
 - remaining_principal;
