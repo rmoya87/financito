@@ -8,44 +8,49 @@ Financito no se limita a importar movimientos: normaliza comercios, clasifica, d
 
 ## Taxonomía base
 
-Categorías principales iniciales:
+La taxonomía principal implementada usa `system_key` estables para preservar reglas, presupuestos e históricos. Las categorías actuales son:
 
+- Ingresos
+- Nómina
+- Reembolsos
 - Vivienda
-- Alimentación
+- Supermercado
 - Restaurantes
 - Transporte
 - Vehículo
+- Suministros
+- Telecomunicaciones
 - Seguros
 - Salud
+- Cuidado personal
 - Educación
-- Hijos y familia
+- Familia
 - Mascotas
-- Viajes
+- Deporte
 - Ocio
 - Tecnología
 - Compras
 - Suscripciones
-- Telecomunicaciones
-- Energía y suministros
-- Impuestos y tasas
+- Viajes
+- Impuestos
 - Comisiones bancarias
 - Préstamos y deuda
+- Donaciones
 - Inversión
 - Ahorro
-- Transferencias propias
-- Ingresos
-- Nómina
-- Reembolsos
-- Donaciones
+- Transferencias
 - Otros
 
-Cada categoría puede tener subcategorías.
+La taxonomía evita crear categorías demasiado específicas como primer nivel. Cuando se implemente la UX de subcategorías, ejemplos naturales serán:
+- Supermercado → supermercado, mercado, panadería.
+- Vehículo → combustible, carga eléctrica, parking, peajes, mantenimiento.
+- Vivienda → hipoteca, comunidad, reparaciones, muebles.
+- Ocio → cine, teatro, entradas, videojuegos.
+- Deporte → gimnasio, CrossFit, pádel, fútbol.
+- Suscripciones → streaming, software, prensa.
 
-Ejemplos:
-- Alimentación → supermercado, mercado, delivery, panadería.
-- Vehículo → combustible, carga eléctrica, parking, peajes, mantenimiento, seguro.
-- Vivienda → hipoteca, comunidad, IBI, reparaciones, muebles.
-- Suscripciones → streaming, software, prensa, gimnasio.
+Los `system_key` existentes no se renombran ni reutilizan para otro significado. Las ampliaciones son aditivas para mantener compatibilidad con datos ya categorizados.
+
 
 ## Clasificación multinivel
 
