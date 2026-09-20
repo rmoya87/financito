@@ -190,6 +190,8 @@ def _ensure_contract_projection(
 ) -> Contract | None:
     if document.document_type not in CONTRACT_DOCUMENT_TYPES or not values:
         return None
+    if document.document_type=="mortgage" and _entity_link(session,document.id,"mortgage") is None:
+        return None
 
     link = _entity_link(session, document.id, "contract")
     contract = session.get(Contract, link.to_id) if link else None
@@ -256,56 +258,14 @@ def _ensure_mortgage_projection(
     values: dict[str, dict],
 ) -> Mortgage | None:
     link=_entity_link(session,document.id,"mortgage")
-    # An explicit evidence link is stronger than an automatic document classifier.
-    # This prevents an already-associated mortgage document from losing its
-    # projection if a reclassification later labels the file too generically.
-    if document.document_type!="mortgage" and link is None:
+    # Solo un vínculo explícito elegido por el usuario permite que un documento
+    # hipotecario modifique la hipoteca actual. Las ofertas/FEIN comparativas
+    # siguen siendo evidencia consultable pero no alteran el estado vigente.
+    if link is None:
         return None
-
-    mortgage=session.get(Mortgage,link.to_id) if link else None
+    mortgage=session.get(Mortgage,link.to_id)
     if mortgage is None:
-        mortgages=session.scalars(select(Mortgage).order_by(Mortgage.updated_at.desc())).all()
-        provider=str(values.get("provider_name",{}).get("value") or "").strip()
-        if len(mortgages)==1:
-            candidate=mortgages[0]
-            if provider and provider.lower() not in candidate.lender.lower() and candidate.lender.lower() not in provider.lower():
-                return None
-            mortgage=candidate
-        elif not mortgages:
-            required=("provider_name","remaining_principal","nominal_rate","monthly_payment","remaining_months","interest_type")
-            if not all(values.get(key,{}).get("value") not in {None,""} for key in required):
-                return None
-            principal=_decimal(values["remaining_principal"]["value"])
-            nominal_pct=_decimal(values["nominal_rate"]["value"])
-            payment=_decimal(values["monthly_payment"]["value"])
-            months=_integer(values["remaining_months"]["value"])
-            kind=_interest_type(values["interest_type"]["value"])
-            if None in {principal,nominal_pct,payment,months,kind}:
-                return None
-            mortgage=Mortgage(
-                lender=provider[:180],
-                remaining_principal=principal,
-                currency="EUR",
-                interest_type=kind,
-                nominal_rate=nominal_pct/Decimal("100"),
-                monthly_payment=payment,
-                remaining_months=months,
-                early_repayment_fee=None,
-            )
-            session.add(mortgage);session.flush()
-        else:
-            return None
-
-        session.add(EntityLink(
-            from_type="document",
-            from_id=document.id,
-            relation_type="evidence_for",
-            to_type="mortgage",
-            to_id=mortgage.id,
-            confidence=Decimal("1"),
-            source_type="document_projection",
-            source_ref=document.id,
-        ))
+        return None
 
     changed=False
     provider=str(values.get("provider_name",{}).get("value") or "").strip()
