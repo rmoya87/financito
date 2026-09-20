@@ -12,7 +12,7 @@ import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
 type CoverageRequirement={id:string;insurance_type:string|null;coverage_type:string;minimum_limit:string|null;currency:string;notes:string|null;enabled:boolean};
 type Policy={
   id:string;insurance_type:string;annual_premium:string;monthly_equivalent:string;deductible:string|null;
-  source_document_id:string|null;source_document_name:string|null;
+  source_document_id:string|null;source_document_name:string|null;source_documents?:{id:string;name:string}[];document_count?:number;
   source_document_ids?:string[];source_documents?:{id:string;file_name:string}[];
   contract:null|{provider_name:string;renewal_date:string|null;cancellation_notice_days:number|null;early_exit_penalty:string|null;evidence_status:string};
   coverages:{id:string;coverage_type:string;limit_amount:string|null;deductible:string|null;confidence:string;user_verified:boolean;source_page:number|null}[];
