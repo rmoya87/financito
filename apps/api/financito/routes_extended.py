@@ -14,7 +14,7 @@ from .domain.portfolio import apply_trade,portfolio_summary
 from .domain.stress import run_stress
 from .services.backup import create_backup,stage_restore
 from .services.chat import answer
-from .services.contracts import compare_coverages,refresh_contract_actions
+from .services.contracts import compare_coverages,refresh_contract_actions,scan_coverage_overlaps
 from .services.import_formats import import_statement
 from .services.rag import index_document_chunks,search
 from .services.repair import repair,scan
@@ -175,3 +175,15 @@ def banking_balances(account_id:str):
 def banking_transactions(account_id:str,date_from:str|None=None,date_to:str|None=None,continuation_key:str|None=None):
     try:return EnableBankingProvider().transactions(account_id,date_from,date_to,continuation_key)
     except Exception as e:raise HTTPException(503,str(e))
+
+
+@router.post("/coverage/overlaps/scan")
+def coverage_overlap_scan(db:Session=Depends(dbdep)):
+    rows=scan_coverage_overlaps(db);db.commit()
+    return {"overlaps":[{"id":r.id,"coverage_type":r.coverage_type,"left_id":r.left_coverage_fact_id,"right_id":r.right_coverage_fact_id,"overlap_type":r.overlap_type,"confidence":str(r.confidence)} for r in rows]}
+
+@router.get("/coverage/overlaps")
+def coverage_overlaps(db:Session=Depends(dbdep)):
+    from .models_extended import CoverageOverlap
+    rows=db.scalars(select(CoverageOverlap).order_by(CoverageOverlap.created_at.desc())).all()
+    return [{"id":r.id,"coverage_type":r.coverage_type,"left_id":r.left_coverage_fact_id,"right_id":r.right_coverage_fact_id,"overlap_type":r.overlap_type,"confidence":str(r.confidence),"status":r.status} for r in rows]

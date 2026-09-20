@@ -102,3 +102,11 @@ class OptimizationRequest(BaseModel):
     lost_benefits: Decimal = Decimal("0")
     additional_recurring_costs: Decimal = Decimal("0")
     tax_impact: Decimal = Decimal("0")
+
+
+class MortgagePrepaymentRequest(BaseModel):
+    principal: Decimal = Field(gt=0)
+    annual_rate: Decimal = Field(ge=0, le=1)
+    months: int = Field(gt=0, le=1200)
+    extra_payment: Decimal = Field(ge=0)
+    prepayment_fee: Decimal = Field(default=Decimal("0"), ge=0)
