@@ -61,7 +61,7 @@ export default function ContractsPage(){
           {x.analysis.negotiation_points?.length>0&&<div className="mt-3 text-xs"><strong>Para negociar:</strong> {x.analysis.negotiation_points.slice(0,3).map(i=>i.title||i.detail).join(' · ')}</div>}
           {x.analysis.comparison_requirements?.length>0&&<div className="mt-3 text-xs"><strong>Una alternativa debería mantener:</strong> {x.analysis.comparison_requirements.slice(0,3).map(i=>i.title||i.detail).join(' · ')}</div>}
           {x.analysis.cross_area_impacts?.length>0&&<div className="mt-3 text-xs text-[var(--muted)]"><strong>Impacto en otras áreas:</strong> {x.analysis.cross_area_impacts.slice(0,3).map(i=>i.title||i.detail).join(' · ')}</div>}
-          {x.analysis.missing_information?.length>0&&<div className="mt-3 text-xs"><strong>Falta confirmar:</strong> {x.analysis.missing_information.slice(0,3).map(i=>i.title||i.detail).join(' · ')}</div>}
+          {(x.analysis.missing_information?.length??0)>0&&<div className="mt-3 text-xs"><strong>Falta confirmar:</strong> {(x.analysis.missing_information??[]).slice(0,3).map(i=>i.title||i.detail).join(' · ')}</div>}
         </div>):<EmptyState>Añade contratos para analizarlos automáticamente.</EmptyState>}
       </div>
     </Card>
