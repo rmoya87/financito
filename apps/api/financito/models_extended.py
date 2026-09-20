@@ -46,6 +46,17 @@ class Trade(Base, TimestampMixin):
     source_type:Mapped[str]=mapped_column(String(40),default="manual")
     source_ref:Mapped[str|None]=mapped_column(String(255),nullable=True)
 
+
+class TrackedAsset(Base, TimestampMixin):
+    __tablename__="tracked_asset"
+    __table_args__=(UniqueConstraint("security_id",name="uq_tracked_asset_security"),)
+    id:Mapped[str]=mapped_column(String(36),primary_key=True,default=uuid_str)
+    security_id:Mapped[str]=mapped_column(ForeignKey("security.id",ondelete="CASCADE"),index=True)
+    tracking_state:Mapped[str]=mapped_column(String(20),default="watching")
+    provider_asset_id:Mapped[str|None]=mapped_column(String(120),nullable=True,index=True)
+    preferred_currency:Mapped[str]=mapped_column(String(3),default="EUR")
+    notes:Mapped[str|None]=mapped_column(Text,nullable=True)
+
 class TaxLot(Base):
     __tablename__="tax_lot"
     id:Mapped[str]=mapped_column(String(36),primary_key=True,default=uuid_str)
