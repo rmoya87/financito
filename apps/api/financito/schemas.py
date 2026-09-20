@@ -121,3 +121,20 @@ class MortgageRatePathRequest(BaseModel):
     months:int=Field(gt=0,le=1200)
     initial_annual_rate:Decimal=Field(ge=0,le=1)
     rate_steps:list[MortgageRateStep]=Field(default_factory=list,max_length=50)
+
+
+class MortgageIndexPoint(BaseModel):
+    month:int=Field(ge=1,le=1200)
+    index_rate:Decimal=Field(ge=Decimal("-1"),le=1)
+
+class MortgageIndexedPathRequest(BaseModel):
+    principal:Decimal=Field(gt=0)
+    months:int=Field(gt=0,le=1200)
+    interest_type:str=Field(pattern="^(variable|mixed)$")
+    revision_frequency_months:int=Field(gt=0,le=120)
+    index_curve:list[MortgageIndexPoint]=Field(min_length=1,max_length=1200)
+    spread:Decimal=Field(default=Decimal("0"),ge=Decimal("-1"),le=1)
+    fixed_period_months:int=Field(default=0,ge=0,le=1199)
+    fixed_annual_rate:Decimal|None=Field(default=None,ge=0,le=1)
+    floor_rate:Decimal|None=Field(default=None,ge=0,le=1)
+    cap_rate:Decimal|None=Field(default=None,ge=0,le=1)
