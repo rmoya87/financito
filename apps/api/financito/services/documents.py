@@ -30,6 +30,25 @@ class IndexedDocument:
     facts_created:int
     chunks_created:int
 
+def store_uploaded_document(filename:str,content:bytes)->Path:
+    if len(content)>MAX_FILE_SIZE:
+        raise ValueError("File too large")
+    original=Path(filename or "documento").name
+    suffix=Path(original).suffix.lower()
+    if suffix not in SUPPORTED_SUFFIXES:
+        raise ValueError(f"Unsupported document type: {suffix or 'sin extensión'}")
+    stem=re.sub(r"[^A-Za-z0-9._ -]+","_",Path(original).stem).strip(" ._") or "documento"
+    upload_dir=settings.vault_dir/"uploads"
+    upload_dir.mkdir(parents=True,exist_ok=True)
+    candidate=upload_dir/(stem+suffix)
+    counter=2
+    while candidate.exists():
+        candidate=upload_dir/(f"{stem} ({counter}){suffix}")
+        counter+=1
+    candidate.write_bytes(content)
+    return candidate
+
+
 def safe_path(path:Path)->Path:
     expanded=path.expanduser()
     if expanded.is_symlink():raise ValueError("Symlink documents are not accepted")
