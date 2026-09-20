@@ -7,7 +7,7 @@ import {PageHeader} from '@/components/page-header';
 import {Card} from '@/components/ui/card';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
 
-type Action={id:string;title:string;action_type:string;priority:string;status:string;due_date:string|null;notes:string|null};
+type Action={id:string;title:string;action_type:string;priority:string;status:string;due_date:string|null;notes:string|null;related_entity_type:string|null;related_entity_id:string|null};
 
 export default function ActionsPage(){
   const qc=useQueryClient();
@@ -16,6 +16,8 @@ export default function ActionsPage(){
     mutationFn:({id,status}:{id:string;status:string})=>apiMutate(`/api/v1/actions/${id}`,'PATCH',{status}),
     onSuccess:()=>{qc.invalidateQueries({queryKey:['actions']});qc.invalidateQueries({queryKey:['dashboard']})},
   });
+
+  const active=(q.data||[]).filter(a=>a.status==="pending"||a.status==="in_progress");
 
   return <>
     <PageHeader title="Para ti" description="Alertas, oportunidades y próximos pasos construidos a partir de tus datos, contratos y objetivos."/>
@@ -40,16 +42,19 @@ export default function ActionsPage(){
         <h2 className="font-bold">Pendiente de ti</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">Financito propone y organiza; las acciones externas siguen bajo tu control.</p>
       </div>
-      {q.isLoading?<Loading/>:q.error?<ErrorState error={q.error}/>:q.data?.length?
-        <div className="flex flex-col gap-3">{q.data.map(a=><div key={a.id} className="flex flex-col gap-3 rounded-xl bg-[var(--surface-2)] p-4 md:flex-row md:items-center md:justify-between">
+      {q.isLoading?<Loading/>:q.error?<ErrorState error={q.error}/>:active.length?
+        <div className="flex flex-col gap-3">{active.map(a=><div key={a.id} className="flex flex-col gap-3 rounded-xl bg-[var(--surface-2)] p-4 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="text-xs uppercase text-[var(--muted)]">{a.priority} · {a.action_type}</div>
             <div className="mt-1 font-semibold">{a.title}</div>
+            {a.notes?<div className="mt-1 max-w-2xl text-xs text-[var(--muted)]">{a.notes}</div>:null}
             {a.due_date?<div className="text-xs text-[var(--muted)]">Antes de {a.due_date}</div>:null}
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            {a.action_type==="review_document_evidence"&&a.related_entity_type==="document"&&a.related_entity_id?
+              <Link className="fin-button py-2 text-xs" href={`/documents/?document=${encodeURIComponent(a.related_entity_id)}`}>Revisar documento</Link>:
+              <button className="fin-button py-2 text-xs" onClick={()=>update.mutate({id:a.id,status:'done'})}>Hecho</button>}
             <button className="fin-button secondary py-2 text-xs" onClick={()=>update.mutate({id:a.id,status:'dismissed'})}>Descartar</button>
-            <button className="fin-button py-2 text-xs" onClick={()=>update.mutate({id:a.id,status:'done'})}>Hecho</button>
           </div>
         </div>)}</div>:
         <EmptyState>No hay acciones pendientes.</EmptyState>}
