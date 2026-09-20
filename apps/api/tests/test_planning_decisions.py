@@ -211,3 +211,59 @@ def test_chat_and_stress_use_refund_aware_cash_flow():
         result = answer(db, "resumen")
         assert Decimal(result["calculations"]["cash_flow"]["income"]) < Decimal("999999")
         assert Decimal(result["calculations"]["cash_flow"]["expenses"]) < Decimal("999999")
+
+
+
+def test_decision_lab_uses_saved_mortgage_and_live_context():
+    suffix = uuid4().hex[:8]
+    with TestClient(app) as client:
+        headers = _session(client)
+        created = client.post(
+            "/api/v1/mortgages",
+            headers=headers,
+            json={
+                "lender": f"Banco {suffix}",
+                "remaining_principal": "150000",
+                "currency": "EUR",
+                "interest_type": "fixed",
+                "nominal_rate": "0.03",
+                "monthly_payment": "832",
+                "remaining_months": 240,
+                "early_repayment_fee": "100",
+            },
+        )
+        assert created.status_code == 200
+        mortgage_id = created.json()["id"]
+
+        current = client.post("/api/v1/decision-lab/mortgage/current", headers=headers, json={"mortgage_id": mortgage_id})
+        assert current.status_code == 200
+        assert current.json()["mortgage"]["remaining_principal"] == "150000.0000"
+        assert current.json()["source"] == "saved_mortgage"
+
+        prepay = client.post(
+            "/api/v1/decision-lab/mortgage/prepayment",
+            headers=headers,
+            json={"mortgage_id": mortgage_id, "extra_payment": "10000"},
+        )
+        assert prepay.status_code == 200
+        assert prepay.json()["assumption"]["extra_payment"] == "10000"
+
+        path = client.post(
+            "/api/v1/decision-lab/mortgage/rate-path",
+            headers=headers,
+            json={"mortgage_id": mortgage_id, "rate_steps": [{"month": 13, "annual_rate": "0.04"}]},
+        )
+        assert path.status_code == 200
+        assert path.json()["mortgage"]["id"] == mortgage_id
+        assert len(path.json()["segments"]) >= 2
+
+        decision = client.post(
+            "/api/v1/decisions",
+            headers=headers,
+            json={"decision_type": "mortgage", "question": f"Amortizar {suffix}", "current_state": {}, "assumptions": {}, "constraints": {}},
+        )
+        assert decision.status_code == 200
+        detail = client.get("/api/v1/decisions/" + decision.json()["id"])
+        assert detail.status_code == 200
+        assert any(x["id"] == mortgage_id for x in detail.json()["live_current_state"]["mortgages"])
+        assert detail.json()["current_state"]["captured_from"] == "live_financito_data"
