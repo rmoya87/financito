@@ -158,6 +158,25 @@ def detect_language(text:str)->tuple[str,float]:
 
 def classify_document(text:str,file_name:str)->tuple[str,float]:
     sample=(file_name+" "+text[:100000]).lower()
+    strong_signals=[
+        ("mortgage",(("préstamo hipotecario",5),("prestamo hipotecario",5),("fein",5),("fiae",5),("fia e",5),("hipoteca",2))),
+        ("insurance",(("condiciones particulares de la póliza",6),("condiciones particulares de la poliza",6),("póliza de seguro",6),("poliza de seguro",6),("número de póliza",4),("numero de poliza",4))),
+        ("bank_statement",(("extracto bancario",5),("saldo contable",3),("fecha valor",2))),
+        ("investment_statement",(("cartera de valores",5),("valor liquidativo",4),("participaciones",2),("isin",2))),
+        ("tax",(("agencia tributaria",6),("modelo 100",6),("declaración de la renta",6),("declaracion de la renta",6))),
+        ("energy",(("punto de suministro",5),("potencia contratada",4),("término de energía",4),("termino de energia",4))),
+        ("telecom",(("fibra",3),("línea móvil",4),("linea movil",4),("datos móviles",3),("datos moviles",3))),
+        ("loan",(("préstamo personal",6),("prestamo personal",6))),
+    ]
+    scored=[]
+    for kind,signals in strong_signals:
+        score=sum(weight for signal,weight in signals if signal in sample)
+        if score:
+            scored.append((score,kind))
+    if scored:
+        score,kind=max(scored,key=lambda item:item[0])
+        if score>=2:
+            return kind,min(.98,.78+.03*min(score,6))
     groups=[
         ("mortgage",("fein","fia e","fiae","hipoteca","préstamo hipotecario","prestamo hipotecario","euribor","amortización anticipada")),
         ("insurance",("póliza","poliza","asegurado","cobertura","siniestro","franquicia","prima anual")),
