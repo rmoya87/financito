@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import {FormEvent,useMemo,useState} from 'react';
+import {FormEvent,useEffect,useMemo,useState} from 'react';
 import {useMutation,useQuery,useQueryClient} from '@tanstack/react-query';
 import {apiGet,apiMutate} from '@/lib/api';
 import {PageHeader} from '@/components/page-header';
@@ -16,10 +16,31 @@ type WealthSummary={
 type Account={id:string;name:string;institution_name:string;currency:string;balance:string};
 type Asset={id:string;type:string;name:string;value:string;currency:string;valuation_date:string;valuation_source:string;ownership_percentage:string};
 type Liability={id:string;type:string;name:string;amount:string;currency:string;annual_rate:string|null;ownership_percentage:string};
-type Mortgage={id:string;lender:string;remaining_principal:string;currency:string;interest_type:string;nominal_rate:string;monthly_payment:string;remaining_months:number};
+type Mortgage={id:string;lender:string;remaining_principal:string;currency:string;interest_type:string;nominal_rate:string;monthly_payment:string;remaining_months:number;early_repayment_fee?:string|null};
 type Investment={security_id:string;name:string;identifier:string|null;asset_class:string;currency:string;quantity:string;cost_basis:string;current_value:string|null;current_price:string|null;price_provider:string|null};
 type Policy={id:string;insurance_type:string;annual_premium:string;currency:string;deductible:string|null;provider:string|null;contract_id:string|null};
 type WealthDetails={summary:WealthSummary;accounts:Account[];assets:Asset[];liabilities:Liability[];mortgages:Mortgage[];investments:Investment[];insurance:{annual_premium_total:string;policies:Policy[]}};
+
+type MortgageExtra={
+  original_principal:string|null;original_term_months:number|null;start_date:string|null;maturity_date:string|null;
+  apr_rate:string|null;reference_index:string|null;differential_rate:string|null;rate_review_months:number|null;next_review_date:string|null;
+  opening_fee_percent:string|null;early_repayment_fee_percent:string|null;subrogation_fee_percent:string|null;cancellation_fee_percent:string|null;notes:string|null;
+};
+type HomeData={
+  property:null|{id:string;name:string;value:string;currency:string;valuation_date:string;valuation_source:string;ownership_percentage:string};
+  mortgage:Mortgage|null;extra:MortgageExtra;document_facts:Record<string,{value:string;document_id?:string;page?:number}>;
+  source_documents:{id:string;name:string}[];insurance:{id:string;insurance_type:string;annual_premium:string;provider:string|null;renewal_date:string|null}[];
+  equity:string|null;ltv:string|null;missing:{key:string;label:string;reason:string}[];
+};
+type MarketLead={
+  source_id:string;provider:string;kind:string;status:string;public_tin_min:number|null;benchmark_difference_pp:number|null;
+  claims:string[];url:string;retrieved_at:string;requires_personalized_quote:boolean;
+  scenario:null|{estimated_payment:string;monthly_payment_difference:string;remaining_interest_difference:string|null;known_exit_penalty:string|null;break_even_months_known_penalty_only:string|null;comparison_scope:string};
+};
+type MarketScan={
+  generated_at:string;current_mortgage_rate_percent:string|null;current_monthly_payment:string|null;
+  official_sources:{id:string;provider:string;kind:string;url:string;description:string}[];leads:MarketLead[];disclaimer:string;
+};
 
 function sumAssets(rows:Asset[],types:string[]){
   return rows.filter(x=>types.includes(x.type.toLowerCase())).reduce((sum,x)=>sum+Number(x.value||0)*Number(x.ownership_percentage||100)/100,0);
