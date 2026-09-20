@@ -34,6 +34,9 @@ class LinkedProductIn(BaseModel):
     parent_product_type:str;parent_product_id:str;linked_product_type:str;linked_product_id:str;discount_value:Decimal=Decimal("0");discount_unit:str="currency";conditions:str=""
 class DecisionIn(BaseModel):
     decision_type:str;question:str;current_state:dict={};assumptions:dict={};constraints:dict={}
+class DecisionStatusIn(BaseModel):
+    status:str=Field(pattern="^(draft|evaluating|decided|closed|cancelled)$")
+
 class AlternativeIn(BaseModel):
     name:str;one_off_cost:Decimal=Decimal("0");monthly_cost:Decimal=Decimal("0");expected_benefit:Decimal=Decimal("0");risk_level:str="unknown";horizon_results:dict={};uncertainties:list=[]
 class OutcomeIn(BaseModel):
@@ -67,6 +70,25 @@ def add_linked(p:LinkedProductIn,db:Session=Depends(dbdep)):r=LinkedProduct(**p.
 @router.get("/decisions")
 def decisions(db:Session=Depends(dbdep)):
     return [{"id":r.id,"type":r.decision_type,"question":r.question,"status":r.status,"created_at":r.created_at} for r in db.scalars(select(DecisionCase).order_by(DecisionCase.created_at.desc())).all()]
+@router.get("/decisions/{decision_id}")
+def decision_detail(decision_id:str,db:Session=Depends(dbdep)):
+    row=db.get(DecisionCase,decision_id)
+    if not row:raise HTTPException(404,"Decision not found")
+    alternatives=db.scalars(select(DecisionAlternative).where(DecisionAlternative.decision_case_id==decision_id).order_by(DecisionAlternative.created_at)).all()
+    outcomes=db.scalars(select(DecisionOutcome).where(DecisionOutcome.decision_case_id==decision_id).order_by(DecisionOutcome.created_at)).all()
+    return {
+        "id":row.id,"type":row.decision_type,"question":row.question,"status":row.status,
+        "current_state":json.loads(row.current_state_json),"assumptions":json.loads(row.assumptions_json),"constraints":json.loads(row.constraints_json),
+        "alternatives":[{"id":a.id,"name":a.name,"one_off_cost":str(a.one_off_cost),"monthly_cost":str(a.monthly_cost),"expected_benefit":str(a.expected_benefit),"net_benefit":str(a.net_benefit),"break_even_months":None if a.break_even_months is None else str(a.break_even_months),"risk_level":a.risk_level,"horizon_results":json.loads(a.horizon_results_json),"uncertainties":json.loads(a.uncertainties_json)} for a in alternatives],
+        "outcomes":[{"id":o.id,"selected_alternative_id":o.selected_alternative_id,"observation_start":o.observation_start,"observation_end":o.observation_end,"expected":json.loads(o.expected_impact_json),"observed":json.loads(o.observed_impact_json),"variance":json.loads(o.variance_json),"explanation":o.explanation,"data_completeness":str(o.data_completeness)} for o in outcomes],
+    }
+
+@router.patch("/decisions/{decision_id}")
+def update_decision(decision_id:str,p:DecisionStatusIn,db:Session=Depends(dbdep)):
+    row=db.get(DecisionCase,decision_id)
+    if not row:raise HTTPException(404,"Decision not found")
+    row.status=p.status;db.commit();return {"id":row.id,"status":row.status}
+
 @router.post("/decisions")
 def add_decision(p:DecisionIn,db:Session=Depends(dbdep)):
     r=DecisionCase(decision_type=p.decision_type,question=p.question,current_state_json=json.dumps(p.current_state),assumptions_json=json.dumps(p.assumptions),constraints_json=json.dumps(p.constraints),calculation_version="v1",status="draft");db.add(r);db.commit();return {"id":r.id}
