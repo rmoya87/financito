@@ -74,6 +74,10 @@ class DocumentIndexRequest(BaseModel):
     document_type: str = "unknown"
 
 
+class DocumentMortgageLinkUpdate(BaseModel):
+    mortgage_id: str | None = None
+
+
 class FactUpdate(BaseModel):
     status: str = Field(pattern="^(confirmed|inferred|not_found|ambiguous|conflicting|superseded)$")
     user_verified: bool = True
