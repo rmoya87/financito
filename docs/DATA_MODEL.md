@@ -606,3 +606,169 @@ status:
 - created_at
 
 Los traces materiales deben permitir reconstruir el cálculo y abrir la evidencia de origen.
+
+
+## Forecasting
+
+### commitment
+- id
+- commitment_type
+- subject_type
+- subject_id
+- amount
+- currency
+- due_date
+- recurrence
+- confidence
+- source_type
+- source_ref
+- mandatory
+- cancellable
+- status
+
+### forecast_run
+- id
+- horizon_start
+- horizon_end
+- generated_at
+- model_version
+- baseline_period_start
+- baseline_period_end
+- scenario
+- predicted_income
+- predicted_expenses
+- predicted_savings
+- predicted_min_liquidity
+- lower_bound
+- upper_bound
+- accuracy_profile_id
+- assumptions_json
+
+### forecast_category
+- id
+- forecast_run_id
+- category_id
+- predicted_amount
+- same_period_last_year_amount
+- known_commitments
+- recurring_amount
+- residual_estimate
+- lower_bound
+- upper_bound
+- drivers_json
+
+### forecast_observation
+- id
+- forecast_run_id
+- observed_at
+- actual_income
+- actual_expenses
+- actual_savings
+- absolute_error
+- percentage_error
+- bias
+
+### forecast_accuracy_profile
+- id
+- model_version
+- horizon_type
+- category_id nullable
+- mae
+- wape
+- bias
+- interval_coverage
+- sample_count
+- calculated_at
+
+## Cost centers
+
+### cost_center
+- id
+- name
+- type
+- parent_id nullable
+- metadata_json
+
+### cost_center_link
+- id
+- cost_center_id
+- entity_type
+- entity_id
+- allocation_percentage
+
+## Financial Graph
+
+### entity_link
+- id
+- from_type
+- from_id
+- relation_type
+- to_type
+- to_id
+- confidence
+- source_type
+- source_ref
+
+## Coverage
+
+### coverage_fact
+- id
+- contract_id
+- coverage_type
+- limit_amount
+- deductible
+- conditions_json
+- exclusions_json
+- effective_from
+- effective_to
+- source_document_id
+- source_page
+- confidence
+
+### coverage_overlap
+- id
+- coverage_type
+- left_coverage_fact_id
+- right_coverage_fact_id
+- overlap_type
+- estimated_redundant_cost
+- confidence
+- status
+
+## Decision outcomes
+
+### decision_outcome
+- id
+- decision_case_id
+- selected_alternative_id
+- observation_start
+- observation_end
+- expected_impact_json
+- observed_impact_json
+- variance_json
+- explanation
+- data_completeness
+- created_at
+
+## System integrity
+
+### repair_issue
+- id
+- issue_type
+- entity_type
+- entity_id
+- severity
+- detected_at
+- status
+- repair_action
+- metadata_json
+
+### model_evaluation_run
+- id
+- model_type
+- candidate_version
+- baseline_version
+- dataset_version
+- metrics_json
+- passed_gate
+- created_at
