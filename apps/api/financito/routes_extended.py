@@ -20,7 +20,7 @@ from .services.rag import index_document_chunks,search
 from .services.repair import repair,scan
 from .services.tax import estimate
 from .services.wealth import summary as wealth_summary
-from .providers.market import AlphaVantageProvider
+from .providers.market import AlphaVantageProvider\nfrom .providers.enable_banking import EnableBankingProvider
 from .providers.news import GdeltNewsProvider
 router=APIRouter(prefix="/api/v1")
 
@@ -140,3 +140,37 @@ async def statement(account_id:str,file:UploadFile=File(...),db:Session=Depends(
     try:r=import_statement(db,account_id,file.filename or "statement",content)
     except ValueError as e:raise HTTPException(400,str(e))
     db.commit();return r.__dict__
+
+@router.get("/coverage")
+def coverage_list(db:Session=Depends(dbdep)):
+    return [{"id":r.id,"coverage_type":r.coverage_type,"contract_id":r.contract_id,"insurance_policy_id":r.insurance_policy_id,"limit_amount":None if r.limit_amount is None else str(r.limit_amount),"deductible":None if r.deductible is None else str(r.deductible),"confidence":str(r.confidence),"user_verified":r.user_verified} for r in db.scalars(select(CoverageFact)).all()]
+
+@router.get("/banking/aspsps")
+def banking_aspsps(country:str="ES"):
+    try:return EnableBankingProvider().aspsps(country)
+    except Exception as e:raise HTTPException(503,str(e))
+
+@router.post("/banking/auth")
+def banking_auth(bank_name:str,country:str,redirect_url:str,state:str,valid_until:str,psu_type:str="personal"):
+    try:return EnableBankingProvider().start_authorization(bank_name,country,redirect_url,state,valid_until,psu_type)
+    except Exception as e:raise HTTPException(503,str(e))
+
+@router.post("/banking/session")
+def banking_session(code:str):
+    try:return EnableBankingProvider().authorize_session(code)
+    except Exception as e:raise HTTPException(503,str(e))
+
+@router.get("/banking/session/{session_id}")
+def banking_get_session(session_id:str):
+    try:return EnableBankingProvider().session(session_id)
+    except Exception as e:raise HTTPException(503,str(e))
+
+@router.get("/banking/account/{account_id}/balances")
+def banking_balances(account_id:str):
+    try:return EnableBankingProvider().balances(account_id)
+    except Exception as e:raise HTTPException(503,str(e))
+
+@router.get("/banking/account/{account_id}/transactions")
+def banking_transactions(account_id:str,date_from:str|None=None,date_to:str|None=None,continuation_key:str|None=None):
+    try:return EnableBankingProvider().transactions(account_id,date_from,date_to,continuation_key)
+    except Exception as e:raise HTTPException(503,str(e))
