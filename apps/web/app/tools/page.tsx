@@ -117,7 +117,8 @@ export default function ToolsPage(){
         </div>
         {context.data&&<div className="text-right text-xs text-[var(--muted)]">Contexto actualizado<br/>{new Date(context.data.generated_at).toLocaleString()}</div>}
       </div>
-      {context.isLoading?<div className="mt-3"><Loading/></div>:context.error?<div className="mt-3"><ErrorState error={context.error}/></div>:context.data?<div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+      {context.isLoading?<div className="mt-3"><Loading/></div>:context.error?<div className="mt-3"><ErrorState error={context.error}/></div>:context.data?<div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5 text-sm">
+        <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Liquidez acumulada</div><div className="mt-1 font-bold"><Money value={context.data.liquidity}/></div><div className="mt-1 text-[11px] text-[var(--muted)]">Saldo real de cuentas; no se presupone que todo sea amortizable.</div></div>
         <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Ingresos mes actual</div><div className="mt-1 font-bold"><Money value={context.data.cash_flow_current_month.income}/></div></div>
         <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Gastos mes actual</div><div className="mt-1 font-bold"><Money value={context.data.cash_flow_current_month.expenses}/></div></div>
         <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Ahorro mes actual</div><div className="mt-1 font-bold"><Money value={context.data.cash_flow_current_month.savings}/></div></div>
