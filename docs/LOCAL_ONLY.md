@@ -77,3 +77,13 @@ Default deny conceptual:
 ## Desarrollo
 
 En desarrollo pueden ejecutarse Next dev y FastAPI por separado. Los entornos de desarrollo no deben usar datos financieros reales.
+
+
+## Subida de documentos desde la WebApp
+
+Seleccionar o arrastrar un archivo en la WebApp no lo envía a Internet.
+
+Flujo:
+Browser local → FastAPI loopback → `~/.financito/vault/uploads` → extracción/OCR → SQLite/RAG → Ollama local.
+
+Los ficheros subidos, texto extraído, embeddings, propuestas y conclusiones permanecen en el Mac. El análisis automático del Vault se ejecuta en un thread de fondo para no bloquear el arranque de Financito.
