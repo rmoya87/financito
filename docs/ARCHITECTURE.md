@@ -2,7 +2,7 @@
 
 ## Enfoque
 
-Financito es una WebApp local-first. La UI se ejecuta en el navegador; el backend y los datos privados permanecen en el equipo del usuario.
+Financito es una WebApp estrictamente local. La UI se ejecuta en el navegador y todos los procesos propios, la base de datos, los documentos, el RAG, los embeddings y la IA permanecen en el Mac. No existe backend, base de datos, telemetría ni almacenamiento propio en servidores remotos.
 
 ## Componentes
 
@@ -206,3 +206,33 @@ El diseño debe admitir en el futuro:
 - Postgres opcional.
 
 La versión inicial no introduce infraestructura distribuida innecesaria.
+
+
+## Topología de producción definitiva
+
+En producción Next.js se compila como frontend estático. FastAPI sirve esos assets y la API bajo el mismo origen local.
+
+Browser → 127.0.0.1:<puerto> → WebApp estática + /api/v1.
+
+No debe existir un runtime Node obligatorio en producción y no se expone ningún puerto a LAN/WAN.
+
+Las únicas conexiones externas permitidas son salientes y realizadas directamente desde el Mac hacia providers configurados explícitamente.
+
+Ver:
+- LOCAL_ONLY.md
+- FRONTEND_ARCHITECTURE.md
+- BACKEND_ARCHITECTURE.md
+- SECURITY_MODEL.md
+
+## Principio de eficiencia
+
+Antes de añadir infraestructura o librerías:
+1. reutilizar componente/motor existente;
+2. comprobar si la stdlib o stack actual cubre el caso;
+3. medir el problema;
+4. evitar servicios distribuidos innecesarios;
+5. preferir procesamiento incremental;
+6. compartir contratos OpenAPI;
+7. mantener una única fuente de verdad por dato/regla.
+
+Redis, Celery, Kafka, Postgres remoto y servicios cloud quedan fuera de la arquitectura inicial.
