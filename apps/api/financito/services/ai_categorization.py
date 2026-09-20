@@ -7,7 +7,37 @@ from ..models import CategorizationAudit,Category,Transaction
 from . import local_ai
 from .categorization import KEYWORDS,categorize_transaction,ensure_categories,normalize_text
 
-CATEGORY_HINTS={"income":"nómina salario ingreso devolución cobro intereses abono","housing":"hipoteca alquiler comunidad vivienda hogar","groceries":"supermercado alimentación comida compra doméstica","restaurants":"restaurante bar cafetería comida a domicilio","transport":"gasolina combustible transporte taxi tren metro parking peaje","utilities":"electricidad gas agua teléfono internet suministros","insurance":"seguro póliza prima aseguradora","health":"farmacia médico hospital clínica dentista salud","education":"colegio academia universidad libros educación","shopping":"compras tienda ropa electrónica comercio","subscriptions":"suscripción cuota recurrente streaming software","travel":"hotel vuelo viaje alojamiento aerolínea","taxes":"impuesto tasa hacienda ayuntamiento tributo","investments":"broker inversión fondo acciones valores","transfers":"transferencia traspaso bizum entre cuentas"}
+CATEGORY_HINTS={
+    "income":"ingreso cobro intereses abono",
+    "salary":"nómina salario sueldo payroll",
+    "refunds":"devolución reembolso refund retrocesión",
+    "housing":"hipoteca alquiler comunidad vivienda hogar muebles reparación",
+    "groceries":"supermercado alimentación mercado compra doméstica",
+    "restaurants":"restaurante bar cafetería comida a domicilio",
+    "transport":"transporte público taxi tren metro autobús movilidad",
+    "vehicle":"gasolina combustible coche parking peaje taller itv carga vehículo",
+    "utilities":"electricidad gas agua energía suministros",
+    "telecom":"teléfono internet fibra móvil telecomunicaciones",
+    "insurance":"seguro póliza prima aseguradora",
+    "health":"farmacia médico hospital clínica dentista fisioterapia salud",
+    "personal_care":"peluquería barbería estética perfumería cuidado personal",
+    "education":"colegio academia universidad libros educación material escolar",
+    "family":"guardería juguetes pañales hijos familia",
+    "pets":"veterinario mascota pienso perro gato",
+    "sports":"gimnasio deporte crossfit pádel fútbol natación",
+    "leisure":"cine teatro entradas ocio videojuegos entretenimiento",
+    "technology":"tecnología electrónica ordenador móvil hardware",
+    "shopping":"compras tienda ropa comercio",
+    "subscriptions":"suscripción cuota recurrente streaming software",
+    "travel":"hotel vuelo viaje alojamiento aerolínea",
+    "taxes":"impuesto tasa hacienda ayuntamiento tributo ibi",
+    "bank_fees":"comisión bancaria mantenimiento tarjeta fee",
+    "debt":"préstamo crédito financiación cuota deuda",
+    "donations":"donación donativo ONG solidaridad",
+    "investments":"broker inversión fondo acciones valores",
+    "savings":"ahorro aportación plan ahorro",
+    "transfers":"transferencia traspaso bizum entre cuentas",
+}
 
 def _tx_text(tx:Transaction)->str:
     return normalize_text(f"{'ingreso' if tx.amount>0 else 'gasto'}. comercio {tx.merchant_raw or ''}. concepto {tx.description_raw}")
