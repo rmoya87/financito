@@ -158,6 +158,7 @@ Antes de modificar el repositorio, cualquier agente de IA debe leer [AGENTS.md](
 - [Ciclo de vida de datos](docs/DATA_LIFECYCLE.md)
 - [Rendimiento](docs/PERFORMANCE.md)
 - [Gastos y categorización](docs/EXPENSES_AND_CATEGORIZATION.md)
+- [Evidencia contractual](docs/CONTRACT_EVIDENCE.md)
 - [Visualizaciones e insights](docs/VISUALIZATION_AND_INSIGHTS.md)
 - [Motor de decisiones](docs/DECISION_ENGINE.md)
 - [Reglas de IA para ingeniería](docs/AI_ENGINEERING_RULES.md)
