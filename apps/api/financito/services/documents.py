@@ -88,6 +88,14 @@ def classify_document(text:str,file_name:str)->tuple[str,float]:
     if best[1]==0:return "unknown",.35
     return best[0],min(.97,.58+.10*best[1])
 
+def _decimal_token(value:str)->str:
+    raw=value.replace(" ","")
+    if "," in raw and "." in raw:
+        raw=raw.replace(".","").replace(",",".") if raw.rfind(",")>raw.rfind(".") else raw.replace(",","")
+    elif "," in raw:
+        raw=raw.replace(",",".")
+    return raw
+
 def _context(text:str,start:int,end:int)->str:
     left=max(0,start-80);right=min(len(text),end+120)
     return re.sub(r"\s+"," ",text[left:right]).strip()[:255]
@@ -106,11 +114,12 @@ def extract_contract_facts(text:str,source_page:int|None=None)->list[dict]:
     lowered=text.lower()
     for key,pattern,unit,confidence in patterns:
         for match in re.finditer(pattern,lowered,re.I):
-            raw=match.group(1).replace(",",".")
+            raw=_decimal_token(match.group(1))
             facts.append({"fact_type":"contract_term","key":key,"value":raw,"unit":unit,"confidence":confidence,"source_page":source_page,"source_section":_context(text,match.start(),match.end())})
     semantic_patterns=[
         ("reference_index",r"\b(eur[ií]bor(?:\s+a\s+\d+\s+meses?)?|irph)\b","text",.82),
         ("interest_type",r"\b(tipo\s+fijo|tipo\s+variable|tipo\s+mixto|inter[eé]s\s+fijo|inter[eé]s\s+variable|inter[eé]s\s+mixto)\b","text",.72),
+        ("precontract_document_type",r"\b(fein|fiae|fia\s+e)\b","text",.92),
     ]
     for key,pattern,unit,confidence in semantic_patterns:
         for match in re.finditer(pattern,lowered,re.I):
@@ -123,11 +132,20 @@ def extract_contract_facts(text:str,source_page:int|None=None)->list[dict]:
         ("rate_review_months",r"(?:revisi[oó]n(?:\s+del\s+tipo)?(?:\s+cada)?)\D{0,25}(\d{1,3})\s*meses","months",.78),
         ("opening_fee_percent",r"(?:comisi[oó]n\s+de\s+apertura)\D{0,45}(\d+[\.,]?\d*)\s*%","percent",.84),
         ("early_repayment_fee_percent",r"(?:compensaci[oó]n\s+por\s+reembolso\s+anticipado|comisi[oó]n\s+por\s+(?:amortizaci[oó]n|reembolso)\s+anticipad[oa])\D{0,65}(\d+[\.,]?\d*)\s*%","percent",.84),
+        ("loan_principal",r"(?:importe(?:\s+total)?\s+del\s+pr[eé]stamo|capital\s+(?:inicial|prestado)|principal)\D{0,50}(\d[\d\.\s]*[\d](?:,\d{1,2})?|\d+(?:,\d{1,2})?)\s*(?:€|euros?)","EUR",.86),
+        ("monthly_payment",r"(?:cuota\s+(?:mensual|ordinaria))\D{0,50}(\d[\d\.\s]*[\d](?:,\d{1,2})?|\d+(?:,\d{1,2})?)\s*(?:€|euros?)","EUR",.84),
+        ("fixed_period_years",r"(?:periodo|tramo)\s+fijo\D{0,30}(\d{1,2})\s*a[nñ]os","years",.82),
+        ("rate_floor_percent",r"(?:tipo\s+m[ií]nimo|suelo)\D{0,35}(\d+[\.,]?\d*)\s*%","percent",.78),
+        ("rate_cap_percent",r"(?:tipo\s+m[aá]ximo|techo)\D{0,35}(\d+[\.,]?\d*)\s*%","percent",.78),
+        ("subrogation_fee_percent",r"(?:comisi[oó]n|compensaci[oó]n)\s+(?:por|de)\s+subrogaci[oó]n\D{0,45}(\d+[\.,]?\d*)\s*%","percent",.82),
+        ("novation_fee_percent",r"(?:comisi[oó]n|compensaci[oó]n)\s+(?:por|de)\s+novaci[oó]n\D{0,45}(\d+[\.,]?\d*)\s*%","percent",.82),
     ]
     for key,pattern,unit,confidence in mortgage_number_patterns:
         for match in re.finditer(pattern,lowered,re.I):
-            raw=match.group(1).replace(",",".")
+            raw=_decimal_token(match.group(1))
             facts.append({"fact_type":"mortgage_term","key":key,"value":raw,"unit":unit,"confidence":confidence,"source_page":source_page,"source_section":_context(text,match.start(),match.end())})
+    for match in re.finditer(r"(?:compensaci[oó]n\s+por\s+reembolso\s+anticipado|comisi[oó]n\s+por\s+(?:amortizaci[oó]n|reembolso)\s+anticipad[oa])\D{0,50}(\d+[\.,]?\d*)\s*%[^.]{0,120}?(?:primeros?|durante\s+los\s+primeros)\s+(\d{1,2})\s+a[nñ]os",lowered,re.I):
+        facts.append({"fact_type":"mortgage_formula","key":"early_repayment_formula","value":{"formula_type":"percentage_of_repaid_principal","percentage":_decimal_token(match.group(1)),"applicable_first_years":int(match.group(2))},"unit":"formula","confidence":.88,"source_page":source_page,"source_section":_context(text,match.start(),match.end())})
     linked_patterns=[
         ("linked_salary",r"(?:domiciliaci[oó]n de n[oó]mina|n[oó]mina domiciliada)"),
         ("linked_home_insurance",r"(?:seguro de hogar|seguro hogar)"),
