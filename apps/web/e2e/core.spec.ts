@@ -58,8 +58,13 @@ test('cuenta e importación de extracto funcionan de extremo a extremo',async({p
     buffer:Buffer.from('Fecha;Concepto;Importe;Moneda;Comercio\n20/09/2026;Compra E2E;-12,34;EUR;E2E Shop\n'),
   });
   await page.getByRole('button',{name:'Importar extracto'}).click();
-  await expect(page.getByText(/Insertados: 1/)).toBeVisible();
-  await expect(page.getByRole('cell',{name:'Compra E2E',exact:true})).toBeVisible();
+  await expect(page.getByText(/Importación terminada:/)).toBeVisible();
+  await expect(page.getByText(/1 nuevos/)).toBeVisible();
+  await expect(page.getByText('Compra E2E',{exact:true})).toBeVisible();
+  await expect(page.getByRole('searchbox',{name:'Buscar movimientos'})).toBeVisible();
+  await page.getByRole('button',{name:'Ver reglas'}).click();
+  await expect(page.getByRole('dialog',{name:'Reglas automáticas'})).toBeVisible();
+  await page.getByRole('button',{name:'Cerrar'}).click();
 });
 
 test('Documentos permite subir y procesar un archivo desde la aplicación',async({page})=>{
@@ -70,9 +75,6 @@ test('Documentos permite subir y procesar un archivo desde la aplicación',async
     buffer:Buffer.from('Póliza de seguro de hogar. Prima anual 480 euros. Franquicia 100 euros. Preaviso de 30 días.'),
   });
   await expect(page.getByText(/1 documento\(s\) añadido\(s\)/)).toBeVisible();
-  const uploaded=page.getByRole('button',{name:/e2e-upload-policy\.txt/});
-  await expect(uploaded).toBeVisible();
-  await uploaded.click();
   await expect(page.getByText('annual_cost',{exact:true})).toBeVisible();
   await expect(page.getByText('deductible',{exact:true})).toBeVisible();
   await expect(page.getByText('cancellation_notice_days',{exact:true})).toBeVisible();

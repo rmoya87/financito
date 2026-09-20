@@ -17,6 +17,7 @@ from .services.backup import create_backup,stage_restore
 from .services.chat import answer
 from .services.contracts import compare_coverages,refresh_contract_actions,scan_coverage_overlaps
 from .services.import_formats import import_statement
+from .services.transaction_ops import detect_internal_transfers,detect_refunds
 from .services.insurance_analysis import insurance_verdict
 from .services.rag import index_document_chunks,search
 from .services.repair import repair,scan
@@ -213,8 +214,6 @@ def tracked_assets_refresh_all(db:Session=Depends(dbdep)):
     rows=tracked_assets(db)
     refreshed=[];failed=[]
     for item in rows:
-        if not item.get("price_stale"):
-            continue
         try:
             quote=refresh_security(db,item["security_id"])
             refreshed.append({"security_id":item["security_id"],"quote":quote})
@@ -422,7 +421,10 @@ async def statement(account_id:str,file:UploadFile=File(...),db:Session=Depends(
     if len(content)>30*1024*1024:raise HTTPException(413,"File too large")
     try:r=import_statement(db,account_id,file.filename or "statement",content)
     except ValueError as e:raise HTTPException(400,str(e))
-    db.commit();return r.__dict__
+    transfer_pairs=detect_internal_transfers(db)
+    refunds=detect_refunds(db)
+    db.commit()
+    return {**r.__dict__,"transfer_pairs":transfer_pairs,"refunds":refunds}
 
 @router.get("/coverage")
 def coverage_list(db:Session=Depends(dbdep)):

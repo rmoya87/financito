@@ -6,7 +6,7 @@ from decimal import Decimal
 import json
 from pathlib import Path
 
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import and_, func, select
@@ -30,6 +30,7 @@ from .routes_privacy import router as privacy_router
 from .routes_observability import router as observability_router
 from .services.vault_watcher import VaultWatcher
 from .services.categorization import ensure_categories,propagate_verified_merchant
+from .services.transaction_ops import apply_category_semantics,detect_internal_transfers,detect_refunds
 from .services.documents import index_document,reprocess_document,safe_path,store_uploaded_document
 from .services.evidence import review_summary,synchronize_all_document_evidence,synchronize_document_evidence
 from .services.document_ai import analyze_document_by_id,domain_insights,latest_analysis
@@ -76,8 +77,8 @@ def get_db():
 
 
 @app.get("/api/v1/session")
-def session(response: Response):
-    return create_session(response)
+def session(request: Request, response: Response):
+    return create_session(response, request.cookies.get("financito_session"))
 
 
 @app.get("/api/v1/health")
@@ -105,7 +106,7 @@ def create_account(payload: AccountCreate, db: Session = Depends(get_db)):
 
 
 @app.get("/api/v1/transactions", response_model=list[TransactionOut])
-def transactions(account_id:str|None=None,start:date|None=None,end:date|None=None,limit:int=Query(200,ge=1,le=1000),db:Session=Depends(get_db)):
+def transactions(account_id:str|None=None,start:date|None=None,end:date|None=None,limit:int=Query(200,ge=1,le=5000),db:Session=Depends(get_db)):
     stmt=select(Transaction).order_by(Transaction.booking_date.desc(),Transaction.created_at.desc()).limit(limit)
     if account_id: stmt=stmt.where(Transaction.account_id==account_id)
     if start: stmt=stmt.where(Transaction.booking_date>=start)
@@ -119,8 +120,11 @@ async def import_transactions(account_id:str,file:UploadFile=File(...),db:Sessio
     content=await file.read()
     if len(content)>20*1024*1024: raise HTTPException(413,"File too large")
     result=import_csv(db,account_id,content,file.filename or "upload.csv")
-    db.add(AuditEvent(event_type="transactions_imported",entity_type="account",entity_id=account_id,metadata_json=json.dumps(result.__dict__)))
-    db.commit(); return result.__dict__
+    transfer_pairs=detect_internal_transfers(db)
+    refunds=detect_refunds(db)
+    payload={**result.__dict__,"transfer_pairs":transfer_pairs,"refunds":refunds}
+    db.add(AuditEvent(event_type="transactions_imported",entity_type="account",entity_id=account_id,metadata_json=json.dumps(payload)))
+    db.commit(); return payload
 
 
 @app.patch("/api/v1/transactions/{transaction_id}/category", response_model=TransactionOut)
@@ -129,6 +133,7 @@ def update_category(transaction_id:str,payload:TransactionCategoryUpdate,db:Sess
     if not tx: raise HTTPException(404,"Transaction not found")
     if not db.get(Category,payload.category_id): raise HTTPException(404,"Category not found")
     previous=tx.category_id; tx.category_id=payload.category_id; tx.categorization_method="manual"; tx.categorization_confidence=Decimal("1"); tx.user_verified=True
+    apply_category_semantics(db,tx)
     db.add(CategorizationAudit(transaction_id=tx.id,previous_category_id=previous,new_category_id=payload.category_id,method="manual",confidence=Decimal("1"),changed_by="user"))
     propagate_verified_merchant(db,tx)
     db.commit(); db.refresh(tx); return tx
@@ -143,7 +148,7 @@ def dashboard(db:Session=Depends(get_db)):
     upcoming=db.scalars(select(Commitment).where(and_(Commitment.due_date>=today,Commitment.due_date<=today+timedelta(days=45),Commitment.status=="active")).order_by(Commitment.due_date)).all()
     actions=db.scalars(select(ActionItem).where(ActionItem.status.in_(["pending","in_progress"])).order_by(ActionItem.due_date.asc().nullslast()).limit(10)).all()
     category_rows=category_spending(db,start,today)
-    return {"period":{"start":start,"end":today},"liquidity":str(balances),"income":str(flow_data["income"]),"expenses":str(flow_data["expenses"]),"savings":str(flow_data["savings"]),"savings_rate":str(flow_data["savings_rate"]) if flow_data["savings_rate"] is not None else None,"spending_by_category":[{"category":r["category"],"system_key":r["system_key"],"amount":str(r["amount"])} for r in category_rows],"upcoming_commitments":[{"id":c.id,"title":c.title,"amount":str(c.amount),"due_date":c.due_date} for c in upcoming],"actions":[{"id":a.id,"title":a.title,"priority":a.priority,"due_date":a.due_date,"status":a.status} for a in actions]}
+    return {"period":{"start":start,"end":today},"liquidity":str(balances),"income":str(flow_data["income"]),"expenses":str(flow_data["expenses"]),"savings":str(flow_data["savings"]),"savings_rate":str(flow_data["savings_rate"]) if flow_data["savings_rate"] is not None else None,"spending_by_category":[{"category":r["category"],"system_key":r["system_key"],"amount":str(r["amount"])} for r in category_rows],"upcoming_commitments":[{"id":c.id,"title":c.title,"amount":str(c.amount),"due_date":c.due_date} for c in upcoming],"actions":[{"id":a.id,"title":a.title,"action_type":a.action_type,"priority":a.priority,"due_date":a.due_date,"status":a.status,"notes":a.notes,"related_entity_type":a.related_entity_type,"related_entity_id":a.related_entity_id} for a in actions]}
 
 
 @app.post("/api/v1/budgets")

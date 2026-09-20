@@ -8,7 +8,7 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 ## Implementado y verificable
 
 ### Runtime, seguridad y privacidad
-- FastAPI solo en loopback, validación Host/Origin, sesión local HttpOnly y CSRF.
+- FastAPI solo en loopback, validación Host/Origin, sesión local HttpOnly y CSRF; una sesión válida se reutiliza entre pestañas y el cliente renueva/reintenta una vez si el token queda obsoleto.
 - CSP y cabeceras defensivas.
 - SQLCipher en runtime estable; la clave se obtiene de entorno explícito o Keychain y se crea en Keychain si no existe.
 - Modo SQLite sin cifrar bloqueado salvo `FINANCITO_ALLOW_PLAINTEXT_SQLITE=1`.
@@ -21,11 +21,11 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 - CSV y formatos bancarios estructurados: XLSX/XLSM, QIF, OFX, CAMT/XML y MT940/STA.
 - XLSX multi-sección de Bankinter: detección automática de la tabla contabilizada (`Fecha contable / Fecha valor / Descripción / Importe / Saldo / Divisa`), ignorando el bloque previo de movimientos pendientes para evitar duplicados al contabilizarse.
 - deduplicación de extractos solapados por referencia bancaria, huella exacta y similitud conservadora; preserva movimientos idénticos legítimos mediante conteo multiconjunto;
-- normalización, categorías, reglas, corrección manual auditable y review queue;
+- normalización, categorías, reglas y corrección manual auditable sobre un histórico único buscable; las reglas se gestionan en modal;
 - categorización híbrida local: reglas > memoria de comercios verificados > clasificador determinista > similitud por embeddings > LLM local para casos ambiguos; las propuestas de IA no se marcan como verificadas por el usuario.
-- splits exactos, transferencias internas y reembolsos.
+- splits exactos; detección automática tras importar; `Movimiento entre cuentas` y `Reembolsos` son categorías con semántica contable propia también cuando proceden de reglas o correcciones manuales.
 - reembolsos netean gasto y no inflan ingresos en Dashboard, Analytics, Forecast/Stress y Chat.
-- recurrentes y anomalías.
+- recurrentes y detección de movimientos fuera de patrón con explicación de comparación, diferencia y acciones concretas.
 - presupuestos y compromisos.
 - análisis por categoría/comercio, fijo-variable, esencial-discrecional y series mensuales.
 - forecast con baseline comparable, accuracy histórica y Calendar.
@@ -70,6 +70,7 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 - backtest MA y escenario amortizar-vs-invertir.
 
 ### Contratos, seguros, hipoteca y decisiones
+- Inicio/Para ti abre directamente el área que resuelve cada tarea y explica qué acción concreta se espera antes de marcarla como resuelta.
 - fuente de verdad documental compartida: los campos que no se reconozcan se completan como hechos confirmados dentro del documento, evitando fichas paralelas.
 - veredicto transversal de seguros: cruza pólizas/coberturas documentadas con pagos reales, ingresos/ahorro, huecos, duplicidades y productos vinculados; la IA local solo explica el análisis.
 - contratos y Action Center de renovación/preaviso.
@@ -81,7 +82,7 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 - motor de switching con costes, penalizaciones, beneficios perdidos, tax impact y break-even.
 - beneficios y productos vinculados.
 - Decision Case, alternativas, estados y resultado esperado vs observado.
-- centros de coste con asignaciones porcentuales y agregación de contratos/pólizas/activos/deuda.
+- centros de coste con asignaciones porcentuales; una categoría vinculada agrega automáticamente su gasto de los últimos 12 meses y puede combinarse con contratos/pólizas/activos/deuda.
 
 ### Operación
 - Configuración de IA local con prueba de generación real de Ollama, diagnóstico de modelo/tag y compatibilidad con Qwen mediante `think=false` con fallback.

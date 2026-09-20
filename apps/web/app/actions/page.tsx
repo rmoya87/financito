@@ -13,7 +13,15 @@ type Contract={id:string;provider_name:string;contract_type:string;renewal_date:
 type Insurance={id:string;insurance_type:string;annual_premium:string;deductible:string|null;contract_id:string|null;source_document_id:string|null};
 type Coverage={id:string;coverage_type:string;contract_id:string|null;insurance_policy_id:string|null;limit_amount:string|null;deductible:string|null;confidence:string;user_verified:boolean};
 const priorityLabel:Record<string,string>={critical:'Urgente',high:'Alta prioridad',medium:'Prioridad media',low:'Baja prioridad'};
-const actionLabel:Record<string,string>={banking_consent_renewal:'Renovar acceso bancario',review_document_evidence:'Confirmar datos de un documento',review_document_ai_insights:'Revisar conclusiones del documento',contract_renewal:'Revisar renovación',contract_cancellation_notice:'Revisar plazo de cancelación'};
+const actionLabel:Record<string,string>={banking_consent_renewal:'Renovar acceso bancario',review_document_evidence:'Confirmar datos de un documento',review_document_ai_insights:'Revisar conclusiones del documento',contract_notice:'Revisar renovación y plazo de cancelación',contract_renewal:'Revisar renovación',contract_cancellation_notice:'Revisar plazo de cancelación'};
+
+function actionDestination(a:Action):{href:string;label:string;instruction:string}|null{
+  if(a.related_entity_type==='document'&&a.related_entity_id)return {href:'/documents/?document='+encodeURIComponent(a.related_entity_id),label:'Abrir documento',instruction:'Revisa cada dato extraído y confirma o marca como dudoso lo que corresponda.'};
+  if(a.related_entity_type==='contract'||a.action_type==='contract_notice')return {href:'/contracts/',label:'Abrir contrato',instruction:'Comprueba renovación, preaviso, coste y penalizaciones antes de decidir si mantenerlo o cambiarlo.'};
+  if(a.related_entity_type==='banking_connection'||a.action_type==='banking_consent_renewal')return {href:'/banking/',label:'Renovar acceso',instruction:'Vuelve a autorizar la conexión con tu banco. Financito no puede hacerlo sin tu intervención.'};
+  if(a.related_entity_type==='insurance_policy')return {href:'/insurance/',label:'Abrir seguro',instruction:'Revisa prima, coberturas, duplicidades y huecos antes de tomar una decisión.'};
+  return null;
+}
 
 export default function ActionsPage(){
   const qc=useQueryClient();
@@ -52,20 +60,19 @@ export default function ActionsPage(){
         <p className="mt-1 text-sm text-[var(--muted)]">Financito propone y organiza; las acciones externas siguen bajo tu control.</p>
       </div>
       {q.isLoading?<Loading/>:q.error?<ErrorState error={q.error}/>:active.length?
-        <div className="flex flex-col gap-3">{active.map(a=><div key={a.id} className="flex flex-col gap-3 rounded-xl bg-[var(--surface-2)] p-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-col gap-3">{active.map(a=>{const destination=actionDestination(a);return <div key={a.id} className="flex flex-col gap-3 rounded-xl bg-[var(--surface-2)] p-4 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="text-xs uppercase text-[var(--muted)]">{priorityLabel[a.priority]||"Revisar"} · {actionLabel[a.action_type]||a.action_type.replaceAll("_"," ")}</div>
             <div className="mt-1 font-semibold">{a.title}</div>
+            {destination&&<div className="mt-2 max-w-2xl text-sm"><strong>Qué tienes que hacer:</strong> {destination.instruction}</div>}
             {a.notes?<div className="mt-1 max-w-2xl text-xs text-[var(--muted)]">{a.notes}</div>:null}
-            {a.due_date?<div className="text-xs text-[var(--muted)]">Antes de {a.due_date}</div>:null}
+            {a.due_date?<div className="mt-1 text-xs text-[var(--muted)]">Antes de {a.due_date}</div>:null}
           </div>
           <div className="flex flex-wrap gap-2">
-            {a.related_entity_type==="document"&&a.related_entity_id&&["review_document_evidence","review_document_ai_insights"].includes(a.action_type)?
-              <Link className="fin-button py-2 text-xs" href={`/documents/?document=${encodeURIComponent(a.related_entity_id)}`}>{a.action_type==="review_document_ai_insights"?"Revisar conclusiones":"Revisar documento"}</Link>:
-              <button className="fin-button py-2 text-xs" onClick={()=>update.mutate({id:a.id,status:'done'})}>Hecho</button>}
+            {destination?<Link className="fin-button py-2 text-xs" href={destination.href}>{destination.label}</Link>:<button className="fin-button py-2 text-xs" onClick={()=>update.mutate({id:a.id,status:'done'})}>Marcar como resuelto</button>}
             <button className="fin-button secondary py-2 text-xs" onClick={()=>update.mutate({id:a.id,status:'dismissed'})}>Descartar</button>
           </div>
-        </div>)}</div>:
+        </div>})}</div>:
         <EmptyState>No hay acciones pendientes.</EmptyState>}
     </Card>
 

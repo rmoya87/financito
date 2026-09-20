@@ -19,9 +19,17 @@ interface Dashboard{
   savings_rate:string|null;
   spending_by_category:{category:string;system_key:string;amount:string}[];
   upcoming_commitments:{id:string;title:string;amount:string;due_date:string}[];
-  actions:{id:string;title:string;priority:string;due_date:string|null;status:string}[];
+  actions:{id:string;title:string;action_type:string;priority:string;due_date:string|null;status:string;notes:string|null;related_entity_type:string|null;related_entity_id:string|null}[];
 }
 interface Wealth{net_worth:string}
+
+function actionDestination(action:Dashboard['actions'][number]){
+  if(action.related_entity_type==='document'&&action.related_entity_id)return {href:'/documents/?document='+encodeURIComponent(action.related_entity_id),label:'Revisar y confirmar los datos extraídos'};
+  if(action.related_entity_type==='contract'||action.action_type==='contract_notice')return {href:'/contracts/',label:'Revisar renovación, coste y condiciones'};
+  if(action.related_entity_type==='banking_connection'||action.action_type==='banking_consent_renewal')return {href:'/banking/',label:'Renovar la autorización bancaria'};
+  if(action.related_entity_type==='insurance_policy')return {href:'/insurance/',label:'Revisar la póliza y sus coberturas'};
+  return {href:'/actions/?action='+encodeURIComponent(action.id),label:'Abrir la tarea y ver qué falta'};
+}
 
 function Metric({label,value,detail}:{label:string;value:string;detail?:string}){
   return <Card>
@@ -67,14 +75,16 @@ export default function DashboardPage(){
       </div>
       {d.actions.length?
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {d.actions.slice(0,4).map(action=><Link key={action.id} href="/actions/" className="fin-card block p-4 transition-transform hover:-translate-y-0.5">
+          {d.actions.slice(0,4).map(action=>{const destination=actionDestination(action);return <Link key={action.id} href={destination.href} className="fin-card block p-4 transition-transform hover:-translate-y-0.5">
             <div className="flex items-center justify-between gap-2">
               <span className="rounded-full bg-[var(--brand-soft)] px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-[var(--brand)]">{action.priority}</span>
               <Sparkles size={16} className="text-[var(--brand)]"/>
             </div>
             <div className="mt-3 font-semibold">{action.title}</div>
+            <div className="mt-2 text-xs"><strong>Qué hacer:</strong> {destination.label}</div>
+            {action.notes&&<div className="mt-1 line-clamp-2 text-xs text-[var(--muted)]">{action.notes}</div>}
             <div className="mt-2 text-xs text-[var(--muted)]">{action.due_date?`Antes de ${action.due_date}`:'Sin fecha límite'}</div>
-          </Link>)}
+          </Link>})}
         </div>:
         <Card><EmptyState>No hay nada que requiera tu atención ahora mismo.</EmptyState></Card>}
     </section>

@@ -65,10 +65,15 @@ class LocalSecurityMiddleware(BaseHTTPMiddleware):
         return response
 
 
-def create_session(response: Response) -> dict:
-    session_id = secrets.token_urlsafe(24)
-    response.set_cookie(
-        "financito_session", sign_session(session_id), httponly=True, samesite="strict", secure=False,
-        max_age=3600, path="/",
-    )
+def create_session(response: Response, existing_cookie: str | None = None) -> dict:
+    # Reuse a valid browser session instead of rotating the cookie on every
+    # GET /session. Rotating it invalidated CSRF tokens cached by other pages
+    # or tabs and produced intermittent 403 responses on otherwise valid POSTs.
+    session_id = verify_session(existing_cookie)
+    if session_id is None:
+        session_id = secrets.token_urlsafe(24)
+        response.set_cookie(
+            "financito_session", sign_session(session_id), httponly=True, samesite="strict", secure=False,
+            max_age=3600, path="/",
+        )
     return {"csrf_token": csrf_for(session_id), "expires_in": 3600}
