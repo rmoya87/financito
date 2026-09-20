@@ -31,11 +31,12 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 - forecast con baseline comparable, accuracy histórica y Calendar.
 - previsión automática de cierre de mes con gasto, ahorro, saldo total y saldo estimado por cuenta, sin repartir compromisos sin evidencia.
 - gráficas multi-serie con colores semánticos distintos y navegación activa verde con texto blanco para contraste.
-- Laboratorio de decisiones alimentado por perfiles reales guardados, sin defaults financieros de ejemplo.
+- Laboratorio de decisiones alimentado por perfiles reales guardados, sin defaults financieros de ejemplo; separa liquidez acumulada de ahorro mensual y valida costes contractuales de salida desde evidencia confirmada.
+- investigación de mercado bajo demanda sobre fuentes oficiales para hipoteca/seguros, tratada como benchmark hasta disponer de oferta personalizada.
 - stress testing y cash runway.
 
 ### Banking
-- Enable Banking adapter de solo lectura.
+- Enable Banking adapter de solo lectura; modo personal restringido para cuentas propias, con saldos reales que alimentan liquidez acumulada y movimientos que alimentan cash-flow.
 - listado de ASPSPs e inicio de autorización.
 - intercambio de código por sesión persistida.
 - mapeo provider-account -> cuenta local por `identification_hash`.
