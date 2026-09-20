@@ -300,3 +300,78 @@ Para seguros:
 - documento fuente.
 
 El endpoint de preparación de cambio devuelve los datos faltantes antes de permitir considerar cerrada una comparación.
+
+
+## Ingesta desde la aplicación y análisis local
+
+La UI de **Documentos y evidencia** permite seleccionar o arrastrar documentos directamente desde el Mac. El backend:
+- sanea el nombre;
+- valida tipo y tamaño;
+- copia el archivo a `<vault>/uploads`;
+- indexa texto/OCR y RAG;
+- clasifica el documento;
+- extrae hechos deterministas;
+- programa el análisis interpretativo con el LLM local cuando está disponible.
+
+El usuario no necesita navegar a la carpeta oculta del Vault para usar el sistema.
+
+## Doble capa: hechos vs interpretación
+
+Financito separa estrictamente:
+
+**Hechos materiales**
+- importes;
+- porcentajes;
+- fechas;
+- preavisos;
+- comisiones;
+- penalizaciones;
+- primas;
+- tipos;
+- vinculaciones calculables;
+- coberturas estructuradas.
+
+Estos hechos solo alimentan cálculos cuando están confirmados por el usuario.
+
+**Análisis IA local**
+- resumen;
+- ventajas;
+- obligaciones;
+- riesgos;
+- exclusiones/límites;
+- productos vinculados;
+- oportunidades de optimización;
+- impactos cruzados entre áreas;
+- información ausente.
+
+El análisis de IA se conserva como interpretación y nunca sustituye silenciosamente un hecho confirmado.
+
+## Propuestas de evidencia por IA
+
+El modelo local puede proponer un hecho material que la extracción determinista no haya detectado si:
+- usa una clave permitida;
+- existe una página concreta de evidencia;
+- el valor aparece explícitamente en el documento;
+- queda marcado como `inferred`;
+- requiere confirmación humana.
+
+Las propuestas confirmadas pasan por el mismo pipeline que los hechos deterministas.
+
+En seguros, la IA puede proponer coberturas estructuradas. Tras la confirmación:
+- se crean `CoverageFact` vinculados a la póliza y documento;
+- entran en análisis de huecos;
+- entran en detección de duplicidades;
+- conservan página y confianza.
+
+Un reanálisis preserva hechos ya confirmados y regenera solo propuestas pendientes.
+
+## Reutilización entre dominios
+
+Los análisis documentales forman parte del contexto local de:
+- Seguros;
+- Laboratorio de decisiones / Hipoteca;
+- Contratos;
+- Chat/RAG;
+- Action Center.
+
+Ejemplo: una póliza puede indicar que cancelarla hace perder una bonificación hipotecaria. Esa relación aparece tanto en Seguros como en el contexto de la decisión hipotecaria, mientras que el coste cuantitativo solo se calcula con hechos contractuales confirmados.
