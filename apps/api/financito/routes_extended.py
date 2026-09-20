@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .models import Account,Contract,FinancialGoal,Portfolio,Security
 from .models_extended import Asset,BackupRecord,CoverageFact,InsurancePolicy,Liability,RepairIssue,Trade
-from .schemas_extended import AssetCreate,BackupCreate,BackupRestore,ChatRequest,ContractCreate,CoverageCompareRequest,CoverageCreate,GoalCreate,GoalProgressUpdate,InsuranceCreate,LiabilityCreate,PortfolioCreate,RagSearchRequest,SecurityCreate,StressRequest,TaxEstimateRequest,TradeCreate
+from .schemas_extended import AssetCreate,BackupCreate,BackupRestore,ChatRequest,ContractCreate,CoverageCompareRequest,CoverageCreate,CorporateActionCreate,GoalCreate,GoalProgressUpdate,InsuranceCreate,LiabilityCreate,PortfolioCreate,RagSearchRequest,SecurityCreate,StressRequest,TaxEstimateRequest,TradeCreate
 from .domain.portfolio import apply_trade,portfolio_summary
 from .domain.stress import run_stress
 from .services.backup import create_backup,stage_restore
@@ -22,6 +22,7 @@ from .services.wealth import summary as wealth_summary
 from .services.financial_analytics import cash_flow
 from .services.snapshots import record_snapshot
 from .services.broker_import import import_broker_csv
+from .services.corporate_actions import add_action,list_actions
 from .providers.market import AlphaVantageProvider
 from .providers.news import GdeltNewsProvider
 router=APIRouter(prefix="/api/v1")
@@ -80,6 +81,22 @@ def trade(p:TradeCreate,db:Session=Depends(dbdep)):
     try:result=apply_trade(db,r)
     except ValueError as e:db.rollback();raise HTTPException(409,str(e))
     db.commit();return {"id":r.id,**{k:str(v) for k,v in result.items()}}
+
+@router.get("/portfolios/{portfolio_id}/corporate-actions")
+def corporate_actions(portfolio_id:str,db:Session=Depends(dbdep)):
+    if not db.get(Portfolio,portfolio_id):raise HTTPException(404,"Portfolio not found")
+    return list_actions(db,portfolio_id)
+
+@router.post("/portfolios/{portfolio_id}/corporate-actions")
+def corporate_action_add(portfolio_id:str,p:CorporateActionCreate,db:Session=Depends(dbdep)):
+    if p.portfolio_id!=portfolio_id:raise HTTPException(400,"portfolio_id mismatch")
+    if not db.get(Portfolio,portfolio_id) or not db.get(Security,p.security_id):raise HTTPException(404,"Portfolio or security not found")
+    try:
+        row=add_action(db,portfolio_id,p.security_id,p.action_type,p.effective_date,p.value,p.currency,p.notes)
+        db.commit()
+        return {"id":row.id,"applied":row.applied}
+    except ValueError as exc:
+        db.rollback();raise HTTPException(400,str(exc))
 
 @router.post("/portfolios/{portfolio_id}/imports/broker")
 async def broker_import(portfolio_id:str,file:UploadFile=File(...),db:Session=Depends(dbdep)):
