@@ -11,7 +11,9 @@ from docx import Document as DocxDocument
 from openpyxl import load_workbook
 from pypdf import PdfReader
 from PIL import Image
+from pillow_heif import register_heif_opener
 import pytesseract
+register_heif_opener()
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -46,7 +48,7 @@ def extract_text(path: Path) -> tuple[str, int]:
 
 ".join(pages), len(pages)
     if suffix in {".txt", ".csv", ".json"}:
-        return path.read_text(encoding="utf-8", errors="replace"), 1
+        return path.read_text(encoding="utf-8", errors="replace"), 1, None
     if suffix == ".docx":
         doc = DocxDocument(str(path))
         return "
@@ -62,7 +64,7 @@ def extract_text(path: Path) -> tuple[str, int]:
 ".join(lines), 1
     if suffix in {".png", ".jpg", ".jpeg", ".heic", ".tiff", ".bmp"}:
         image = Image.open(path)
-        return pytesseract.image_to_string(image, lang="spa+eng"), 1
+        return pytesseract.image_to_string(image, lang="spa+eng"), 1, None
     raise ValueError(f"Unsupported document type: {suffix}")
 
 
@@ -95,7 +97,7 @@ def index_document(session: Session, source_path: str, document_type: str = "unk
     existing = session.scalar(select(Document).where(Document.sha256 == digest))
     if existing:
         return IndexedDocument(existing, 0, 0)
-    text, page_count = extract_text(path)
+    text, page_count, pages = extract_text(path)
     doc = Document(file_path=str(path), file_name=path.name, mime_type=mimetypes.guess_type(path.name)[0], sha256=digest, document_type=document_type, status="indexed", page_count=page_count, extracted_text=text)
     session.add(doc); session.flush()
     count = 0
@@ -104,5 +106,5 @@ def index_document(session: Session, source_path: str, document_type: str = "unk
     if count:
         session.add(ActionItem(action_type="review_document_evidence", title=f"Revisar {count} dato(s) contractual(es) extraído(s) de {path.name}", related_entity_type="document", related_entity_id=doc.id, priority="high", source_type="document", source_ref=doc.id, notes="Los datos extraídos son inferidos y no deben usarse como evidencia confirmada hasta su revisión."))
     from .rag import index_document_chunks
-    chunks = index_document_chunks(session, doc)
+    chunks = index_document_chunks(session, doc, pages)
     return IndexedDocument(doc, count, chunks)
