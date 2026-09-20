@@ -206,3 +206,38 @@ def test_incomplete_insurance_group_can_collect_documents_before_premium():
             EntityLink.to_id==policy.id,
         )).all())
         assert {first.id,second.id}.issubset(linked_docs)
+
+
+def test_late_policy_projection_reconciles_previously_unlinked_sibling():
+    with SessionLocal() as db:
+        contract,policy=_policy_group(db)
+        early=_document(db,"nota-mediador-previa.pdf")
+        later=_document(db,"condiciones-que-identifican-poliza.pdf")
+        for document in (early,later):
+            _fact(db,document.id,"policy_number","POL-LATE-777")
+
+        # Simulates the useful document identifying the product after another
+        # file from the same upload batch was already processed.
+        db.add(EntityLink(
+            from_type="document",from_id=later.id,relation_type="evidence_for",
+            to_type="insurance_policy",to_id=policy.id,confidence=Decimal("1"),
+            source_type="document_projection",source_ref=later.id,
+        ))
+        db.add(EntityLink(
+            from_type="document",from_id=later.id,relation_type="evidence_for",
+            to_type="contract",to_id=contract.id,confidence=Decimal("1"),
+            source_type="document_projection",source_ref=later.id,
+        ))
+        db.flush()
+
+        from financito.services.evidence import synchronize_document_evidence
+        result=synchronize_document_evidence(db,later)
+        assert result["grouped_documents"]>=1
+        link=db.scalar(select(EntityLink).where(
+            EntityLink.from_type=="document",
+            EntityLink.from_id==early.id,
+            EntityLink.relation_type=="evidence_for",
+            EntityLink.to_type=="insurance_policy",
+            EntityLink.to_id==policy.id,
+        ))
+        assert link is not None
