@@ -19,21 +19,25 @@ test('onboarding crea demo y el dashboard sigue navegable',async({page})=>{
   await page.getByRole('button',{name:'Crear datos demo'}).click();
   await expect(page.getByText(/movimientos ficticios creados/)).toBeVisible();
 
-  await page.getByRole('link',{name:'Resumen'}).click();
-  await expect(page.getByRole('heading',{name:'Resumen'})).toBeVisible();
+  await page.getByRole('link',{name:'Inicio'}).click();
+  await expect(page.getByRole('heading',{name:'Inicio'})).toBeVisible();
   await expect(page.getByText('Liquidez')).toBeVisible();
   await expect(page.getByText('Gasto por categoría')).toBeVisible();
   await expectAccessible(page);
 });
 
-test('navegación principal y salud mantienen estructura accesible',async({page})=>{
+test('navegación principal simplificada y configuración mantienen estructura accesible',async({page})=>{
   await page.goto('/');
-  const navigation=page.getByRole('navigation');
+  const navigation=page.getByRole('navigation',{name:'Navegación principal'});
   await expect(navigation).toBeVisible();
+  await expect(navigation.getByRole('link',{name:'Inicio'})).toBeVisible();
   await expect(navigation.getByRole('link',{name:'Movimientos'})).toBeVisible();
+  await expect(navigation.getByRole('link',{name:'Patrimonio'})).toBeVisible();
+  await expect(navigation.getByRole('link',{name:'Decisiones'})).toBeVisible();
 
-  await navigation.getByRole('link',{name:'Salud'}).click();
-  await expect(page.getByRole('heading',{name:'Configuración y salud'})).toBeVisible();
+  const configuration=page.getByRole('navigation',{name:'Configuración'});
+  await configuration.getByRole('link',{name:'Configuración'}).click();
+  await expect(page.getByRole('heading',{name:'Configuración'})).toBeVisible();
   await expect(page.getByText(/schema v\d+/)).toBeVisible();
   await expectAccessible(page);
 });
