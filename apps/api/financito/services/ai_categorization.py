@@ -82,7 +82,10 @@ def _apply_embedding(session:Session,targets:list[Transaction],categories:dict[s
         if best<0.60 or margin<0.045:unresolved.append(tx);continue
         previous=tx.category_id;tx.category_id=categories[best_key].id
         confidence=Decimal(str(min(.89,max(.72,.72+(best-.60)*.35+margin*.40)))).quantize(Decimal("0.0001"))
-        tx.categorization_method="ai_embedding";tx.categorization_confidence=confidence;_record_change(session,tx,previous,"ai_embedding",confidence);applied+=1
+        tx.categorization_method="ai_embedding";tx.categorization_confidence=confidence
+        from .transaction_ops import apply_category_semantics
+        apply_category_semantics(session,tx)
+        _record_change(session,tx,previous,"ai_embedding",confidence);applied+=1
     session.flush();return applied,unresolved,None
 
 def _apply_llm(session:Session,targets:list[Transaction],categories:dict[str,Category],limit:int)->tuple[int,list[Transaction],str|None]:
@@ -109,7 +112,10 @@ def _apply_llm(session:Session,targets:list[Transaction],categories:dict[str,Cat
             if key not in categories or key=="other" or raw<.72:failed.add(tx.id);continue
             previous=tx.category_id;tx.category_id=categories[key].id
             confidence=Decimal(str(min(.86,max(.72,raw)))).quantize(Decimal("0.0001"))
-            tx.categorization_method="ai_llm";tx.categorization_confidence=confidence;_record_change(session,tx,previous,"ai_llm",confidence);applied+=1
+            tx.categorization_method="ai_llm";tx.categorization_confidence=confidence
+            from .transaction_ops import apply_category_semantics
+            apply_category_semantics(session,tx)
+            _record_change(session,tx,previous,"ai_llm",confidence);applied+=1
     session.flush();return applied,[tx for tx in selected if tx.id in failed]+untouched,None
 
 def improve_categorization(session:Session,limit:int=3000,llm_limit:int=80)->dict:
