@@ -8,13 +8,16 @@ import {Card} from '@/components/ui/card';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
 
 type ReviewSummary={total:number;pending:number;confirmed:number;ambiguous:number;reviewed:number};
-type Doc={id:string;file_name:string;document_type:string;status:string;page_count:number;review:ReviewSummary;ai_analysis:'ready'|'not_analyzed';mortgage_id:string|null};
-type MortgageOption={id:string;lender:string;remaining_principal:string;currency:string};
+type EvidenceLink={entity_type:'insurance_policy'|'contract'|'mortgage'|string;entity_id:string;confidence:string;source_type:string};
+type Doc={id:string;file_name:string;document_type:string;status:string;page_count:number;review:ReviewSummary;ai_analysis:'ready'|'not_analyzed';mortgage_id:string|null;evidence_links:EvidenceLink[]};
 type InsightItem={title:string;detail:string;pages:number[];impact?:string};
 type AIAnalysis={id?:string;status?:string;confidence:string;summary:string;advantages:InsightItem[];penalties:InsightItem[];obligations:InsightItem[];risks:InsightItem[];exclusions_or_limits:InsightItem[];linked_products:InsightItem[];optimization_opportunities:InsightItem[];negotiation_points:InsightItem[];comparison_requirements:InsightItem[];cross_area_impacts:InsightItem[];missing_information:InsightItem[];model_role:string};
 type AnalysisResponse={document_id:string;status:'ready'|'not_analyzed';analysis:AIAnalysis|null;ai:{available:boolean;configured_model:string|null;chat_ready?:boolean}};
 type UploadResponse={documents:{id:string;file_name:string;document_type:string;facts_created:number;chunks_created:number}[];ai_analysis_scheduled:boolean};
 type Fact={id:string;fact_type:string;key:string;value:{value:string;unit?:string;coverage_type?:string;limit_amount?:string|null;deductible?:string|null;conditions?:string;exclusions?:string;source?:string};confidence:string;status:string;source_page:number|null;source_section:string|null;user_verified:boolean};
+type EvidenceGroup={entity_type:'insurance_policy'|'contract'|'mortgage';entity_id:string;kind:string;label:string;provider:string;document_count:number;documents:{id:string;file_name:string}[]};
+type ActionItem={id:string;title:string;action_type:string;status:string;notes:string|null;related_entity_type:string|null;related_entity_id:string|null};
+type BulkConfirmResult={documents:number;confirmed:number;conflicts:number};
 
 const MATERIAL_FACT_TYPES=new Set(['contract_term','mortgage_term','linked_product','coverage_fact','investment_term']);
 
@@ -22,17 +25,21 @@ export default function DocumentsPage(){
   const qc=useQueryClient();
   const [path,setPath]=useState('');
   const [selected,setSelected]=useState<string|null>(null);
+  const [actionId,setActionId]=useState<string|null>(null);
   const [dragging,setDragging]=useState(false);
   const [manualFact,setManualFact]=useState({fact_type:'contract_term',key:'',value:'',unit:'',coverage_type:'',limit_amount:'',deductible:'',conditions:'',exclusions:'',source_page:''});
   const fileInput=useRef<HTMLInputElement|null>(null);
 
   useEffect(()=>{
-    const documentId=new URLSearchParams(window.location.search).get('document');
+    const params=new URLSearchParams(window.location.search);
+    const documentId=params.get('document');
     if(documentId)setSelected(documentId);
+    setActionId(params.get('action'));
   },[]);
 
   const docs=useQuery({queryKey:['documents'],queryFn:()=>apiGet<Doc[]>('/api/v1/documents')});
-  const mortgages=useQuery({queryKey:['mortgages'],queryFn:()=>apiGet<MortgageOption[]>('/api/v1/mortgages')});
+  const groups=useQuery({queryKey:['evidence-groups'],queryFn:()=>apiGet<EvidenceGroup[]>('/api/v1/evidence-groups')});
+  const actions=useQuery({queryKey:['actions'],queryFn:()=>apiGet<ActionItem[]>('/api/v1/actions'),enabled:!!actionId});
   const facts=useQuery({
     queryKey:['facts',selected],
     queryFn:()=>apiGet<Fact[]>('/api/v1/documents/'+selected+'/facts'),
@@ -52,6 +59,7 @@ export default function DocumentsPage(){
 
   const invalidateEvidence=()=>{
     qc.invalidateQueries({queryKey:['documents']});
+    qc.invalidateQueries({queryKey:['evidence-groups']});
     qc.invalidateQueries({queryKey:['facts',selected]});
     qc.invalidateQueries({queryKey:['actions']});
     qc.invalidateQueries({queryKey:['dashboard']});
@@ -113,9 +121,25 @@ export default function DocumentsPage(){
     mutationFn:({id,status}:{id:string;status:string})=>apiMutate('/api/v1/facts/'+id,'PATCH',{status,user_verified:true}),
     onSuccess:invalidateEvidence,
   });
-  const linkMortgage=useMutation({
-    mutationFn:({documentId,mortgageId}:{documentId:string;mortgageId:string|null})=>apiMutate('/api/v1/documents/'+documentId+'/mortgage-link','PUT',{mortgage_id:mortgageId}),
+  const linkEntity=useMutation({
+    mutationFn:({documentId,entityType,entityId}:{documentId:string;entityType:'insurance_policy'|'contract'|'mortgage';entityId:string|null})=>
+      apiMutate('/api/v1/documents/'+documentId+'/entity-link','PUT',{entity_type:entityType,entity_id:entityId}),
     onSuccess:invalidateEvidence,
+  });
+  const createGroup=useMutation({
+    mutationFn:(documentId:string)=>apiMutate<{entity_type:'contract';entity_id:string}>('/api/v1/documents/'+documentId+'/evidence-group','POST'),
+    onSuccess:invalidateEvidence,
+  });
+  const confirmCoherent=useMutation({
+    mutationFn:({documentId,group}:{documentId:string;group:EvidenceGroup|null})=>
+      group
+        ?apiMutate<BulkConfirmResult>('/api/v1/evidence-groups/'+group.entity_type+'/'+group.entity_id+'/confirm-coherent','POST')
+        :apiMutate<BulkConfirmResult>('/api/v1/documents/'+documentId+'/confirm-coherent','POST'),
+    onSuccess:invalidateEvidence,
+  });
+  const closeAction=useMutation({
+    mutationFn:({id,status}:{id:string;status:'done'|'dismissed'})=>apiMutate('/api/v1/actions/'+id,'PATCH',{status}),
+    onSuccess:()=>{qc.invalidateQueries({queryKey:['actions']});qc.invalidateQueries({queryKey:['dashboard']})},
   });
   const addManualFact=useMutation({
     mutationFn:()=>{
@@ -163,9 +187,22 @@ export default function DocumentsPage(){
   }
 
   const selectedDoc=docs.data?.find(d=>d.id===selected);
+  const currentAction=actions.data?.find(a=>a.id===actionId);
+  const currentLink=selectedDoc?.evidence_links?.find(link=>
+    selectedDoc.document_type==='insurance'?link.entity_type==='insurance_policy':
+    selectedDoc.document_type==='mortgage'?link.entity_type==='mortgage':
+    link.entity_type==='contract'
+  )||selectedDoc?.evidence_links?.find(link=>['insurance_policy','mortgage','contract'].includes(link.entity_type));
+  const currentGroup=groups.data?.find(g=>g.entity_type===currentLink?.entity_type&&g.entity_id===currentLink?.entity_id)||null;
+  const compatibleGroups=(groups.data||[]).filter(g=>
+    selectedDoc?.document_type==='insurance'?(g.entity_type==='insurance_policy'||g.kind==='insurance_pending'):
+    selectedDoc?.document_type==='mortgage'?g.entity_type==='mortgage':
+    ['contract','loan','energy','telecom'].includes(selectedDoc?.document_type||'')?g.entity_type==='contract':
+    true
+  );
   const visibleFacts=facts.data?.filter(f=>f.fact_type!=='ai_insight')||[];
   const materialFacts=visibleFacts.filter(f=>MATERIAL_FACT_TYPES.has(f.fact_type));
-  const pending=materialFacts.filter(f=>!f.user_verified&&f.status==='inferred').length;
+  const pending=materialFacts.filter(f=>!f.user_verified&&['inferred','ambiguous','conflicting'].includes(f.status)).length;
   const confirmed=materialFacts.filter(f=>f.user_verified&&f.status==='confirmed').length;
   const ambiguous=materialFacts.filter(f=>f.status==='ambiguous'||f.status==='conflicting').length;
 
@@ -272,29 +309,60 @@ export default function DocumentsPage(){
           >Abrir original</a>}
         </div>
 
-        {selected&&materialFacts.length>0&&<div className="mt-4 rounded-xl bg-[var(--surface-2)] p-3 text-sm">
-          <strong>{pending>0?pending+' dato(s) por revisar':'Revisión completada'}</strong>
-          <div className="mt-1 text-xs text-[var(--muted)]">
-            {confirmed} confirmados · {ambiguous} dudosos. Los confirmados se sincronizan automáticamente con las áreas de Financito que pueden utilizarlos.
-          </div>
+        {currentAction&&currentAction.status!=='done'&&currentAction.status!=='dismissed'&&<div className="mt-4 rounded-xl border border-[var(--brand)] bg-[var(--brand-soft)] p-4 text-sm">
+          <div className="font-semibold">Esto es lo que te pidió “Para ti”</div>
+          <div className="mt-1">{currentAction.title}</div>
+          {currentAction.action_type==='review_document_ai_insights'?<>
+            <p className="mt-2 text-xs text-[var(--muted)]">Lee la conclusión del análisis local de este documento. No cambia ningún dato financiero por sí sola. Si ya la has comprobado y no requiere otra acción, márcala como revisada.</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button className="fin-button py-1.5 text-xs" onClick={()=>closeAction.mutate({id:currentAction.id,status:'done'})} disabled={closeAction.isPending}>Marcar como revisada</button>
+              <button className="fin-button secondary py-1.5 text-xs" onClick={()=>closeAction.mutate({id:currentAction.id,status:'dismissed'})} disabled={closeAction.isPending}>Ocultar este aviso</button>
+            </div>
+          </>:<p className="mt-2 text-xs text-[var(--muted)]">Revisa los datos estructurados. Puedes validarlos en bloque: Financito confirmará solo los coherentes y dejará como conflicto cualquier dato incompatible.</p>}
+          {closeAction.error&&<div className="mt-3"><ErrorState error={closeAction.error}/></div>}
         </div>}
 
-        {selectedDoc?.document_type==='mortgage'&&<div className="mt-4 rounded-xl border border-[var(--border)] p-4">
-          <h3 className="font-semibold">¿A qué hipoteca pertenece?</h3>
-          <p className="mt-1 text-xs text-[var(--muted)]">Asóciala solo si este documento describe tu hipoteca actual. Si es una FEIN, simulación u oferta de otro banco, déjala como oferta o referencia: se analizará y podrá compararse, pero no modificará capital, TIN, cuota, plazo ni penalizaciones de tu hipoteca vigente.</p>
-          <select
-            className="fin-input mt-3"
-            aria-label="Hipoteca asociada al documento"
-            value={selectedDoc.mortgage_id||''}
-            onChange={e=>linkMortgage.mutate({documentId:selectedDoc.id,mortgageId:e.target.value||null})}
-            disabled={linkMortgage.isPending}
-          >
-            <option value="">Oferta o referencia — no alimentar hipoteca actual</option>
-            {mortgages.data?.map(m=><option key={m.id} value={m.id}>{m.lender} · capital {Number(m.remaining_principal).toLocaleString('es-ES',{maximumFractionDigits:2})} {m.currency}</option>)}
+        {selected&&materialFacts.length>0&&<div className="mt-4 rounded-xl bg-[var(--surface-2)] p-3 text-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <strong>{pending>0?pending+' dato(s) por revisar':'Revisión completada'}</strong>
+              <div className="mt-1 text-xs text-[var(--muted)]">{confirmed} confirmados · {ambiguous} dudosos. Los confirmados se sincronizan automáticamente con las áreas de Financito que pueden utilizarlos.</div>
+            </div>
+            {pending>0&&selected&&<button className="fin-button py-1.5 text-xs" onClick={()=>confirmCoherent.mutate({documentId:selected,group:currentGroup})} disabled={confirmCoherent.isPending}>
+              {confirmCoherent.isPending?'Validando…':currentGroup&&currentGroup.document_count>1?'Validar los '+currentGroup.document_count+' documentos juntos':'Validar datos coherentes'}
+            </button>}
+          </div>
+          {confirmCoherent.data&&<div className="mt-2 text-xs font-medium">{confirmCoherent.data.confirmed} dato(s) confirmados · {confirmCoherent.data.conflicts} conflicto(s) separados para revisión.</div>}
+          {confirmCoherent.error&&<div className="mt-3"><ErrorState error={confirmCoherent.error}/></div>}
+        </div>}
+
+        {selectedDoc&&<div className="mt-4 rounded-xl border border-[var(--border)] p-4">
+          <h3 className="font-semibold">¿A qué producto pertenece este documento?</h3>
+          <p className="mt-1 text-xs text-[var(--muted)]">Vincula todos los PDFs, anexos, recibos y condiciones del mismo seguro, hipoteca o servicio a una única ficha. Financito combinará su evidencia y la tratará como un solo producto.</p>
+          <select className="fin-input mt-3" aria-label="Producto financiero asociado al documento"
+            value={currentGroup?currentGroup.entity_type+':'+currentGroup.entity_id:''}
+            onChange={e=>{
+              const raw=e.target.value;
+              const defaultType:'insurance_policy'|'contract'|'mortgage'=selectedDoc.document_type==='insurance'?'insurance_policy':selectedDoc.document_type==='mortgage'?'mortgage':'contract';
+              const unlinkType=(currentGroup?.entity_type||defaultType) as 'insurance_policy'|'contract'|'mortgage';
+              if(!raw){linkEntity.mutate({documentId:selectedDoc.id,entityType:unlinkType,entityId:null});return}
+              const [entityType,entityId]=raw.split(':');
+              linkEntity.mutate({documentId:selectedDoc.id,entityType:entityType as 'insurance_policy'|'contract'|'mortgage',entityId});
+            }} disabled={linkEntity.isPending}>
+            <option value="">Sin vincular a una ficha existente</option>
+            {compatibleGroups.map(g=><option key={g.entity_type+g.entity_id} value={g.entity_type+':'+g.entity_id}>{g.label} · {g.document_count} documento(s)</option>)}
           </select>
-          {!mortgages.data?.length&&<div className="mt-2 text-xs text-[var(--muted)]">Aún no hay un perfil hipotecario. Añade la documentación vigente y completa los datos necesarios antes de vincular ofertas comparativas.</div>}
-          {selectedDoc.mortgage_id&&<div className="mt-2 text-xs font-medium">Los hechos que confirmes en este documento podrán alimentar esa hipoteca y sus cálculos.</div>}
-          {linkMortgage.error&&<div className="mt-3"><ErrorState error={linkMortgage.error}/></div>}
+          {currentGroup&&<div className="mt-3 rounded-xl bg-[var(--surface-2)] p-3 text-xs">
+            <strong>{currentGroup.label}</strong>
+            <div className="mt-1 text-[var(--muted)]">{currentGroup.document_count} documento(s) forman esta única ficha.</div>
+            {currentGroup.documents.length>1&&<div className="mt-2">{currentGroup.documents.map(d=><div key={d.id}>• {d.file_name}</div>)}</div>}
+          </div>}
+          {!currentGroup&&selectedDoc.document_type==='insurance'&&<div className="mt-2 text-xs text-[var(--muted)]">Si la póliza contiene un número identificador claro, Financito crea una agrupación provisional y reúne automáticamente los siguientes documentos que compartan ese número, aunque todavía falte confirmar la prima.</div>}
+          {!currentGroup&&['insurance','contract','loan','energy','telecom'].includes(selectedDoc.document_type)&&<button className="fin-button secondary mt-3 py-1.5 text-xs" onClick={()=>createGroup.mutate(selectedDoc.id)} disabled={createGroup.isPending}>
+            {createGroup.isPending?'Creando ficha…':'Crear una ficha para este producto'}
+          </button>}
+          {createGroup.error&&<div className="mt-3"><ErrorState error={createGroup.error}/></div>}
+          {linkEntity.error&&<div className="mt-3"><ErrorState error={linkEntity.error}/></div>}
         </div>}
 
         {selected&&<div className="mt-4 rounded-xl border border-[var(--border)] p-4">
@@ -377,17 +445,20 @@ export default function DocumentsPage(){
                 <span className="text-xs">{f.status}</span>
               </div>
 
-              {material&&!f.user_verified&&f.status==='inferred'&&<div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  className="fin-button py-1.5 text-xs"
-                  onClick={()=>update.mutate({id:f.id,status:'confirmed'})}
-                  disabled={update.isPending}
-                >Confirmar</button>
-                <button
-                  className="fin-button secondary py-1.5 text-xs"
-                  onClick={()=>update.mutate({id:f.id,status:'ambiguous'})}
-                  disabled={update.isPending}
-                >Marcar dudoso</button>
+              {material&&!f.user_verified&&['inferred','ambiguous','conflicting'].includes(f.status)&&<div className="mt-3">
+                {f.status==='conflicting'&&<div className="mb-2 text-xs font-medium">Este valor entra en conflicto con otro documento del mismo producto. Confirma este valor solo si has comprobado que es el vigente/correcto.</div>}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    className="fin-button py-1.5 text-xs"
+                    onClick={()=>update.mutate({id:f.id,status:'confirmed'})}
+                    disabled={update.isPending}
+                  >{f.status==='conflicting'?'Confirmar este valor':'Confirmar'}</button>
+                  <button
+                    className="fin-button secondary py-1.5 text-xs"
+                    onClick={()=>update.mutate({id:f.id,status:'ambiguous'})}
+                    disabled={update.isPending}
+                  >Mantener como dudoso</button>
+                </div>
               </div>}
 
               {material&&f.user_verified&&<div className="mt-3 text-xs font-medium text-[var(--muted)]">
