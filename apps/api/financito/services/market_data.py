@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from ..domain.risk import risk_metrics
 from ..models import Portfolio,Position,Security
 from ..models_extended import MarketPrice,TrackedAsset
-from ..providers.market import AlphaVantageProvider
+from ..providers.market import AlphaVantageProvider,StooqProvider
 from ..providers.crypto import CoinGeckoDemoProvider
 
 def refresh_security(session:Session,security_id:str,provider:AlphaVantageProvider|None=None)->dict:
@@ -37,17 +37,29 @@ def refresh_security(session:Session,security_id:str,provider:AlphaVantageProvid
         session.flush()
         return {"security_id":security.id,"symbol":security.symbol,"price":str(price),"provider":"CoinGecko","as_of":stamp.isoformat(),"delayed":False}
 
-    provider=provider or AlphaVantageProvider()
-    quote=provider.quote(security.symbol)
+    providers=[provider] if provider is not None else []
+    if provider is None:
+        try:providers.append(AlphaVantageProvider())
+        except Exception:pass
+        providers.append(StooqProvider())
+    quote=None;errors=[]
+    for candidate in providers:
+        try:
+            quote=candidate.quote(security.symbol)
+            break
+        except Exception as exc:
+            errors.append(str(exc))
+    if quote is None:
+        raise ValueError("No se pudo obtener una cotización gratuita. "+" · ".join(x for x in errors if x))
     price=Decimal(quote["price"])
     for pos in session.scalars(select(Position).where(Position.security_id==security.id)).all():
         pos.current_price=price
     as_of=quote.get("as_of")
     try:stamp=datetime.fromisoformat(str(as_of)).replace(tzinfo=timezone.utc)
     except Exception:stamp=datetime.now(timezone.utc)
-    existing=session.scalar(select(MarketPrice).where(MarketPrice.security_id==security.id,MarketPrice.timestamp==stamp,MarketPrice.provider=="alpha_vantage"))
+    existing=session.scalar(select(MarketPrice).where(MarketPrice.security_id==security.id,MarketPrice.timestamp==stamp,MarketPrice.provider==quote.get("provider","market")))
     if existing:existing.close=price;existing.fetched_at=datetime.now(timezone.utc)
-    else:session.add(MarketPrice(security_id=security.id,timestamp=stamp,close=price,currency=security.currency,provider="alpha_vantage",is_delayed=bool(quote.get("delayed",True))))
+    else:session.add(MarketPrice(security_id=security.id,timestamp=stamp,close=price,currency=security.currency,provider=quote.get("provider","market"),is_delayed=bool(quote.get("delayed",True))))
     session.flush()
     return {"security_id":security.id,**quote}
 
@@ -75,17 +87,31 @@ def refresh_history(session:Session,security_id:str,provider:AlphaVantageProvide
             for pos in session.scalars(select(Position).where(Position.security_id==security.id)).all():pos.current_price=latest_price
         session.flush();return {"security_id":security.id,"inserted":inserted,"updated":updated,"provider":"coingecko"}
 
-    provider=provider or AlphaVantageProvider()
-    rows=provider.daily(security.symbol);inserted=updated=0
+    providers=[provider] if provider is not None else []
+    if provider is None:
+        try:providers.append(AlphaVantageProvider())
+        except Exception:pass
+        providers.append(StooqProvider())
+    rows=None;provider_name=None;errors=[]
+    for candidate in providers:
+        try:
+            rows=candidate.daily(security.symbol)
+            provider_name="alpha_vantage" if isinstance(candidate,AlphaVantageProvider) else "stooq"
+            break
+        except Exception as exc:
+            errors.append(str(exc))
+    if rows is None:
+        raise ValueError("No se pudo obtener histórico gratuito. "+" · ".join(x for x in errors if x))
+    inserted=updated=0
     for row in rows:
         stamp=datetime.fromisoformat(row["date"]).replace(tzinfo=timezone.utc);price=Decimal(str(row["close"]))
-        existing=session.scalar(select(MarketPrice).where(MarketPrice.security_id==security.id,MarketPrice.timestamp==stamp,MarketPrice.provider=="alpha_vantage"))
+        existing=session.scalar(select(MarketPrice).where(MarketPrice.security_id==security.id,MarketPrice.timestamp==stamp,MarketPrice.provider==provider_name))
         if existing:existing.close=price;existing.fetched_at=datetime.now(timezone.utc);updated+=1
-        else:session.add(MarketPrice(security_id=security.id,timestamp=stamp,close=price,currency=security.currency,provider="alpha_vantage",is_delayed=True));inserted+=1
+        else:session.add(MarketPrice(security_id=security.id,timestamp=stamp,close=price,currency=security.currency,provider=provider_name,is_delayed=True));inserted+=1
     if rows:
         latest=max(rows,key=lambda x:x["date"])
         for pos in session.scalars(select(Position).where(Position.security_id==security.id)).all():pos.current_price=Decimal(str(latest["close"]))
-    session.flush();return {"security_id":security.id,"inserted":inserted,"updated":updated,"provider":"alpha_vantage"}
+    session.flush();return {"security_id":security.id,"inserted":inserted,"updated":updated,"provider":provider_name}
 
 def history(session:Session,security_id:str)->list[dict]:
     rows=session.scalars(select(MarketPrice).where(MarketPrice.security_id==security_id).order_by(MarketPrice.timestamp)).all()
