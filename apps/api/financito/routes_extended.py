@@ -20,6 +20,7 @@ from .services.repair import repair,scan
 from .services.tax import estimate
 from .services.wealth import summary as wealth_summary
 from .services.financial_analytics import cash_flow
+from .services.snapshots import record_snapshot
 from .providers.market import AlphaVantageProvider
 from .providers.news import GdeltNewsProvider
 router=APIRouter(prefix="/api/v1")
@@ -34,11 +35,17 @@ def wealth(db:Session=Depends(dbdep)):return wealth_summary(db)
 @router.get("/assets")
 def assets(db:Session=Depends(dbdep)):return [{"id":r.id,"type":r.asset_type,"name":r.name,"value":str(r.current_value),"currency":r.currency,"valuation_date":r.valuation_date} for r in db.scalars(select(Asset).order_by(Asset.name)).all()]
 @router.post("/assets")
-def add_asset(p:AssetCreate,db:Session=Depends(dbdep)):r=Asset(**p.model_dump());db.add(r);db.commit();return {"id":r.id}
+def add_asset(p:AssetCreate,db:Session=Depends(dbdep)):
+    r=Asset(**p.model_dump());db.add(r);db.flush()
+    record_snapshot(db,"asset",r.id,{"value":str(r.current_value),"ownership_percentage":str(r.ownership_percentage),"currency":r.currency},r.valuation_date,"asset_created")
+    db.commit();return {"id":r.id}
 @router.get("/liabilities")
 def liabilities(db:Session=Depends(dbdep)):return [{"id":r.id,"type":r.liability_type,"name":r.name,"amount":str(r.outstanding_amount),"currency":r.currency} for r in db.scalars(select(Liability).order_by(Liability.name)).all()]
 @router.post("/liabilities")
-def add_liability(p:LiabilityCreate,db:Session=Depends(dbdep)):r=Liability(**p.model_dump());db.add(r);db.commit();return {"id":r.id}
+def add_liability(p:LiabilityCreate,db:Session=Depends(dbdep)):
+    r=Liability(**p.model_dump());db.add(r);db.flush()
+    record_snapshot(db,"liability",r.id,{"outstanding_amount":str(r.outstanding_amount),"ownership_percentage":str(r.ownership_percentage),"currency":r.currency},source="liability_created")
+    db.commit();return {"id":r.id}
 
 @router.get("/contracts")
 def contracts(db:Session=Depends(dbdep)):refresh_contract_actions(db);db.commit();return [{"id":r.id,"provider_name":r.provider_name,"contract_type":r.contract_type,"renewal_date":r.renewal_date,"cancellation_notice_days":r.cancellation_notice_days,"early_exit_penalty":None if r.early_exit_penalty is None else str(r.early_exit_penalty),"annual_cost":None if r.annual_cost is None else str(r.annual_cost),"evidence_status":r.evidence_status} for r in db.scalars(select(Contract).order_by(Contract.provider_name)).all()]
