@@ -772,3 +772,61 @@ Los traces materiales deben permitir reconstruir el cálculo y abrir la evidenci
 - metrics_json
 - passed_gate
 - created_at
+
+
+## Investment lots
+
+### tax_lot
+- id
+- portfolio_id
+- security_id
+- acquisition_date
+- quantity_original
+- quantity_remaining
+- unit_cost
+- fees
+- currency
+- fx_rate_at_acquisition
+- source_type
+- source_ref
+- tax_metadata_json
+
+### lot_disposal
+- id
+- trade_id
+- tax_lot_id
+- quantity
+- cost_basis
+- realized_pnl
+- allocation_rule
+- created_at
+
+## Action Center
+
+### action_item
+- id
+- action_type
+- title
+- related_entity_type
+- related_entity_id
+- decision_case_id
+- due_date
+- priority
+- expected_impact_json
+- source_type
+- source_ref
+- status
+- notes
+- created_at
+- completed_at
+
+## Temporal semantics
+
+Las entidades que requieran reproducibilidad pueden incluir:
+- occurred_at
+- effective_from
+- effective_to
+- observed_at
+- fetched_at
+
+No sustituir estos campos por un único created_at.
