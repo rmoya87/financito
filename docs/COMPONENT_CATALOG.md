@@ -101,3 +101,53 @@ Mantener Storybook o equivalente solo local para primitives, shared components, 
 - NeedsMoreDataAlert
 
 Toda cifra material usada en una decisión debe poder navegar desde CalculationTrace hasta el documento/página que la sustenta.
+
+
+## Forecasting y liquidez
+
+- ForecastSummary
+- ForecastHorizonPicker
+- SavingsForecastCard
+- ExpenseForecastCard
+- LiquidityForecastCard
+- LastYearComparison
+- ForecastAccuracyBadge
+- ForecastDrivers
+- ForecastRange
+- CommitmentsTimeline
+- KnownVsEstimatedLegend
+- ForecastScenarioSelector
+
+## Stress testing
+
+- StressScenarioBuilder
+- StressResultSummary
+- CashRunwayCard
+- LiquidityFloorChart
+- AffectedGoalsList
+
+## Cost centers
+
+- CostCenterCard
+- CostCenterBreakdown
+- CostCenterTrend
+- CostCenterForecast
+
+## Coverage
+
+- CoverageMap
+- CoverageOverlapCard
+- CoverageGapAlert
+- CoverageComparison
+
+## Repair
+
+- IntegrityStatus
+- RepairIssueList
+- RepairAction
+- RebuildProgress
+
+## Decision history
+
+- ExpectedVsObserved
+- RecommendationChangeExplanation
