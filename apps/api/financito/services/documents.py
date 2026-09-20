@@ -109,13 +109,25 @@ def extract_contract_facts(text:str,source_page:int|None=None)->list[dict]:
             raw=match.group(1).replace(",",".")
             facts.append({"fact_type":"contract_term","key":key,"value":raw,"unit":unit,"confidence":confidence,"source_page":source_page,"source_section":_context(text,match.start(),match.end())})
     semantic_patterns=[
-        ("reference_index",r"\\b(eur[ií]bor(?:\\s+a\\s+\\d+\\s+meses?)?|irph)\\b","text",.82),
-        ("interest_type",r"\\b(tipo\\s+fijo|tipo\\s+variable|tipo\\s+mixto|inter[eé]s\\s+fijo|inter[eé]s\\s+variable|inter[eé]s\\s+mixto)\\b","text",.72),
+        ("reference_index",r"\b(eur[ií]bor(?:\s+a\s+\d+\s+meses?)?|irph)\b","text",.82),
+        ("interest_type",r"\b(tipo\s+fijo|tipo\s+variable|tipo\s+mixto|inter[eé]s\s+fijo|inter[eé]s\s+variable|inter[eé]s\s+mixto)\b","text",.72),
     ]
     for key,pattern,unit,confidence in semantic_patterns:
         for match in re.finditer(pattern,lowered,re.I):
-            value=re.sub(r"\\s+"," ",match.group(1)).strip()
+            value=re.sub(r"\s+"," ",match.group(1)).strip()
             facts.append({"fact_type":"mortgage_term","key":key,"value":value,"unit":unit,"confidence":confidence,"source_page":source_page,"source_section":_context(text,match.start(),match.end())})
+
+    mortgage_number_patterns=[
+        ("differential_rate",r"(?:diferencial(?:\s+(?:del|de))?|m[aá]s\s+diferencial(?:\s+(?:del|de))?)\D{0,30}(\d+[\.,]?\d*)\s*%","percent",.80),
+        ("mortgage_term_years",r"(?:plazo(?:\s+(?:de|total\s+de))?)\D{0,25}(\d{1,3})\s*a[nñ]os","years",.82),
+        ("rate_review_months",r"(?:revisi[oó]n(?:\s+del\s+tipo)?(?:\s+cada)?)\D{0,25}(\d{1,3})\s*meses","months",.78),
+        ("opening_fee_percent",r"(?:comisi[oó]n\s+de\s+apertura)\D{0,45}(\d+[\.,]?\d*)\s*%","percent",.84),
+        ("early_repayment_fee_percent",r"(?:compensaci[oó]n\s+por\s+reembolso\s+anticipado|comisi[oó]n\s+por\s+(?:amortizaci[oó]n|reembolso)\s+anticipad[oa])\D{0,65}(\d+[\.,]?\d*)\s*%","percent",.84),
+    ]
+    for key,pattern,unit,confidence in mortgage_number_patterns:
+        for match in re.finditer(pattern,lowered,re.I):
+            raw=match.group(1).replace(",",".")
+            facts.append({"fact_type":"mortgage_term","key":key,"value":raw,"unit":unit,"confidence":confidence,"source_page":source_page,"source_section":_context(text,match.start(),match.end())})
     linked_patterns=[
         ("linked_salary",r"(?:domiciliaci[oó]n de n[oó]mina|n[oó]mina domiciliada)"),
         ("linked_home_insurance",r"(?:seguro de hogar|seguro hogar)"),
