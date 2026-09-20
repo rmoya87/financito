@@ -89,7 +89,7 @@ def index_document(session: Session, source_path: str, document_type: str = "unk
     digest = sha256(path.read_bytes()).hexdigest()
     existing = session.scalar(select(Document).where(Document.sha256 == digest))
     if existing:
-        return IndexedDocument(existing, 0)
+        return IndexedDocument(existing, 0, 0)
     text, page_count = extract_text(path)
     doc = Document(file_path=str(path), file_name=path.name, mime_type=mimetypes.guess_type(path.name)[0], sha256=digest, document_type=document_type, status="indexed", page_count=page_count, extracted_text=text)
     session.add(doc); session.flush()
@@ -98,4 +98,4 @@ def index_document(session: Session, source_path: str, document_type: str = "unk
         session.add(ExtractedFact(document_id=doc.id, fact_type=fact["fact_type"], key=fact["key"], value_json=json.dumps({"value":fact["value"],"unit":fact["unit"]}, ensure_ascii=False), confidence=str(fact["confidence"]), status="inferred", user_verified=False)); count += 1
     if count:
         session.add(ActionItem(action_type="review_document_evidence", title=f"Revisar {count} dato(s) contractual(es) extraído(s) de {path.name}", related_entity_type="document", related_entity_id=doc.id, priority="high", source_type="document", source_ref=doc.id, notes="Los datos extraídos son inferidos y no deben usarse como evidencia confirmada hasta su revisión."))
-    return IndexedDocument(doc, count)
+    from .rag import index_document_chunks\n    chunks = index_document_chunks(session, doc)\n    return IndexedDocument(doc, count, chunks)
