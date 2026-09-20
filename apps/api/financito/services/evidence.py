@@ -222,6 +222,38 @@ def auto_link_document_entity(session: Session, document: Document) -> dict | No
     return None
 
 
+def _cleanup_orphan_projection(
+    session: Session, entity_type: str, entity_id: str, source_type: str
+) -> None:
+    if source_type != "document_projection":
+        return
+    still_linked = session.scalar(
+        select(EntityLink.id).where(
+            EntityLink.from_type == "document",
+            EntityLink.relation_type == "evidence_for",
+            EntityLink.to_type == entity_type,
+            EntityLink.to_id == entity_id,
+        )
+    )
+    if still_linked:
+        return
+    if entity_type == "insurance_policy":
+        if session.scalar(select(CoverageFact.id).where(CoverageFact.insurance_policy_id == entity_id)):
+            return
+        policy = session.get(InsurancePolicy, entity_id)
+        if policy is not None:
+            session.delete(policy)
+    elif entity_type == "contract":
+        if session.scalar(select(InsurancePolicy.id).where(InsurancePolicy.contract_id == entity_id)):
+            return
+        if session.scalar(select(CoverageFact.id).where(CoverageFact.contract_id == entity_id)):
+            return
+        contract = session.get(Contract, entity_id)
+        if contract is not None:
+            session.delete(contract)
+    session.flush()
+
+
 def link_document_to_entity(
     session: Session, document: Document, entity_type: str, entity_id: str | None
 ) -> dict:
@@ -236,8 +268,27 @@ def link_document_to_entity(
             EntityLink.to_type == entity_type,
         )
     ).all()
+    orphan_candidates = [(link.to_type, link.to_id, link.source_type) for link in old_links]
     for link in old_links:
         session.delete(link)
+
+    # Insurance documents also carry a supporting contract link. When the user
+    # moves/unlinks a document, remove that old document->contract relation too;
+    # a new policy contract is attached below when appropriate.
+    if entity_type == "insurance_policy":
+        contract_links = session.scalars(
+            select(EntityLink).where(
+                EntityLink.from_type == "document",
+                EntityLink.from_id == document.id,
+                EntityLink.relation_type == "evidence_for",
+                EntityLink.to_type == "contract",
+            )
+        ).all()
+        orphan_candidates.extend(
+            (link.to_type, link.to_id, link.source_type) for link in contract_links
+        )
+        for link in contract_links:
+            session.delete(link)
     session.flush()
 
     if entity_id:
@@ -248,13 +299,6 @@ def link_document_to_entity(
             document.document_type = "insurance"
             _add_evidence_link(session, document.id, entity_type, entity_id)
             if target.contract_id:
-                for link in session.scalars(select(EntityLink).where(
-                    EntityLink.from_type=="document",
-                    EntityLink.from_id==document.id,
-                    EntityLink.relation_type=="evidence_for",
-                    EntityLink.to_type=="contract",
-                )).all():
-                    session.delete(link)
                 _add_evidence_link(session, document.id, "contract", target.contract_id)
         elif entity_type == "contract":
             target = session.get(Contract, entity_id)
@@ -271,7 +315,12 @@ def link_document_to_entity(
             _add_evidence_link(session, document.id, entity_type, entity_id)
 
     session.flush()
-    return synchronize_document_evidence(session, document)
+    result = synchronize_document_evidence(session, document)
+    session.flush()
+    for old_type, old_id, source_type in orphan_candidates:
+        if old_id != entity_id:
+            _cleanup_orphan_projection(session, old_type, old_id, source_type)
+    return result
 
 
 def _confirm_coherent_for_documents(session: Session, document_ids: list[str]) -> dict:
