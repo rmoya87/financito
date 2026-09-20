@@ -151,6 +151,7 @@ Además calcula break-even y compara calidad/coberturas/prestaciones equivalente
 - [Catálogo de componentes](docs/COMPONENT_CATALOG.md)
 - [Modelo de seguridad estricto](docs/SECURITY_MODEL.md)
 - [Ciclo de vida de datos](docs/DATA_LIFECYCLE.md)
+- [Rendimiento](docs/PERFORMANCE.md)
 - [Arquitectura](docs/ARCHITECTURE.md)
 - [Estructura del repositorio](docs/REPOSITORY_STRUCTURE.md)
 - [Modelo de datos](docs/DATA_MODEL.md)
