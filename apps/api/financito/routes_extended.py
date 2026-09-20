@@ -1,6 +1,6 @@
 from __future__ import annotations
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal,ROUND_CEILING
 import json
 from fastapi import APIRouter,Depends,File,HTTPException,UploadFile
 from sqlalchemy import select
@@ -263,17 +263,32 @@ def contracts(db:Session=Depends(dbdep)):
 @router.post("/contracts")
 def add_contract(p:ContractCreate,db:Session=Depends(dbdep)):r=Contract(**p.model_dump());db.add(r);db.flush();refresh_contract_actions(db);db.commit();return {"id":r.id}
 
+def _goal_row(r:FinancialGoal)->dict:
+    remaining=max(Decimal("0"),r.target_amount-r.current_amount)
+    months_left=None;monthly_required=None
+    if r.target_date:
+        today=date.today()
+        months_left=max(1,(r.target_date.year-today.year)*12+r.target_date.month-today.month+(1 if r.target_date.day>today.day else 0))
+        monthly_required=(remaining/Decimal(months_left)).quantize(Decimal("0.01"))
+    planned=r.planned_monthly_contribution or Decimal("0")
+    projected_months=None
+    if remaining==0:projected_months=0
+    elif planned>0:projected_months=int((remaining/planned).to_integral_value(rounding=ROUND_CEILING))
+    return {"id":r.id,"type":r.goal_type,"name":r.name,"target_amount":str(r.target_amount),"current_amount":str(r.current_amount),"target_date":r.target_date,"priority":r.priority,"status":r.status,"planned_monthly_contribution":str(planned),"remaining_amount":str(remaining),"months_left":months_left,"monthly_required":None if monthly_required is None else str(monthly_required),"projected_months":projected_months}
+
 @router.get("/goals")
-def goals(db:Session=Depends(dbdep)):return [{"id":r.id,"type":r.goal_type,"name":r.name,"target_amount":str(r.target_amount),"current_amount":str(r.current_amount),"target_date":r.target_date,"priority":r.priority,"status":r.status} for r in db.scalars(select(FinancialGoal)).all()]
+def goals(db:Session=Depends(dbdep)):return [_goal_row(r) for r in db.scalars(select(FinancialGoal).order_by(FinancialGoal.created_at.desc())).all()]
 @router.post("/goals")
-def add_goal(p:GoalCreate,db:Session=Depends(dbdep)):r=FinancialGoal(**p.model_dump());db.add(r);db.commit();return {"id":r.id}
+def add_goal(p:GoalCreate,db:Session=Depends(dbdep)):
+    r=FinancialGoal(**p.model_dump());db.add(r);db.commit();return _goal_row(r)
 @router.patch("/goals/{goal_id}")
 def progress(goal_id:str,p:GoalProgressUpdate,db:Session=Depends(dbdep)):
     r=db.get(FinancialGoal,goal_id)
     if not r:raise HTTPException(404,"Goal not found")
     r.current_amount=p.current_amount
-    if r.current_amount>=r.target_amount:r.status="completed"
-    db.commit();return {"id":r.id,"status":r.status}
+    if p.planned_monthly_contribution is not None:r.planned_monthly_contribution=p.planned_monthly_contribution
+    r.status="completed" if r.current_amount>=r.target_amount else "active"
+    db.commit();return _goal_row(r)
 
 @router.get("/portfolios")
 def portfolios(db:Session=Depends(dbdep)):return [{"id":p.id,"name":p.name,"base_currency":p.base_currency,**portfolio_summary(db,p.id)} for p in db.scalars(select(Portfolio)).all()]
