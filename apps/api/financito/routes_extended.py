@@ -26,7 +26,7 @@ from .services.snapshots import record_snapshot
 from .services.decision_context import live_decision_context,mortgage_row
 from .services.contractual_costs import resolve_prepayment_penalty,switching_readiness
 from .services.market_research import scan_public_market
-from .services.investment_tracking import save_tracked_asset,tracked_assets
+from .services.investment_tracking import remove_tracking,save_tracked_asset,simulation_history,start_simulation,tracked_assets
 from .services.broker_import import import_broker_csv
 from .services.corporate_actions import add_action,list_actions
 from .providers.market import AlphaVantageProvider
@@ -181,6 +181,30 @@ def tracked_asset_add(p:TrackedAssetCreate,db:Session=Depends(dbdep)):
         db.commit();return result
     except ValueError as exc:
         db.rollback();raise HTTPException(409,str(exc))
+
+@router.post("/tracked-assets/{security_id}/simulation")
+def tracked_asset_simulation(security_id:str,p:AssetSimulationStart,db:Session=Depends(dbdep)):
+    from .services.market_data import refresh_history,refresh_security
+    if not db.get(Security,security_id):raise HTTPException(404,"Security not found")
+    try:
+        refresh_security(db,security_id)
+        refresh_history(db,security_id)
+        result=start_simulation(db,security_id,p.amount)
+        db.commit();return result
+    except ValueError as exc:
+        db.rollback();raise HTTPException(400,str(exc))
+    except Exception as exc:
+        db.rollback();raise HTTPException(503,str(exc))
+
+@router.get("/tracked-assets/{security_id}/simulation-history")
+def tracked_asset_simulation_history(security_id:str,db:Session=Depends(dbdep)):
+    if not db.get(Security,security_id):raise HTTPException(404,"Security not found")
+    return simulation_history(db,security_id)
+
+@router.delete("/tracked-assets/{security_id}")
+def tracked_asset_delete(security_id:str,db:Session=Depends(dbdep)):
+    if not db.get(Security,security_id):raise HTTPException(404,"Security not found")
+    result=remove_tracking(db,security_id);db.commit();return result
 
 @router.post("/tracked-assets/refresh-all")
 def tracked_assets_refresh_all(db:Session=Depends(dbdep)):
