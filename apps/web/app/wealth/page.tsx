@@ -53,10 +53,40 @@ function Metric({label,value,detail}:{label:string;value:string|number;detail:st
 export default function WealthPage(){
   const qc=useQueryClient();
   const details=useQuery({queryKey:['wealth-details'],queryFn:()=>apiGet<WealthDetails>('/api/v1/wealth/details')});
+  const home=useQuery({queryKey:['wealth-home'],queryFn:()=>apiGet<HomeData>('/api/v1/wealth/home')});
   const [asset,setAsset]=useState({name:'',asset_type:'property',current_value:'',valuation_date:new Date().toISOString().slice(0,10)});
   const [debt,setDebt]=useState({name:'',liability_type:'loan',outstanding_amount:''});
+  const [mortgageForm,setMortgageForm]=useState({lender:'',remaining_principal:'',interest_type:'fixed',nominal_rate_pct:'',monthly_payment:'',remaining_months:'',early_repayment_fee:''});
+  const [extraForm,setExtraForm]=useState({
+    original_principal:'',original_term_months:'',start_date:'',maturity_date:'',apr_rate_pct:'',reference_index:'',differential_rate_pct:'',
+    rate_review_months:'',next_review_date:'',opening_fee_percent:'',early_repayment_fee_percent:'',subrogation_fee_percent:'',cancellation_fee_percent:'',notes:'',
+  });
+  const [homeValue,setHomeValue]=useState('');
 
-  const refresh=()=>{qc.invalidateQueries({queryKey:['wealth-details']});qc.invalidateQueries({queryKey:['wealth']})};
+  useEffect(()=>{
+    const h=home.data;
+    if(!h)return;
+    if(h.property)setHomeValue(h.property.value);
+    const m=h.mortgage;
+    if(m)setMortgageForm({
+      lender:m.lender,remaining_principal:m.remaining_principal,interest_type:m.interest_type,
+      nominal_rate_pct:String(Number(m.nominal_rate)*100),monthly_payment:m.monthly_payment,
+      remaining_months:String(m.remaining_months),early_repayment_fee:m.early_repayment_fee||'',
+    });
+    const x=h.extra;
+    setExtraForm({
+      original_principal:x.original_principal||'',original_term_months:x.original_term_months===null?'':String(x.original_term_months),
+      start_date:x.start_date||'',maturity_date:x.maturity_date||'',apr_rate_pct:x.apr_rate===null?'':String(Number(x.apr_rate)*100),
+      reference_index:x.reference_index||'',differential_rate_pct:x.differential_rate===null?'':String(Number(x.differential_rate)*100),
+      rate_review_months:x.rate_review_months===null?'':String(x.rate_review_months),next_review_date:x.next_review_date||'',
+      opening_fee_percent:x.opening_fee_percent||'',early_repayment_fee_percent:x.early_repayment_fee_percent||'',
+      subrogation_fee_percent:x.subrogation_fee_percent||'',cancellation_fee_percent:x.cancellation_fee_percent||'',notes:x.notes||'',
+    });
+  },[home.data]);
+
+  const refresh=()=>{
+    qc.invalidateQueries({queryKey:['wealth-details']});qc.invalidateQueries({queryKey:['wealth']});qc.invalidateQueries({queryKey:['wealth-home']});
+  };
   const addAsset=useMutation({
     mutationFn:()=>apiMutate('/api/v1/assets','POST',{...asset,currency:'EUR',valuation_source:'manual',ownership_percentage:'100'}),
     onSuccess:()=>{setAsset({...asset,name:'',current_value:''});refresh()},
