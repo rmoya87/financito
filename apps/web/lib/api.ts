@@ -2,7 +2,7 @@ let csrfToken:string|null=null;
 let sessionPromise:Promise<string>|null=null;
 
 async function ensureSession(force=false):Promise<string>{
-  if(force)csrfToken=null;
+  if(force){csrfToken=null;sessionPromise=null;}
   if(csrfToken)return csrfToken;
   if(!sessionPromise){
     sessionPromise=fetch('/api/v1/session',{credentials:'same-origin',cache:'no-store'})
