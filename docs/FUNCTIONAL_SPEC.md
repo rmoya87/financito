@@ -700,3 +700,83 @@ Diferenciar siempre dato original, copia gestionada y derivado.
 - asesoramiento a terceros;
 - multiusuario cloud;
 - almacenamiento remoto de documentos privados.
+
+
+## 39. Forecast de gastos, ahorro y liquidez
+
+Financito debe generar previsiones a horizonte configurable basadas en:
+- mismo periodo del año anterior;
+- recurrencias confirmadas;
+- compromisos futuros;
+- tendencia reciente;
+- estacionalidad;
+- cambios contractuales conocidos;
+- ingresos esperados;
+- eventos extraordinarios excluibles.
+
+El mismo periodo del año anterior es baseline obligatorio cuando exista suficiente histórico.
+
+La previsión debe mostrar:
+- gasto previsto;
+- ahorro previsto;
+- liquidez prevista;
+- rango esperado;
+- precisión histórica;
+- categorías que explican la desviación;
+- comparación contra mismo periodo del año anterior.
+
+El detalle se define en FORECASTING_AND_COMMITMENTS.md.
+
+## 40. Compromisos futuros
+
+Crear CommitmentsEngine para identificar dinero ya comprometido aunque siga en cuenta.
+
+Ejemplos:
+- hipoteca;
+- seguros;
+- impuestos;
+- suscripciones;
+- compras financiadas;
+- pagos aplazados;
+- reservas;
+- aportaciones planificadas.
+
+Distinguir saldo bancario de liquidez operativamente disponible.
+
+## 41. Stress testing personal
+
+Permitir simular shocks de ingresos, gastos, tipos y mercado para medir resiliencia.
+
+No son predicciones.
+
+Outputs:
+- cash runway;
+- fondo de emergencia;
+- mínimo de liquidez;
+- objetivos afectados;
+- compromisos en riesgo;
+- impacto patrimonial.
+
+## 42. Cost centers personales
+
+Permitir agrupar costes por vivienda, vehículo, familia, mascota, viaje, tecnología, salud u objeto configurable.
+
+## 43. Coverage Engine
+
+Detectar coberturas duplicadas, perdidas, solapadas o deterioradas al cambiar producto.
+
+## 44. Financial Graph lógico
+
+Mantener relaciones explícitas entre cuentas, movimientos, contratos, documentos, assets, proveedores, oportunidades, decisiones y cálculos.
+
+## 45. Seguimiento de decisiones
+
+Guardar expectativa y resultado observado y explicar por qué cambia una recomendación respecto a versiones anteriores.
+
+## 46. Integridad y Repair Center
+
+Detectar jobs interrumpidos, verificar DB/Vault y reconstruir índices/derivados sin destruir fuentes.
+
+## 47. Evaluación continua de modelos
+
+OCR, embeddings, reranking, LLM, prompts y clasificadores deben evaluarse contra suites versionadas antes de promoción.
