@@ -11,7 +11,8 @@ from .services.transaction_ops import apply_rules_to_unverified,detect_internal_
 from .services.forecast_accuracy import evaluate as forecast_evaluate
 from .services.financial_analytics import overview as analytics_overview
 from .services.ai_categorization import improve_categorization
-from .models import Transaction
+from .models import CategorizationAudit,Category,Transaction
+from .services.categorization import normalize_text,propagate_verified_merchant
 router=APIRouter(prefix="/api/v1")
 def dbdep():
     s=SessionLocal()
@@ -19,6 +20,10 @@ def dbdep():
     finally:s.close()
 class RuleIn(BaseModel):
     matcher_type:str=Field(pattern="^(contains|merchant_exact|regex)$");matcher_value:str=Field(min_length=1,max_length=255);category_id:str;priority:int=100;enabled:bool=True
+class ReviewDecisionIn(BaseModel):
+    category_id:str
+    create_rule:bool=True
+    apply_to_existing:bool=True
 class SplitIn(BaseModel):
     amount:Decimal=Field(gt=0);category_id:str;note:str|None=None
 class SplitsIn(BaseModel):splits:list[SplitIn]=Field(min_length=1,max_length=50)
@@ -28,7 +33,47 @@ class AICategorizeIn(BaseModel):
 @router.get("/transaction-rules")
 def rules(db:Session=Depends(dbdep)):return [{"id":r.id,"matcher_type":r.matcher_type,"matcher_value":r.matcher_value,"category_id":r.category_id,"priority":r.priority,"enabled":r.enabled} for r in db.scalars(select(TransactionRule).order_by(TransactionRule.priority)).all()]
 @router.post("/transaction-rules")
-def add_rule(p:RuleIn,db:Session=Depends(dbdep)):r=TransactionRule(**p.model_dump());db.add(r);db.flush();changed=apply_rules_to_unverified(db);db.commit();return {"id":r.id,"reclassified":changed}
+def add_rule(p:RuleIn,db:Session=Depends(dbdep)):
+    if not db.get(Category,p.category_id):raise HTTPException(404,"Category not found")
+    existing=db.scalar(select(TransactionRule).where(TransactionRule.matcher_type==p.matcher_type,TransactionRule.matcher_value==p.matcher_value))
+    if existing:
+        for key,value in p.model_dump().items():setattr(existing,key,value)
+        row=existing
+    else:
+        row=TransactionRule(**p.model_dump());db.add(row);db.flush()
+    changed=apply_rules_to_unverified(db);db.commit()
+    return {"id":row.id,"reclassified":changed,"updated":existing is not None}
+
+@router.patch("/transaction-rules/{rule_id}")
+def update_rule(rule_id:str,p:RuleIn,db:Session=Depends(dbdep)):
+    row=db.get(TransactionRule,rule_id)
+    if not row:raise HTTPException(404,"Rule not found")
+    if not db.get(Category,p.category_id):raise HTTPException(404,"Category not found")
+    for key,value in p.model_dump().items():setattr(row,key,value)
+    changed=apply_rules_to_unverified(db);db.commit()
+    return {"id":row.id,"reclassified":changed}
+
+@router.post("/transactions/{transaction_id}/review")
+def review_transaction(transaction_id:str,p:ReviewDecisionIn,db:Session=Depends(dbdep)):
+    tx=db.get(Transaction,transaction_id)
+    if not tx:raise HTTPException(404,"Transaction not found")
+    if not db.get(Category,p.category_id):raise HTTPException(404,"Category not found")
+    previous=tx.category_id
+    tx.category_id=p.category_id;tx.categorization_method="manual";tx.categorization_confidence=Decimal("1");tx.user_verified=True
+    db.add(CategorizationAudit(transaction_id=tx.id,previous_category_id=previous,new_category_id=p.category_id,method="manual",confidence=Decimal("1"),changed_by="user"))
+    learned=propagate_verified_merchant(db,tx) if p.apply_to_existing else 0
+    rule_id=None;reclassified=0
+    merchant=normalize_text(tx.merchant_raw or "")
+    if p.create_rule and merchant:
+        rule=db.scalar(select(TransactionRule).where(TransactionRule.matcher_type=="merchant_exact",TransactionRule.matcher_value==merchant))
+        if rule is None:
+            rule=TransactionRule(matcher_type="merchant_exact",matcher_value=merchant,category_id=p.category_id,priority=50,enabled=True);db.add(rule);db.flush()
+        else:
+            rule.category_id=p.category_id;rule.enabled=True;rule.priority=min(rule.priority,50)
+        rule_id=rule.id
+        if p.apply_to_existing:reclassified=apply_rules_to_unverified(db)
+    db.commit()
+    return {"id":tx.id,"rule_id":rule_id,"learned":learned,"reclassified":reclassified,"merchant_rule_available":bool(merchant)}
 @router.post("/transactions/detect-transfers")
 def transfers(db:Session=Depends(dbdep)):n=detect_internal_transfers(db);db.commit();return {"matched_pairs":n}
 @router.get("/transactions/{transaction_id}/splits")
