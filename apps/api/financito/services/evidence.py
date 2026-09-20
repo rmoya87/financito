@@ -181,45 +181,77 @@ def _add_evidence_link(
 
 
 def auto_link_document_entity(session: Session, document: Document) -> dict | None:
-    """Reuse an existing product when another document has the same strong ID.
+    """Group documents by strong product identifiers without confirming facts.
 
-    Policy/contract numbers are preferred. Provider/type alone is deliberately
-    not enough because the same provider may have several products.
+    A policy/contract number may create a lightweight Contract shell used only
+    as an evidence group. It does not confirm premium, dates or conditions.
     """
     if document.document_type not in {"insurance", "contract", "loan", "energy", "telecom"}:
         return None
+
+    policy_link = _entity_link(session, document.id, "insurance_policy")
+    if policy_link is not None:
+        return {"entity_type": "insurance_policy", "entity_id": policy_link.to_id, "matched_by": "existing_link"}
+    contract_link = _entity_link(session, document.id, "contract")
+    if contract_link is not None:
+        return {"entity_type": "contract", "entity_id": contract_link.to_id, "matched_by": "existing_link"}
+
     identities = _identity_values(session, document.id)
-    strong_keys = ["policy_number"] if document.document_type == "insurance" else ["contract_number"]
-    for key in strong_keys:
-        value = identities.get(key)
-        if not value:
+    strong_key = "policy_number" if document.document_type == "insurance" else "contract_number"
+    value = identities.get(strong_key)
+    if not value:
+        return None
+
+    other_facts = session.scalars(
+        select(ExtractedFact).where(
+            ExtractedFact.document_id != document.id,
+            ExtractedFact.key == strong_key,
+        )
+    ).all()
+    for fact in other_facts:
+        if _normalize_identity(_payload(fact).get("value")) != value:
             continue
-        other_facts = session.scalars(
-            select(ExtractedFact).where(
-                ExtractedFact.document_id != document.id,
-                ExtractedFact.key == key,
-            )
-        ).all()
-        for fact in other_facts:
-            if _normalize_identity(_payload(fact).get("value")) != value:
-                continue
-            target_type = "insurance_policy" if document.document_type == "insurance" else "contract"
-            link = _entity_link(session, fact.document_id, target_type)
-            if link is None:
-                continue
-            _add_evidence_link(
-                session, document.id, target_type, link.to_id,
-                confidence=Decimal("0.98"), source_type="document_identity",
-            )
-            if target_type == "insurance_policy":
+        if document.document_type == "insurance":
+            link = _entity_link(session, fact.document_id, "insurance_policy")
+            if link is not None:
+                _add_evidence_link(
+                    session, document.id, "insurance_policy", link.to_id,
+                    confidence=Decimal("0.98"), source_type="document_identity",
+                )
                 policy = session.get(InsurancePolicy, link.to_id)
                 if policy and policy.contract_id:
                     _add_evidence_link(
                         session, document.id, "contract", policy.contract_id,
                         confidence=Decimal("0.98"), source_type="document_identity",
                     )
-            return {"entity_type": target_type, "entity_id": link.to_id, "matched_by": key}
-    return None
+                return {"entity_type": "insurance_policy", "entity_id": link.to_id, "matched_by": strong_key}
+
+        link = _entity_link(session, fact.document_id, "contract")
+        if link is not None:
+            contract = session.get(Contract, link.to_id)
+            if contract is not None and (
+                document.document_type != "insurance" or contract.contract_type == "insurance"
+            ):
+                _add_evidence_link(
+                    session, document.id, "contract", contract.id,
+                    confidence=Decimal("0.98"), source_type="document_identity",
+                )
+                return {"entity_type": "contract", "entity_id": contract.id, "matched_by": strong_key}
+
+    contract = Contract(
+        provider_name=_label(document),
+        contract_type=document.document_type,
+        currency="EUR",
+        evidence_status="needs_more_data",
+    )
+    session.add(contract)
+    session.flush()
+    _add_evidence_link(
+        session, document.id, "contract", contract.id,
+        confidence=Decimal("0.90"), source_type="document_identity_group",
+    )
+    return {"entity_type": "contract", "entity_id": contract.id, "matched_by": strong_key}
+
 
 
 def _cleanup_orphan_projection(
@@ -304,7 +336,11 @@ def link_document_to_entity(
             target = session.get(Contract, entity_id)
             if target is None:
                 raise ValueError("Contract not found")
-            if target.contract_type not in {"insurance", "mortgage"}:
+            if target.contract_type == "insurance":
+                document.document_type = "insurance"
+            elif target.contract_type == "mortgage":
+                document.document_type = "mortgage"
+            else:
                 document.document_type = target.contract_type
             _add_evidence_link(session, document.id, entity_type, entity_id)
         else:
@@ -624,6 +660,13 @@ def _ensure_insurance_projection(
     policy = session.get(InsurancePolicy, link.to_id) if link else None
     if contract is None and policy is not None and policy.contract_id:
         contract = session.get(Contract, policy.contract_id)
+    if policy is None and contract is not None:
+        policy = session.scalar(select(InsurancePolicy).where(InsurancePolicy.contract_id == contract.id))
+        if policy is not None:
+            _add_evidence_link(
+                session, document.id, "insurance_policy", policy.id,
+                confidence=Decimal("0.98"), source_type="policy_group",
+            )
 
     premium = None
     if "annual_cost" in values:
@@ -660,6 +703,12 @@ def _ensure_insurance_projection(
                 source_ref=document.id,
             )
         )
+        if contract is not None:
+            for grouped_document_id in _linked_document_ids(session, "contract", contract.id):
+                _add_evidence_link(
+                    session, grouped_document_id, "insurance_policy", policy.id,
+                    confidence=Decimal("0.98"), source_type="policy_group",
+                )
 
     if contract is not None:
         policy.contract_id = contract.id
