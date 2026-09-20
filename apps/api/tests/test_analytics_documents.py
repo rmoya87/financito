@@ -10,9 +10,10 @@ from financito.db import SessionLocal
 from financito.models import Account,ActionItem,Category,Contract,Document,ExtractedFact,Transaction
 from financito.models_analytics import EntityLink
 from financito.services.categorization import ensure_categories
-from financito.services.documents import classify_document,detect_language,index_document
+from financito.services.documents import classify_document,detect_language,index_document,store_uploaded_document
 from financito.services.financial_analytics import overview
 from financito.services.evidence import structured_evidence_context,synchronize_document_evidence
+from financito.services.document_ai import analyze_document,domain_insights,latest_analysis
 from financito.services.transaction_ops import detect_refunds
 from financito.models_extended import InsurancePolicy
 
@@ -144,3 +145,66 @@ def test_confirmed_document_evidence_projects_and_closes_review_action():
         evidence=structured_evidence_context(db)
         projected=next(x for x in evidence["documents"] if x["document_id"]==doc.id)
         assert any(x["key"]=="annual_cost" and x["user_verified"] for x in projected["facts"])
+
+
+
+def test_uploaded_document_is_safely_stored_and_indexed():
+    path=store_uploaded_document("../../Hipoteca prueba?.txt",b"FEIN hipoteca. TIN 2,50 %. TAE 2,90 %.")
+    assert settings.vault_dir.resolve() in path.resolve().parents
+    assert path.parent.name=="uploads"
+    assert "?" not in path.name
+    with SessionLocal() as db:
+        result=index_document(db,str(path),"unknown")
+        db.commit()
+        assert result.document.document_type=="mortgage"
+        assert result.document.file_name==path.name
+
+
+def test_local_ai_document_analysis_is_persisted_and_shared(monkeypatch):
+    suffix=uuid4().hex[:8]
+    path=settings.vault_dir/f"seguro-ia-{suffix}.txt"
+    path.write_text(
+        "Póliza de seguro de hogar. Prima anual 420 euros. Franquicia 150 euros. "
+        "Preaviso 30 días. La cobertura incluye responsabilidad civil.",
+        encoding="utf-8",
+    )
+    with SessionLocal() as db:
+        indexed=index_document(db,str(path),"unknown")
+        document=indexed.document
+
+        monkeypatch.setattr(
+            "financito.services.document_ai.ai_status",
+            lambda:{"available":True,"configured_model":"qwen3:8b","chat_ready":True},
+        )
+        monkeypatch.setattr(
+            "financito.services.document_ai.generate_json",
+            lambda prompt,timeout=180:{
+                "summary":"Seguro con prima y franquicia identificadas; conviene contrastar coberturas antes de cambiar.",
+                "advantages":[{"title":"Responsabilidad civil","detail":"Figura como cobertura incluida.","pages":[1],"impact":"Cobertura útil a mantener al comparar."}],
+                "penalties":[],
+                "obligations":[{"title":"Preaviso","detail":"Se ha detectado un preaviso contractual.","pages":[1],"impact":""}],
+                "risks":[],
+                "exclusions_or_limits":[{"title":"Franquicia","detail":"Existe franquicia.","pages":[1],"impact":"Afecta al coste efectivo de un siniestro."}],
+                "linked_products":[],
+                "optimization_opportunities":[{"title":"Comparar prima equivalente","detail":"Solicitar ofertas con coberturas equivalentes.","pages":[1],"impact":"No comparar solo por precio."}],
+                "cross_area_impacts":[],
+                "missing_information":[{"title":"Límites de cobertura","detail":"No aparecen completos en el fragmento.","pages":[],"impact":""}],
+                "confidence":0.88,
+            },
+        )
+
+        result=analyze_document(db,document)
+        db.commit()
+        assert result["status"]=="ready"
+        stored=latest_analysis(db,document.id)
+        assert stored is not None
+        assert stored["summary"].startswith("Seguro con prima")
+        assert stored["optimization_opportunities"][0]["title"]=="Comparar prima equivalente"
+
+        insights=domain_insights(db,"insurance")
+        assert any(x["document_id"]==document.id for x in insights)
+
+        evidence=structured_evidence_context(db)
+        projected=next(x for x in evidence["documents"] if x["document_id"]==document.id)
+        assert projected["ai_analysis"]["summary"].startswith("Seguro con prima")
+        assert "interpretación" in evidence["rule"].lower()
