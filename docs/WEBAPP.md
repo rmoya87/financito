@@ -3,26 +3,25 @@
 La interfaz es una WebApp Next.js/React exportada estáticamente y servida por FastAPI desde el mismo origen loopback.
 
 ## Navegación implementada
-- Resumen
-- Buscar
-- Cuentas
+
+Primer nivel:
+- Inicio
 - Movimientos
-- Previsión
-- Análisis
 - Patrimonio
-- Centros de coste
-- Inversiones
-- Mercados
-- Documentos
-- Contratos
-- Seguros
-- Simuladores
 - Decisiones
-- Chat
-- Banca conectada
-- Acciones
-- Sistema/privacidad
-- Configuración
+
+Utilidades globales:
+- Buscar
+- Preguntar
+
+Configuración:
+- General
+- Datos y fuentes
+- Privacidad y copias
+- Avanzado
+
+Las funciones especializadas no desaparecen: Banca se descubre desde Cuentas; Centros de coste desde Análisis; Fiscalidad e Histórico desde Patrimonio; Previsión, Contratos y Seguros desde Decisiones. Las rutas anteriores siguen siendo válidas para deep links.
+
 
 ## Estado y datos
 TanStack Query gestiona reads, mutations, cache e invalidación. Los cálculos financieros no se duplican en React: la UI consume resultados del backend.
