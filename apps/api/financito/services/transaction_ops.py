@@ -20,20 +20,113 @@ def category_system_key(session: Session, category_id: str | None) -> str | None
 
 
 def apply_category_semantics(session: Session, tx: Transaction) -> str | None:
-    """Make special categories affect accounting, not only presentation.
+    """Synchronize accounting flags with the selected category.
 
-    - Movimiento entre cuentas is excluded from income/expense totals.
-    - Reembolsos remains a positive transaction that reduces expenses.
-      Its precise original expense is linked separately when it can be matched.
-    - An explicit/manual/rule category different from internal transfer clears
-      a stale internal-transfer flag so the user's correction is authoritative.
+    The category is the source of truth whenever one exists:
+    - Movimiento entre cuentas => excluded from income/expense totals.
+    - Any other category, including Nómina => not an internal transfer.
+    - Reembolsos keeps its separate cash-flow treatment as a reduction of
+      expense instead of artificial income.
     """
     key = category_system_key(session, tx.category_id)
-    if key == "internal_transfer":
-        tx.is_internal_transfer = True
-    elif tx.categorization_method in {"manual", "rule"}:
-        tx.is_internal_transfer = False
+    if key is not None:
+        tx.is_internal_transfer = key == "internal_transfer"
     return key
+
+
+def synchronize_transaction_semantics(session: Session) -> int:
+    """Repair stale accounting flags left by older categorization flows."""
+    categories = {c.id: c.system_key for c in session.scalars(select(Category)).all()}
+    changed = 0
+    for tx in session.scalars(select(Transaction).where(Transaction.category_id.is_not(None))).all():
+        expected = categories.get(tx.category_id) == "internal_transfer"
+        if tx.is_internal_transfer != expected:
+            tx.is_internal_transfer = expected
+            changed += 1
+    session.flush()
+    return changed
+
+
+def pair_internal_transfer_counterpart(
+    session: Session, tx: Transaction, window_days: int = 3
+) -> str | None:
+    """Pair an explicitly internal transfer with its opposite bank movement.
+
+    Only a unique best candidate is changed. A counterpart that the user has
+    explicitly verified as another category is never overwritten.
+    """
+    if category_system_key(session, tx.category_id) != "internal_transfer":
+        return None
+
+    start = tx.booking_date - timedelta(days=window_days)
+    end = tx.booking_date + timedelta(days=window_days)
+    candidates = session.scalars(
+        select(Transaction).where(
+            Transaction.id != tx.id,
+            Transaction.account_id != tx.account_id,
+            Transaction.currency == tx.currency,
+            Transaction.amount == -tx.amount,
+            Transaction.booking_date >= start,
+            Transaction.booking_date <= end,
+        )
+    ).all()
+    eligible = []
+    for candidate in candidates:
+        key = category_system_key(session, candidate.category_id)
+        if candidate.user_verified and key != "internal_transfer":
+            continue
+        eligible.append(candidate)
+    if not eligible:
+        return None
+
+    eligible.sort(key=lambda row: (abs((row.booking_date - tx.booking_date).days), row.id))
+    best_gap = abs((eligible[0].booking_date - tx.booking_date).days)
+    best = [row for row in eligible if abs((row.booking_date - tx.booking_date).days) == best_gap]
+    if len(best) != 1:
+        return None
+    counterpart = best[0]
+
+    categories = ensure_categories(session)
+    counterpart.category_id = categories["internal_transfer"].id
+    counterpart.is_internal_transfer = True
+    if not counterpart.user_verified:
+        counterpart.categorization_method = "internal_transfer_pair"
+        counterpart.categorization_confidence = Decimal("0.99")
+
+    tx.is_internal_transfer = True
+    existing = session.scalar(
+        select(EntityLink.id).where(
+            EntityLink.from_type == "transaction",
+            EntityLink.from_id == tx.id,
+            EntityLink.relation_type == "internal_transfer_pair",
+            EntityLink.to_type == "transaction",
+            EntityLink.to_id == counterpart.id,
+        )
+    )
+    reverse = session.scalar(
+        select(EntityLink.id).where(
+            EntityLink.from_type == "transaction",
+            EntityLink.from_id == counterpart.id,
+            EntityLink.relation_type == "internal_transfer_pair",
+            EntityLink.to_type == "transaction",
+            EntityLink.to_id == tx.id,
+        )
+    )
+    if not existing and not reverse:
+        session.add(
+            EntityLink(
+                from_type="transaction",
+                from_id=tx.id,
+                relation_type="internal_transfer_pair",
+                to_type="transaction",
+                to_id=counterpart.id,
+                confidence=Decimal("1") if tx.user_verified else Decimal("0.99"),
+                source_type="category_transfer_pair",
+                source_ref=counterpart.id,
+            )
+        )
+    session.flush()
+    return counterpart.id
 
 
 def apply_rule(session: Session, tx: Transaction) -> bool:
@@ -61,7 +154,9 @@ def apply_rule(session: Session, tx: Transaction) -> bool:
             tx.category_id = rule.category_id
             tx.categorization_method = "rule"
             tx.categorization_confidence = Decimal("1")
-            apply_category_semantics(session, tx)
+            key=apply_category_semantics(session, tx)
+            if key=="internal_transfer":
+                pair_internal_transfer_counterpart(session,tx)
             return True
     return False
 
@@ -82,20 +177,22 @@ def detect_internal_transfers(session: Session) -> int:
     internal_category = categories["internal_transfer"]
     txs = session.scalars(
         select(Transaction)
-        .where(
-            Transaction.is_internal_transfer.is_(False),
-            Transaction.user_verified.is_(False),
-        )
+        .where(Transaction.user_verified.is_(False))
         .order_by(Transaction.booking_date, Transaction.id)
     ).all()
+    protected = {"salary", "refunds"}
     marked: set[str] = set()
     for i, left in enumerate(txs):
+        if category_system_key(session, left.category_id) in protected:
+            continue
         if left.id in marked:
             continue
         for right in txs[i + 1 :]:
             if right.booking_date > left.booking_date + timedelta(days=3):
                 break
             if right.id in marked or right.account_id == left.account_id:
+                continue
+            if category_system_key(session, right.category_id) in protected:
                 continue
             if left.currency != right.currency:
                 continue

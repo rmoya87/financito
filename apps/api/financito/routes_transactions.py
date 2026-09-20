@@ -7,7 +7,7 @@ from sqlalchemy import String,cast,func,or_,select
 from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .models_analytics import TransactionRule,TransactionSplit
-from .services.transaction_ops import apply_category_semantics,apply_rules_to_unverified,detect_internal_transfers,detect_refunds,set_splits
+from .services.transaction_ops import apply_category_semantics,apply_rules_to_unverified,detect_internal_transfers,detect_refunds,pair_internal_transfer_counterpart,set_splits
 from .services.forecast_accuracy import evaluate as forecast_evaluate
 from .services.financial_analytics import overview as analytics_overview
 from .services.ai_categorization import improve_categorization
@@ -60,7 +60,9 @@ def review_transaction(transaction_id:str,p:ReviewDecisionIn,db:Session=Depends(
     if not db.get(Category,p.category_id):raise HTTPException(404,"Category not found")
     previous=tx.category_id
     tx.category_id=p.category_id;tx.categorization_method="manual";tx.categorization_confidence=Decimal("1");tx.user_verified=True
-    apply_category_semantics(db,tx)
+    key=apply_category_semantics(db,tx)
+    if key=="internal_transfer":
+        pair_internal_transfer_counterpart(db,tx)
     db.add(CategorizationAudit(transaction_id=tx.id,previous_category_id=previous,new_category_id=p.category_id,method="manual",confidence=Decimal("1"),changed_by="user"))
     learned=propagate_verified_merchant(db,tx) if p.apply_to_existing else 0
     rule_id=None;reclassified=0

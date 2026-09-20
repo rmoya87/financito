@@ -34,7 +34,13 @@ def _refund_links(session: Session, transaction_ids: list[str] | None = None) ->
 
 def _is_internal(tx: Transaction, categories: dict[str, Category]) -> bool:
     category = categories.get(tx.category_id or "")
-    return tx.is_internal_transfer or (category is not None and category.system_key == "internal_transfer")
+    # When a category exists it is the accounting source of truth. This avoids
+    # a stale legacy boolean excluding a positive Nómina/Ingreso after
+    # recategorization. The boolean is only a fallback for uncategorized legacy
+    # rows.
+    if category is not None:
+        return category.system_key == "internal_transfer"
+    return tx.is_internal_transfer
 
 
 def _is_refund(tx: Transaction, categories: dict[str, Category], refund_ids: set[str]) -> bool:

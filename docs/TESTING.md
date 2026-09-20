@@ -76,3 +76,8 @@ No se considera cerrado un cambio si:
 ## Contratos de rutas por secciones
 
 Los flujos críticos que anteriormente podían degradar en HTTP 405 tienen pruebas de contrato explícitas: paginación de movimientos, perfil/estimación fiscal, prueba de IA local, subida documental POST/PUT y resumen patrimonial. Estas pruebas verifican el método HTTP además de la forma mínima de la respuesta para detectar desalineaciones entre WebApp y backend antes de publicar. La WebApp también debe degradar los payloads parciales a errores locales, sin derribar la página completa.
+
+
+## Semántica de ingresos y transferencias
+
+Las regresiones contables prueban que una `Nómina` positiva cuenta como ingreso incluso si una versión anterior dejó un flag interno de transferencia obsoleto. También se comprueba que el arranque repara ese flag, que el detector de transferencias no roba una nómina por coincidencia de importe y que Dashboard/cierre de mes/Fiscalidad mantienen el mismo criterio.

@@ -120,7 +120,10 @@ def propagate_verified_merchant(session:Session,source:Transaction)->int:
     for tx in rows:
         if tx.categorization_method=="rule":continue
         if tx.category_id!=source.category_id or tx.categorization_confidence<Decimal("0.98"):
-            tx.category_id=source.category_id;tx.categorization_method="learned_merchant";tx.categorization_confidence=Decimal("0.98");changed+=1
+            tx.category_id=source.category_id;tx.categorization_method="learned_merchant";tx.categorization_confidence=Decimal("0.98")
+            from .transaction_ops import apply_category_semantics
+            apply_category_semantics(session,tx)
+            changed+=1
     session.flush();return changed
 
 
@@ -131,7 +134,10 @@ def categorize_transaction(session:Session,tx:Transaction)->None:
     categories=ensure_categories(session)
     learned=learned_merchant_category(session,tx)
     if learned:
-        tx.category_id,tx.categorization_confidence=learned;tx.categorization_method="learned_merchant";return
+        tx.category_id,tx.categorization_confidence=learned;tx.categorization_method="learned_merchant"
+        from .transaction_ops import apply_category_semantics
+        apply_category_semantics(session,tx)
+        return
 
     text=normalize_text(f"{tx.merchant_raw or ''} {tx.description_raw}")
     if tx.amount>0:
@@ -147,3 +153,5 @@ def categorize_transaction(session:Session,tx:Transaction)->None:
             if any(word in text for word in words):category=categories[key];confidence=Decimal("0.85");break
 
     tx.category_id=category.id;tx.categorization_method="deterministic_classifier";tx.categorization_confidence=confidence
+    from .transaction_ops import apply_category_semantics
+    apply_category_semantics(session,tx)
