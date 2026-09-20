@@ -21,6 +21,7 @@ from .security import LocalSecurityMiddleware, create_session
 from .routes_extended import router as extended_router
 from .routes_analytics import router as analytics_router
 from .routes_transactions import router as transactions_router
+from .routes_domain import router as domain_router
 from .services.vault_watcher import VaultWatcher
 from .services.categorization import ensure_categories
 from .services.documents import index_document
@@ -47,6 +48,7 @@ app.add_middleware(LocalSecurityMiddleware)
 app.include_router(extended_router)
 app.include_router(analytics_router)
 app.include_router(transactions_router)
+app.include_router(domain_router)
 
 
 def get_db():
