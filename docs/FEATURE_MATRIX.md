@@ -55,3 +55,28 @@ Leyenda:
 | Freshness | timestamps/stale | Core |
 | Offline | datos locales | Core |
 | Accessibility | WCAG AA objetivo | Core |
+
+
+## Funciones transversales añadidas
+
+| Área | Función | Fase |
+|---|---|---|
+| Onboarding | wizard local | F1 |
+| Data Quality | reconciliación | F2+ |
+| Calendar | eventos financieros | F2+ |
+| Alerts | alertas locales | F2+ |
+| Goals | objetivos financieros | F2+ |
+| Scenarios | laboratorio de escenarios | F6/F7 |
+| Tax | centro fiscal modular | F7 |
+| Currency | multi-divisa | Core |
+| Ownership | propiedad personal/compartida | Core |
+| Assets | valoración manual | F2 |
+| Backup | backup/restore cifrado | F1 |
+| Portability | export abierto | F1+ |
+| Audit | actividad local | Core |
+| Health | salud de sistema/providers | Core |
+| AI | gestor de modelos locales | F1 |
+| Rules | automatizaciones locales seguras | F2+ |
+| Search | búsqueda global | F1+ |
+| Privacy | borrado/retención | Core |
+| Performance | presupuestos y profiling | Core |
