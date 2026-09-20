@@ -11,6 +11,7 @@ async function expectAccessible(page:import('@playwright/test').Page){
 test('onboarding crea demo y el dashboard sigue navegable',async({page})=>{
   await page.goto('/onboarding/');
   await expect(page.getByRole('heading',{name:'Primer arranque'})).toBeVisible();
+  await expect(page.getByText(/Base cifrada:/)).toBeVisible();
   await expectAccessible(page);
 
   await page.getByRole('button',{name:'Crear datos demo'}).click();
@@ -31,6 +32,6 @@ test('navegación principal y salud mantienen estructura accesible',async({page}
 
   await navigation.getByRole('link',{name:'Salud'}).click();
   await expect(page.getByRole('heading',{name:'Configuración y salud'})).toBeVisible();
-  await expect(page.getByText('Base de datos',{exact:true})).toBeVisible();
+  await expect(page.getByText(/schema v\d+/)).toBeVisible();
   await expectAccessible(page);
 });
