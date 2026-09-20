@@ -63,13 +63,55 @@ Datos externos además:
 - value_date
 - amount
 - currency
+- original_amount
+- original_currency
+- base_amount
+- base_currency
+- fx_rate
+- fx_rate_date
 - merchant_raw
 - merchant_normalized
+- merchant_group_id
 - description_raw
+- description_normalized
 - category_id
 - subcategory_id
+- necessity_class
+- variability_class
 - is_recurring
+- recurring_series_id
+- is_internal_transfer
+- matched_transfer_id
+- refund_of_transaction_id
 - duplicate_fingerprint
+- categorization_method
+- categorization_confidence
+- categorization_version
+- user_verified
+- ownership_type
+- ownership_percentage
+
+### category
+- id
+- parent_id
+- name
+- system_key
+- is_system
+- enabled
+
+### merchant_group
+- id
+- canonical_name
+- category_hint
+- user_verified
+
+### merchant_alias
+- id
+- merchant_group_id
+- normalized_pattern
+- matcher_type
+- confidence
+- source
 
 ### transaction_rule
 - id
@@ -77,7 +119,31 @@ Datos externos además:
 - matcher_type
 - matcher_value
 - category_id
+- subcategory_id
+- necessity_class
+- variability_class
 - enabled
+
+### transaction_split
+- id
+- transaction_id
+- amount
+- category_id
+- subcategory_id
+- note
+
+Constraint: la suma exacta de splits debe coincidir con el importe del movimiento.
+
+### categorization_audit
+- id
+- transaction_id
+- previous_category_id
+- new_category_id
+- method
+- confidence
+- algorithm_version
+- changed_by
+- changed_at
 
 ## Recurrentes
 
@@ -380,3 +446,107 @@ Puede reutilizar security/position, pero las métricas específicas viven en cry
 - news_item(canonical_url) UNIQUE
 - market_price(security_id, timestamp)
 - optimization_opportunity(status, urgency)
+
+
+## Casos de decisión
+
+### decision_case
+- id
+- decision_type
+- question
+- current_state_json
+- assumptions_json
+- constraints_json
+- calculation_version
+- status
+- created_at
+
+### decision_alternative
+- id
+- decision_case_id
+- name
+- one_off_cost
+- monthly_cost
+- annual_cost
+- expected_benefit
+- net_benefit
+- liquidity_impact
+- risk_level
+- effort
+- reversibility
+- break_even_months
+- horizon_results_json
+- pros_json
+- cons_json
+- uncertainties_json
+
+### decision_source
+- id
+- decision_case_id
+- source_type
+- source_ref
+- source_timestamp
+
+## Insights
+
+### insight
+- id
+- insight_type
+- subject_type
+- subject_id
+- period_start
+- period_end
+- title
+- description
+- calculation_json
+- confidence
+- severity
+- generated_at
+- dismissed_at
+
+### anomaly
+- id
+- transaction_id
+- anomaly_type
+- baseline_json
+- observed_json
+- explanation
+- confidence
+- status
+
+## Presupuestos
+
+### budget
+- id
+- category_id
+- subcategory_id
+- period_type
+- amount
+- currency
+- rollover
+- alert_threshold
+
+## Objetivos
+
+### financial_goal
+- id
+- goal_type
+- name
+- target_amount
+- current_amount
+- target_date
+- priority
+- planned_monthly_contribution
+- status
+
+## Auditoría
+
+### audit_event
+- id
+- event_type
+- entity_type
+- entity_id
+- metadata_json
+- created_at
+
+No almacenar secretos ni payloads sensibles completos.
