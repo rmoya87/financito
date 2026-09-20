@@ -10,6 +10,7 @@ from .models_analytics import TransactionRule,TransactionSplit
 from .services.transaction_ops import apply_rules_to_unverified,detect_internal_transfers,detect_refunds,set_splits
 from .services.forecast_accuracy import evaluate as forecast_evaluate
 from .services.financial_analytics import overview as analytics_overview
+from .services.ai_categorization import improve_categorization
 from .models import Transaction
 router=APIRouter(prefix="/api/v1")
 def dbdep():
@@ -21,6 +22,9 @@ class RuleIn(BaseModel):
 class SplitIn(BaseModel):
     amount:Decimal=Field(gt=0);category_id:str;note:str|None=None
 class SplitsIn(BaseModel):splits:list[SplitIn]=Field(min_length=1,max_length=50)
+class AICategorizeIn(BaseModel):
+    limit:int=Field(default=3000,ge=1,le=10000)
+    llm_limit:int=Field(default=80,ge=0,le=500)
 @router.get("/transaction-rules")
 def rules(db:Session=Depends(dbdep)):return [{"id":r.id,"matcher_type":r.matcher_type,"matcher_value":r.matcher_value,"category_id":r.category_id,"priority":r.priority,"enabled":r.enabled} for r in db.scalars(select(TransactionRule).order_by(TransactionRule.priority)).all()]
 @router.post("/transaction-rules")
@@ -42,6 +46,10 @@ def forecast_accuracy(months:int=6,db:Session=Depends(dbdep)):
 @router.post("/transactions/detect-refunds")
 def refunds(db:Session=Depends(dbdep)):
     n=detect_refunds(db);db.commit();return {"matched_refunds":n}
+
+@router.post("/transactions/ai-categorize")
+def ai_categorize(p:AICategorizeIn,db:Session=Depends(dbdep)):
+    result=improve_categorization(db,p.limit,p.llm_limit);db.commit();return result
 
 @router.get("/transactions/review-queue")
 def review_queue(limit:int=100,db:Session=Depends(dbdep)):

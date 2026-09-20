@@ -20,15 +20,29 @@ def status()->dict:
     try:
         data=_json("/api/tags",timeout=1)
         names=[m.get("name") for m in data.get("models",[]) if m.get("name")]
-        return {"available":True,"configured_model":chat_model or None,"embedding_model":embedding_model or None,"models":names}
+        return {"available":True,"configured_model":chat_model or None,"embedding_model":embedding_model or None,"models":names,"chat_ready":bool(chat_model and chat_model in names),"embedding_ready":bool(embedding_model and embedding_model in names)}
     except Exception:
-        return {"available":False,"configured_model":chat_model or None,"embedding_model":embedding_model or None,"models":[]}
+        return {"available":False,"configured_model":chat_model or None,"embedding_model":embedding_model or None,"models":[],"chat_ready":False,"embedding_ready":False}
 
 def embed(inputs:str|list[str])->list[list[float]]:
     _,embedding_model=effective_ai_models()
     if not embedding_model:raise RuntimeError("No local embedding model configured")
-    data=_json("/api/embed",{"model":embedding_model,"input":inputs},timeout=60)
+    data=_json("/api/embed",{"model":embedding_model,"input":inputs},timeout=90)
     return data["embeddings"]
+
+def generate_json(prompt:str,timeout:float=180)->dict:
+    chat_model,_=effective_ai_models()
+    if not chat_model:raise RuntimeError("No local AI model configured")
+    payload={"model":chat_model,"stream":False,"format":"json","think":False,"options":{"temperature":0},"prompt":prompt}
+    try:data=_json("/api/generate",payload,timeout=timeout)
+    except Exception:
+        payload.pop("think",None);data=_json("/api/generate",payload,timeout=timeout)
+    raw=str(data.get("response","")).strip()
+    try:return json.loads(raw)
+    except json.JSONDecodeError:
+        start=raw.find("{");end=raw.rfind("}")
+        if start>=0 and end>start:return json.loads(raw[start:end+1])
+        raise RuntimeError("Local AI did not return valid JSON")
 
 def ask(prompt:str,context:str)->str:
     chat_model,_=effective_ai_models()
