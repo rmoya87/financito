@@ -16,6 +16,7 @@ type Performance={portfolio_id:string;mwr:number|null;twr:number|null;observatio
 type Fit={fit_score:number;proposed_weight:string;post_asset_class_weight:string;post_security_weight:string;components:Record<string,number>;warnings:string[];notice:string};
 type ImportResult={file_name:string;inserted:number;skipped:number;created_securities:number;realized_pnl:string};
 type CorpAction={id:string;security_id:string;action_type:string;effective_date:string;value:string;currency:string;notes:string|null;applied:boolean};
+type InsightItem={title:string;detail:string;pages:number[];impact?:string};type DocInsight={document_id:string;file_name:string;document_type:string;analysis:{summary:string;confidence:string;optimization_opportunities:InsightItem[];negotiation_points:InsightItem[];comparison_requirements:InsightItem[];risks:InsightItem[];cross_area_impacts:InsightItem[]}};
 
 export default function InvestmentsPage(){
   const qc=useQueryClient();
@@ -34,6 +35,7 @@ export default function InvestmentsPage(){
   const performance=useQuery({queryKey:['portfolio-performance',selectedPortfolio],queryFn:()=>apiGet<Performance>('/api/v1/portfolios/'+selectedPortfolio+'/performance'),enabled:!!selectedPortfolio});
   const fit=useQuery({queryKey:['portfolio-fit',selectedPortfolio,fitSecurity,fitWeight],queryFn:()=>apiGet<Fit>('/api/v1/portfolios/'+selectedPortfolio+'/fit/'+fitSecurity+'?proposed_weight='+encodeURIComponent(fitWeight)),enabled:!!selectedPortfolio&&!!fitSecurity});
   const actions=useQuery({queryKey:['corporate-actions',selectedPortfolio],queryFn:()=>apiGet<CorpAction[]>('/api/v1/portfolios/'+selectedPortfolio+'/corporate-actions'),enabled:!!selectedPortfolio});
+  const documentInsights=useQuery({queryKey:['document-insights','investment_statement'],queryFn:()=>apiGet<DocInsight[]>('/api/v1/document-insights?document_type=investment_statement')});
 
   const addP=useMutation({mutationFn:()=>apiMutate('/api/v1/portfolios','POST',{name:pn,base_currency:'EUR'}),onSuccess:()=>qc.invalidateQueries({queryKey:['portfolios']})});
   const addS=useMutation({mutationFn:()=>apiMutate('/api/v1/securities','POST',{...sec,currency:'EUR',isin:null}),onSuccess:()=>qc.invalidateQueries({queryKey:['securities']})});
@@ -86,6 +88,11 @@ export default function InvestmentsPage(){
         <button className="fin-button" disabled={!brokerFile||!selectedPortfolio||broker.isPending} onClick={()=>broker.mutate()}>Importar</button>
       </div>
       {broker.data&&<div className="mt-3 text-sm text-[var(--muted)]">{broker.data.inserted} operaciones nuevas · {broker.data.skipped} omitidas · {broker.data.created_securities} activos creados · P&L realizado importado <Money value={broker.data.realized_pnl}/></div>}
+    </Card>
+
+    <Card className="mt-4">
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Conclusiones de documentos de inversión</h2><p className="mt-1 text-sm text-[var(--muted)]">La IA local señala comisiones, costes, riesgos y puntos de comparación visibles en extractos o contratos. No estima rentabilidades futuras.</p></div><a className="text-xs underline" href="/documents/">Añadir documentos</a></div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">{documentInsights.data?.length?documentInsights.data.map(x=><div key={x.document_id} className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="flex items-start justify-between gap-3"><strong>{x.file_name}</strong><a className="text-xs underline" href={'/documents/?document='+encodeURIComponent(x.document_id)}>Evidencia</a></div><p className="mt-2 text-xs">{x.analysis.summary}</p>{x.analysis.optimization_opportunities?.length>0&&<div className="mt-2 rounded-lg bg-[var(--brand-soft)] p-2 text-xs"><strong>Oportunidad:</strong> {x.analysis.optimization_opportunities.slice(0,2).map(i=>i.title||i.detail).join(' · ')}</div>}{x.analysis.comparison_requirements?.length>0&&<div className="mt-2 text-xs"><strong>Para comparar:</strong> {x.analysis.comparison_requirements.slice(0,2).map(i=>i.title||i.detail).join(' · ')}</div>}{x.analysis.risks?.length>0&&<div className="mt-2 text-xs"><strong>Riesgo/condición:</strong> {x.analysis.risks.slice(0,2).map(i=>i.title||i.detail).join(' · ')}</div>}</div>):<EmptyState>Añade extractos o contratos de inversión para analizarlos localmente.</EmptyState>}</div>
     </Card>
 
     <Card className="mt-4">
