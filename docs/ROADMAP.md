@@ -160,3 +160,28 @@ No son una fase posterior:
 - gestión de modelos locales.
 
 Las features nuevas deben integrarse sin duplicar componentes, engines ni DTO.
+
+
+## Fase 2.5 — Forecast y resiliencia
+
+- previsión X días/meses;
+- comparación automática con mismo periodo del año anterior;
+- precisión histórica por horizonte/categoría;
+- CommitmentsEngine;
+- liquidez operativa futura;
+- cash runway;
+- stress testing básico;
+- cost centers;
+- alertas predictivas.
+
+Criterio:
+“Puedo saber cuánto probablemente gastaré/ahorraré, qué parte está confirmada, cómo se compara con el mismo periodo del año anterior y qué precisión histórica tiene la estimación.”
+
+## Requisitos técnicos adicionales
+
+Desde el inicio preparar:
+- Financial Graph lógico;
+- Repair Center;
+- model evaluation gates;
+- Decision Outcomes;
+- Coverage Engine extensible.
