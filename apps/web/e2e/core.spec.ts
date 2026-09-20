@@ -21,8 +21,8 @@ test('onboarding crea demo y el dashboard sigue navegable',async({page})=>{
 
   await page.getByRole('link',{name:'Inicio'}).click();
   await expect(page.getByRole('heading',{name:'Inicio'})).toBeVisible();
-  await expect(page.getByText('Liquidez')).toBeVisible();
-  await expect(page.getByText('Gasto por categoría')).toBeVisible();
+  await expect(page.getByText('Disponible')).toBeVisible();
+  await expect(page.getByText('En qué se está yendo tu dinero')).toBeVisible();
   await expectAccessible(page);
 });
 
