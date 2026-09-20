@@ -236,3 +236,29 @@ Antes de añadir infraestructura o librerías:
 7. mantener una única fuente de verdad por dato/regla.
 
 Redis, Celery, Kafka, Postgres remoto y servicios cloud quedan fuera de la arquitectura inicial.
+
+## Fuente de verdad documental transversal
+
+Para condiciones particulares, contratos, pólizas e hipotecas, el documento confirmado es la fuente canónica.
+
+Pipeline:
+1. el documento se indexa y clasifica;
+2. extracción determinista y/o IA local proponen facts;
+3. el usuario confirma los facts materiales;
+4. `synchronize_document_evidence` proyecta esos facts a Contract, Mortgage, InsurancePolicy y CoverageFact;
+5. los motores de decisiones, seguros, simulaciones, fiscalidad y chat consumen las entidades proyectadas y el grafo de evidencia;
+6. si un campo no se reconoce, se añade como fact confirmado dentro del mismo documento, nunca como ficha paralela.
+
+Las APIs manuales de dominio se conservan solo por compatibilidad/importación técnica, pero la UI de Contratos, Seguros e Hipoteca no crea una segunda fuente de verdad.
+
+Los datos de inversión operativa (compras/ventas/posiciones) proceden de operaciones/importes reales de broker o entradas explícitas; las condiciones documentales de inversión se conservan como evidencia estructurada y contexto para decisiones, sin inventar operaciones.
+
+## Diagnóstico de IA local
+
+La disponibilidad de Ollama no se deduce solo de `/api/tags`. Configuración ofrece una prueba de generación real mediante `/api/v1/ai/test`, que:
+- comprueba que el modelo configurado aparece en Ollama;
+- ejecuta una inferencia mínima;
+- informa de latencia y error;
+- usa `think=false` cuando el modelo lo soporta y reintenta sin ese parámetro si la versión de Ollama lo rechaza.
+
+El frontend estático acepta HEAD en sus rutas para que el prefetch/health check de Next.js no genere falsos 405.
