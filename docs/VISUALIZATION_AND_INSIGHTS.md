@@ -176,6 +176,8 @@ Gráficas:
 ## Consistencia
 
 Todos los wrappers compartidos deben usar:
+- colores distintos y estables para cada serie cuando una gráfica compara varias magnitudes; ingresos, gastos y ahorro nunca comparten color;
+- etiquetas/leyenda además del color para mantener accesibilidad;
 - formatos monetarios únicos;
 - formatos de porcentaje únicos;
 - convenciones temporales;
