@@ -8,7 +8,7 @@ from statistics import median
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import Account,Budget,Category,Commitment,Contract,ExtractedFact,FinancialGoal,Mortgage,Transaction
+from ..models import Account,ActionItem,Budget,Category,Commitment,Contract,ExtractedFact,FinancialGoal,Mortgage,Transaction
 from ..models_extended import Liability
 from ..models_analytics import RecurringPreference
 from .calendar import events as calendar_events
