@@ -190,7 +190,7 @@ def test_confirmed_embedded_life_insurance_projects_to_mortgage_and_insurance():
 
             verdict=insurance_verdict(db,use_ai=False)
             verdict_policy=next(row for row in verdict["policies"] if row["id"]==policy.id)
-            assert verdict_policy["annual_premium"]=="378.6200"
+            assert Decimal(verdict_policy["annual_premium"])==Decimal("378.62")
             assert len(verdict_policy["coverages"])==2
         finally:
             db.rollback()
