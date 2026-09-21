@@ -187,6 +187,7 @@ def wealth_home(db:Session=Depends(dbdep)):
             "equity":None,
             "owned_equity":None,
             "ltv":None,
+            "pending_review":[],
             "missing":[
                 {"key":"mortgage","label":"Datos de la hipoteca","reason":"Necesarios para calcular cuota, intereses y escenarios de mejora."}
             ],
@@ -195,13 +196,14 @@ def wealth_home(db:Session=Depends(dbdep)):
     extra=db.scalar(select(MortgageProfileExtra).where(MortgageProfileExtra.mortgage_id==mortgage.id))
     context=mortgage_contract_context(db,mortgage.id)
     by_key=context["by_key"]
+    pending_by_key=context.get("pending_by_key",{})
     extra_payload=_mortgage_extra_payload(extra)
 
     # Confirmed document evidence fills informational gaps without silently
     # overwriting manual profile values.
     evidence_map={
         "apr_rate":"apr_rate","reference_index":"reference_index","differential_rate":"differential_rate",
-        "rate_review_months":"rate_review_months","opening_fee_percent":"opening_fee_percent",
+        "rate_review_months":"rate_review_months","next_review_date":"next_review_date","opening_fee_percent":"opening_fee_percent",
         "early_repayment_fee_percent":"early_repayment_fee_percent","subrogation_fee_percent":"subrogation_fee_percent",
         "cancellation_fee_percent":"cancellation_fee_percent",
     }
@@ -228,20 +230,43 @@ def wealth_home(db:Session=Depends(dbdep)):
         owned_equity=(owned_value-mortgage.remaining_principal).quantize(Decimal("0.01"))
 
     missing=[]
-    def need(key,label,reason,value):
-        if value in {None,""}:missing.append({"key":key,"label":label,"reason":reason})
+    pending_review=[]
+    def candidate_for(keys):
+        for candidate_key in keys:
+            candidate=pending_by_key.get(candidate_key)
+            if candidate:
+                return candidate
+        return None
+    def need(key,label,reason,value,alternatives=None):
+        if value not in {None,""}:
+            return
+        candidate=candidate_for(alternatives or [key])
+        if candidate:
+            pending_review.append({
+                "key":key,
+                "label":label,
+                "reason":"Financito ya ha localizado un valor en la documentación. Revísalo y confírmalo para que entre en cálculos.",
+                "value":candidate.get("value"),
+                "unit":candidate.get("unit"),
+                "document_id":candidate.get("document_id"),
+                "page":candidate.get("page"),
+                "source":candidate.get("source"),
+                "status":candidate.get("status"),
+            })
+        else:
+            missing.append({"key":key,"label":label,"reason":reason})
     if home is None:
         missing.append({"key":"property_value","label":"Valor actual de la vivienda","reason":"Permite calcular patrimonio inmobiliario y LTV."})
-    need("apr_rate","TAE actual","Necesaria para comparar el coste total con ofertas nuevas.",extra_payload.get("apr_rate"))
+    need("apr_rate","TAE actual","La IA local no ha encontrado todavía una TAE explícita suficiente para comparar el coste total.",extra_payload.get("apr_rate"))
     if mortgage.interest_type in {"variable","mixed"}:
-        need("reference_index","Índice de referencia","Necesario para modelar futuras revisiones.",extra_payload.get("reference_index"))
-        need("differential_rate","Diferencial","Necesario para reconstruir el tipo variable.",extra_payload.get("differential_rate"))
-        need("rate_review_months","Periodicidad de revisión","Necesaria para simular cambios de cuota.",extra_payload.get("rate_review_months"))
-        need("next_review_date","Próxima revisión","Permite saber cuándo puede cambiar la cuota.",extra_payload.get("next_review_date"))
+        need("reference_index","Índice de referencia","La IA local no ha encontrado todavía un índice de referencia explícito.",extra_payload.get("reference_index"))
+        need("differential_rate","Diferencial","La IA local no ha encontrado todavía un diferencial explícito.",extra_payload.get("differential_rate"))
+        need("rate_review_months","Periodicidad de revisión","La IA local no ha encontrado todavía la periodicidad de revisión.",extra_payload.get("rate_review_months"))
+        need("next_review_date","Próxima revisión","La IA local no ha encontrado todavía una próxima fecha de revisión explícita.",extra_payload.get("next_review_date"))
     if mortgage.early_repayment_fee is None and extra_payload.get("early_repayment_fee_percent") is None:
-        missing.append({"key":"early_repayment_fee_percent","label":"Comisión de amortización anticipada","reason":"Necesaria para calcular si amortizar compensa."})
+        need("early_repayment_fee_percent","Comisión de amortización anticipada","No consta todavía una comisión o fórmula verificable de amortización anticipada.",None,["early_repayment_fee_percent","early_exit_penalty"])
     if extra_payload.get("subrogation_fee_percent") is None and extra_payload.get("cancellation_fee_percent") is None:
-        missing.append({"key":"subrogation_fee_percent","label":"Coste/comisión de subrogación o salida","reason":"Necesario para calcular el punto de equilibrio al cambiar de banco."})
+        need("subrogation_fee_percent","Coste/comisión de subrogación o salida","No consta todavía un coste o fórmula verificable de salida/subrogación.",None,["subrogation_fee_percent","cancellation_fee_percent","early_exit_penalty"])
 
     return {
         "property":None if home is None else {
@@ -257,6 +282,7 @@ def wealth_home(db:Session=Depends(dbdep)):
         "equity":None if equity is None else str(equity),
         "owned_equity":None if owned_equity is None else str(owned_equity),
         "ltv":None if ltv is None else str(ltv),
+        "pending_review":pending_review,
         "missing":missing,
     }
 
