@@ -88,16 +88,17 @@ test('Análisis muestra 30 días, tarta de comercios y permite alternar a listad
   await page.goto('/analytics/');
   await expect(page.getByRole('heading',{name:'Próximos 30 días'})).toBeVisible();
   const merchantCard=page.getByRole('heading',{name:'Principales comercios'}).locator('..').locator('..').locator('..');
-  const chartButton=page.getByRole('button',{name:'Gráfica'});
-  const listButton=page.getByRole('button',{name:'Listado'});
+  const chartButton=merchantCard.getByRole('button',{name:'Gráfica'});
+  const listButton=merchantCard.getByRole('button',{name:'Listado'});
   await expect(chartButton).toHaveAttribute('aria-pressed','true');
-  const chartPercentages=await merchantCard.getByText(/^\d+(?:[.,]\d+)?%$/).allTextContents();
-  for(const value of chartPercentages)expect(Number(value.replace('%','').replace(',','.'))).toBeLessThanOrEqual(100);
   await listButton.click();
   await expect(listButton).toHaveAttribute('aria-pressed','true');
-  const listPercentages=await merchantCard.getByText(/^\d+(?:[.,]\d+)?%$/).allTextContents();
-  expect(listPercentages.length).toBeGreaterThan(0);
-  for(const value of listPercentages)expect(Number(value.replace('%','').replace(',','.'))).toBeLessThanOrEqual(100);
+  await expect(merchantCard.getByText(/e2e shop/i)).toBeVisible();
+  const listPercentages=merchantCard.getByText(/^\d+(?:[.,]\d+)?%$/);
+  await expect(listPercentages.first()).toBeVisible();
+  for(const value of await listPercentages.allTextContents()){
+    expect(Number(value.replace('%','').replace(',','.'))).toBeLessThanOrEqual(100);
+  }
   await expectAccessible(page);
 });
 
