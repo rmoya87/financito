@@ -123,11 +123,45 @@ test('Patrimonio incorpora Casa y permite eliminar otras deudas',async({page})=>
   const wealthNav=page.getByRole('navigation',{name:'Navegación de Patrimonio'});
   const casa=wealthNav.getByRole('link',{name:'Casa'});
   await expect(casa).toBeVisible();
-  await expect(wealthNav.getByRole('link',{name:'Seguros y protección'})).toBeVisible();
   await casa.click();
   await expect(casa).toHaveAttribute('aria-current','page');
   await expect(page.getByRole('heading',{name:'Vivienda e hipoteca'})).toBeVisible();
   await expect(page.getByRole('heading',{name:'Bienes y evolución de valor'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Seguros relacionados con la vivienda'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Seguros y protección'})).toHaveCount(0);
+
+  await page.getByRole('button',{name:'Nueva hipoteca'}).click();
+  const newMortgage=page.getByRole('dialog',{name:'Nueva hipoteca'});
+  await expect(newMortgage).toBeVisible();
+  await newMortgage.getByPlaceholder('Entidad').fill('Hipoteca E2E');
+  await newMortgage.getByPlaceholder('Capital pendiente (€)').fill('150000');
+  await newMortgage.getByPlaceholder('Cuota mensual (€)').fill('800');
+  await newMortgage.getByPlaceholder('TIN actual (%)').fill('2.5');
+  await newMortgage.getByPlaceholder('Meses pendientes').fill('240');
+  await newMortgage.getByRole('button',{name:'Crear hipoteca'}).click();
+  await expect(page.getByText('Hipoteca E2E',{exact:true}).first()).toBeVisible();
+  const createdMortgageData=page.getByRole('dialog',{name:'Datos de la hipoteca'});
+  await expect(createdMortgageData).toBeVisible();
+  await createdMortgageData.getByRole('button',{name:'Cerrar'}).click();
+
+  await page.getByRole('button',{name:'Datos de la hipoteca'}).click();
+  const mortgageData=page.getByRole('dialog',{name:'Datos de la hipoteca'});
+  await expect(mortgageData).toBeVisible();
+  await expect(mortgageData.getByPlaceholder('Capital pendiente (€)')).toHaveValue('150000.0000');
+  await mortgageData.getByRole('button',{name:'Cerrar'}).click();
+
+  await page.getByRole('button',{name:'Documentación'}).click();
+  const mortgageDocs=page.getByRole('dialog',{name:/Documentos de la hipoteca/});
+  await expect(mortgageDocs).toBeVisible();
+  await expect(mortgageDocs.getByRole('button',{name:'Añadir documentos'})).toBeVisible();
+  await mortgageDocs.locator('input[type="file"]').setInputFiles({
+    name:'hipoteca-e2e.txt',
+    mimeType:'text/plain',
+    buffer:Buffer.from('Hipoteca E2E. Capital pendiente 150000 euros. Cuota mensual 800 euros. TIN 2,5%.'),
+  });
+  await expect(mortgageDocs.getByText('hipoteca-e2e.txt',{exact:true}).first()).toBeVisible();
+  await expect(mortgageDocs.getByRole('link',{name:'Visualizar documento'})).toBeVisible();
+  await mortgageDocs.getByRole('button',{name:'Cerrar'}).click();
 
   const debtCard=page.getByRole('heading',{name:'Otras deudas'}).locator('..');
   await debtCard.getByPlaceholder('Nombre').fill('Deuda E2E');
@@ -156,9 +190,39 @@ test('al pulsar un seguro se abre su ficha completa',async({page})=>{
   await expect(dialog.getByRole('heading',{name:'Condiciones contractuales'})).toBeVisible();
   await expect(dialog.getByRole('heading',{name:'Documentos a consultar'})).toBeVisible();
   await expect(dialog.getByRole('heading',{name:'Coberturas, límites y exclusiones'})).toBeVisible();
+  await dialog.getByRole('button',{name:'Editar seguro'}).click();
+  await expect(dialog.getByRole('heading',{name:'Editar seguro'})).toBeVisible();
+  await dialog.getByPlaceholder('Prima anual (€)').fill('500');
+  await dialog.getByRole('button',{name:'Guardar cambios'}).click();
+  await expect(dialog.getByRole('heading',{name:'Editar seguro'})).not.toBeVisible();
+
+  await dialog.getByRole('button',{name:'Gestionar documentación'}).click();
+  const policyDocs=page.getByRole('dialog',{name:/Documentos del seguro/});
+  await expect(policyDocs).toBeVisible();
+  await expect(policyDocs.getByRole('button',{name:'Añadir documentos'})).toBeVisible();
+  await policyDocs.locator('input[type="file"]').setInputFiles({
+    name:'seguro-e2e.txt',
+    mimeType:'text/plain',
+    buffer:Buffer.from('Seguro de hogar. Cubre daños por agua. Prima anual 500 euros. Franquicia 100 euros.'),
+  });
+  await expect(policyDocs.getByText('seguro-e2e.txt',{exact:true}).first()).toBeVisible();
+  await expect(policyDocs.getByRole('link',{name:'Visualizar documento'})).toBeVisible();
+  await policyDocs.getByRole('button',{name:'Cerrar'}).click();
+
   await expectAccessible(page);
   await dialog.getByRole('button',{name:'Cerrar'}).click();
   await expect(dialog).not.toBeVisible();
+});
+
+test('Mercado muestra análisis local arriba y agrupa evolución dentro de Mis activos',async({page})=>{
+  await page.goto('/markets/');
+  await expect(page.getByRole('heading',{name:'Lectura de tus activos ahora'})).toBeVisible();
+  const assets=page.getByRole('heading',{name:'Mis activos'});
+  await expect(assets).toBeVisible();
+  const body=page.locator('body');
+  await expect(body).not.toContainText("429 Too Many Requests");
+  await expect(body).not.toContainText("api.gdeltproject.org");
+  await expectAccessible(page);
 });
 
 test('Documentos permite subir y procesar un archivo desde la aplicación',async({page})=>{

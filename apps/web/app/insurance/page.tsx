@@ -8,6 +8,7 @@ import {PageHeader} from '@/components/page-header';
 import {Card} from '@/components/ui/card';
 import {Money} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
+import {EntityDocumentsModal} from '@/components/entity-documents-modal';
 
 type CoverageRequirement={id:string;insurance_type:string|null;coverage_type:string;minimum_limit:string|null;currency:string;notes:string|null;enabled:boolean};
 type InsuranceProfile={id:string;insurance_type:string;annual_premium:string;deductible:string|null;currency:string;policy_number_masked?:string|null;contract_id:string|null;provider_name?:string|null;renewal_date?:string|null;cancellation_notice_days?:number|null;early_exit_penalty?:string|null;document_count?:number;source_document_ids?:string[]};
@@ -74,6 +75,7 @@ export default function InsurancePage(){
   const [editingPolicyId,setEditingPolicyId]=useState<string|null>(null);
   const [showPolicyForm,setShowPolicyForm]=useState(false);
   const [selectedPolicyId,setSelectedPolicyId]=useState<string|null>(null);
+  const [documentPolicyId,setDocumentPolicyId]=useState<string|null>(null);
   const [manualMissing,setManualMissing]=useState<Record<string,string>>({});
 
   useEffect(()=>{
@@ -168,7 +170,6 @@ export default function InsurancePage(){
   const status=data?statusText[data.status]:null;
   const selectedPolicy=data?.policies.find(p=>p.id===selectedPolicyId)||null;
   const selectedProfile=profiles.data?.find(p=>p.id===selectedPolicyId)||null;
-  const selectedInsights=selectedPolicy?((insights.data||[]).filter(item=>(selectedPolicy.source_document_ids||[]).includes(item.document_id))):[];
   const selectedPending=selectedPolicy?data?.pending_review.filter(item=>item.policy_id===selectedPolicy.id)||[]:[];
   const selectedMissing=selectedPolicy?data?.missing_information.filter(item=>item.policy_id===selectedPolicy.id)||[]:[];
 
@@ -214,8 +215,7 @@ export default function InsurancePage(){
         <Card><div className="text-xs uppercase text-[var(--muted)]">Coberturas verificadas</div><div className="mt-2 text-2xl font-bold">{data.coverage.verified}</div><div className="mt-1 text-xs text-[var(--muted)]">{data.coverage.gaps.length} hueco(s) · {data.coverage.overlaps.length} posible(s) duplicidad(es)</div></Card>
       </div>
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-2">
-        <Card>
+      <Card className="mt-4">
           <h2 className="font-bold">Pólizas consolidadas</h2>
           <p className="mt-1 text-sm text-[var(--muted)]">Una póliza puede tener varios PDFs, anexos o condiciones. Financito los reúne en una sola ficha y combina su evidencia sin multiplicar seguros.</p>
           <div className="mt-4 space-y-3">{data.policies.length?data.policies.map(p=><div key={p.id} onClick={()=>setSelectedPolicyId(p.id)} className="cursor-pointer rounded-xl bg-[var(--surface-2)] p-4 hover:ring-1 hover:ring-[var(--brand)]">
@@ -228,20 +228,13 @@ export default function InsurancePage(){
             </div>
             {p.coverages.length>0&&<div className="mt-3 flex flex-wrap gap-1">{p.coverages.map(c=><span key={c.id} className="rounded-full bg-white px-2 py-1 text-[11px]">{c.coverage_type}{c.limit_amount?' · '+new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(Number(c.limit_amount)):''}</span>)}</div>}
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Link onClick={e=>e.stopPropagation()} className="fin-button secondary py-1.5 text-xs" href={'/documents/?entity_type=insurance_policy&entity_id='+encodeURIComponent(p.id)+'&label='+encodeURIComponent('Seguro '+(insuranceLabel[p.insurance_type]||p.insurance_type)+' · '+(p.contract?.provider_name||'sin proveedor'))}>Documentación</Link>
+              <button onClick={e=>{e.stopPropagation();setDocumentPolicyId(p.id)}} className="fin-button secondary py-1.5 text-xs" type="button">Documentación</button>
               <button className="fin-button secondary py-1.5 text-xs" type="button" onClick={e=>{e.stopPropagation();analyzePolicyDocs.mutate(p.id)}} disabled={analyzePolicyDocs.isPending}>Buscar datos con IA</button>
               <button className="fin-button secondary py-1.5 text-xs" type="button" onClick={e=>{e.stopPropagation();setSelectedPolicyId(p.id)}}>Ver detalle</button>
               <span className="text-xs text-[var(--muted)]">{p.source_documents?.length??(p.source_document_id?1:0)} documento(s) asociados</span>
             </div>
           </div>):<EmptyState>Crea tu primer seguro y después asocia su documentación desde la propia póliza.</EmptyState>}</div>
         </Card>
-
-        <Card>
-          <h2 className="font-bold">Qué requiere atención</h2>
-          <div className="mt-3 space-y-2">{data.issues.length?data.issues.map(i=><div key={i.code} className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><strong>{i.title}</strong><div className="mt-1 text-xs text-[var(--muted)]">{i.detail}</div></div>):<EmptyState>No hay incidencias materiales detectadas con los datos actuales.</EmptyState>}</div>
-          {data.linked_products.length>0&&<div className="mt-4"><h3 className="text-sm font-semibold">Relaciones con hipoteca u otros productos</h3><div className="mt-2 space-y-2">{data.linked_products.map((x,i)=><div key={x.document_id+x.key+i} className="rounded-xl border border-[var(--border)] p-3 text-xs"><strong>{x.key.replaceAll('_',' ')}</strong><div className="mt-1">{typeof x.value==='string'||typeof x.value==='number'?String(x.value):'Dato vinculado confirmado en la documentación'}</div><Link className="mt-1 inline-block underline" href={'/documents/?document='+encodeURIComponent(x.document_id)}>Ver evidencia{x.page?' · pág. '+x.page:''}</Link></div>)}</div></div>}
-        </Card>
-      </div>
 
       <Card className="mt-4">
         <h2 className="font-bold">Conciliación con tus movimientos</h2>
@@ -313,8 +306,8 @@ export default function InsurancePage(){
 
               <div className="rounded-xl border border-[var(--border)] p-4">
                 <h3 className="font-semibold">Documentos a consultar</h3>
-                <div className="mt-3 space-y-2">{selectedPolicy.source_documents?.length?selectedPolicy.source_documents.map(doc=><Link key={doc.id} className="block rounded-xl bg-[var(--surface-2)] p-3 text-sm underline" href={'/documents/?entity_type=insurance_policy&entity_id='+encodeURIComponent(selectedPolicy.id)+'&document='+encodeURIComponent(doc.id)}>{doc.file_name}</Link>):<EmptyState>Esta póliza no tiene documentos asociados todavía.</EmptyState>}</div>
-                <Link className="fin-button secondary mt-3 inline-flex py-1.5 text-xs" href={'/documents/?entity_type=insurance_policy&entity_id='+encodeURIComponent(selectedPolicy.id)+'&label='+encodeURIComponent('Seguro '+(insuranceLabel[selectedPolicy.insurance_type]||selectedPolicy.insurance_type))}>Gestionar documentación</Link>
+                <div className="mt-3 space-y-2">{selectedPolicy.source_documents?.length?selectedPolicy.source_documents.map(doc=><button key={doc.id} type="button" onClick={()=>setDocumentPolicyId(selectedPolicy.id)} className="block w-full rounded-xl bg-[var(--surface-2)] p-3 text-left text-sm underline">{doc.file_name}</button>):<EmptyState>Esta póliza no tiene documentos asociados todavía.</EmptyState>}</div>
+                <button className="fin-button secondary mt-3 py-1.5 text-xs" type="button" onClick={()=>setDocumentPolicyId(selectedPolicy.id)}>Gestionar documentación</button>
               </div>
             </div>
 
@@ -325,22 +318,31 @@ export default function InsurancePage(){
                 <div className="mt-2 grid gap-2 sm:grid-cols-2"><div>Límite: <strong><Money value={coverage.limit_amount}/></strong></div><div>Franquicia: <strong><Money value={coverage.deductible}/></strong></div><div>Vigencia desde: <strong>{coverage.effective_from||'—'}</strong></div><div>Vigencia hasta: <strong>{coverage.effective_to||'—'}</strong></div></div>
                 <div className="mt-3 text-xs"><strong>Condiciones:</strong> {readableDetail(coverage.conditions)}</div>
                 <div className="mt-2 text-xs"><strong>Exclusiones:</strong> {readableDetail(coverage.exclusions)}</div>
-                {coverage.source_document_id&&<Link className="mt-2 inline-block text-xs underline" href={'/documents/?document='+encodeURIComponent(coverage.source_document_id)}>Ver evidencia{coverage.source_page?' · pág. '+coverage.source_page:''}</Link>}
+                {coverage.source_document_id&&<a className="mt-2 inline-block text-xs underline" target="_blank" rel="noreferrer" href={'/api/v1/documents/'+coverage.source_document_id+'/file'+(coverage.source_page?'#page='+coverage.source_page:'')}>Ver en el documento{coverage.source_page?' · pág. '+coverage.source_page:''}</a>}
               </div>):<EmptyState>No hay coberturas verificadas o extraídas para esta póliza.</EmptyState>}</div>
             </div>
-
-            {selectedInsights.length>0&&<div className="mt-5">
-              <h3 className="font-semibold">Lectura de sus documentos</h3>
-              <div className="mt-3 space-y-3">{selectedInsights.map(item=><div key={item.document_id} className="rounded-xl border border-[var(--border)] p-4 text-sm"><div className="flex justify-between gap-3"><strong>{item.file_name}</strong><Link className="text-xs underline" href={'/documents/?document='+encodeURIComponent(item.document_id)}>Abrir evidencia</Link></div><p className="mt-2">{item.analysis.summary}</p>{item.analysis.exclusions_or_limits.length>0&&<div className="mt-2 text-xs"><strong>Límites/exclusiones:</strong> {item.analysis.exclusions_or_limits.map(x=>x.title||x.detail).join(' · ')}</div>}{item.analysis.risks.length>0&&<div className="mt-2 text-xs"><strong>Riesgos:</strong> {item.analysis.risks.map(x=>x.title||x.detail).join(' · ')}</div>}{item.analysis.penalties.length>0&&<div className="mt-2 text-xs"><strong>Penalizaciones:</strong> {item.analysis.penalties.map(x=>x.title||x.detail).join(' · ')}</div>}</div>)}</div>
-            </div>}
 
             {(selectedPending.length>0||selectedMissing.length>0)&&<div className="mt-5 grid gap-4 lg:grid-cols-2">
               <div><h3 className="font-semibold">Datos encontrados pendientes</h3><div className="mt-2 space-y-2">{selectedPending.length?selectedPending.map((item,i)=><div key={item.field+i} className="rounded-xl bg-[var(--brand-soft)] p-3 text-xs"><strong>{item.label}</strong><div className="mt-1">{readableDetail(item.value)}{item.unit?' '+item.unit:''}</div></div>):<EmptyState>Sin datos pendientes.</EmptyState>}</div></div>
               <div><h3 className="font-semibold">Información que todavía falta</h3><div className="mt-2 space-y-2">{selectedMissing.length?selectedMissing.map((item,i)=><div key={item.field+i} className="rounded-xl bg-[var(--surface-2)] p-3 text-xs"><strong>{item.label}</strong><div className="mt-1 text-[var(--muted)]">{item.why}</div></div>):<EmptyState>No faltan campos básicos.</EmptyState>}</div></div>
             </div>}
 
+            {editingPolicyId===selectedPolicy.id&&showPolicyForm&&<form className="mt-5 grid gap-2 rounded-xl border border-[var(--border)] p-4 sm:grid-cols-2" onSubmit={e=>{e.preventDefault();savePolicy.mutate()}}>
+              <div className="sm:col-span-2"><h3 className="font-semibold">Editar seguro</h3><p className="mt-1 text-xs text-[var(--muted)]">Actualiza solo los datos que conoces. La documentación sigue siendo la fuente de verdad de las condiciones extraídas.</p></div>
+              <input className="fin-input" placeholder="Aseguradora" value={policyForm.provider_name} onChange={e=>setPolicyForm({...policyForm,provider_name:e.target.value})}/>
+              <select className="fin-input" value={policyForm.insurance_type} onChange={e=>setPolicyForm({...policyForm,insurance_type:e.target.value})}><option value="home">Hogar</option><option value="car">Coche</option><option value="life">Vida</option><option value="health">Salud</option><option value="pet">Mascota</option><option value="travel">Viaje</option><option value="other">Otro</option></select>
+              <input className="fin-input" type="number" min="0" step=".01" placeholder="Prima anual (€)" value={policyForm.annual_premium} onChange={e=>setPolicyForm({...policyForm,annual_premium:e.target.value})} required/>
+              <input className="fin-input" type="number" min="0" step=".01" placeholder="Franquicia (€)" value={policyForm.deductible} onChange={e=>setPolicyForm({...policyForm,deductible:e.target.value})}/>
+              <input className="fin-input" placeholder="Nº póliza" value={policyForm.policy_number_masked} onChange={e=>setPolicyForm({...policyForm,policy_number_masked:e.target.value})}/>
+              <input className="fin-input" type="date" aria-label="Fecha renovación en detalle" value={policyForm.renewal_date} onChange={e=>setPolicyForm({...policyForm,renewal_date:e.target.value})}/>
+              <input className="fin-input" type="number" min="0" step="1" placeholder="Preaviso cancelación (días)" value={policyForm.cancellation_notice_days} onChange={e=>setPolicyForm({...policyForm,cancellation_notice_days:e.target.value})}/>
+              <input className="fin-input" type="number" min="0" step=".01" placeholder="Penalización salida (€)" value={policyForm.early_exit_penalty} onChange={e=>setPolicyForm({...policyForm,early_exit_penalty:e.target.value})}/>
+              <div className="sm:col-span-2 flex gap-2"><button className="fin-button" disabled={savePolicy.isPending}>{savePolicy.isPending?'Guardando…':'Guardar cambios'}</button><button className="fin-button secondary" type="button" onClick={()=>{setEditingPolicyId(null);setShowPolicyForm(false)}}>Cancelar</button></div>
+              {savePolicy.error&&<div className="sm:col-span-2"><ErrorState error={savePolicy.error}/></div>}
+            </form>}
+
             <div className="mt-5 flex flex-wrap gap-2">
-              <button className="fin-button" type="button" onClick={()=>{editPolicy(selectedPolicy);setSelectedPolicyId(null)}}>Editar seguro</button>
+              <button className="fin-button" type="button" onClick={()=>editPolicy(selectedPolicy)}>Editar seguro</button>
               <button className="fin-button secondary" type="button" onClick={()=>analyzePolicyDocs.mutate(selectedPolicy.id)} disabled={analyzePolicyDocs.isPending}>Buscar datos con IA</button>
             </div>
           </Card>
@@ -361,8 +363,21 @@ export default function InsurancePage(){
     </Card>
 
     <Card className="mt-4">
-      <div><h2 className="font-bold">Lectura de los documentos de las pólizas</h2><p className="mt-1 text-sm text-[var(--muted)]">Cada archivo conserva su análisis para trazabilidad. Para añadir o asociar documentos usa el botón “Documentación” de la póliza correspondiente.</p></div>
-      <div className="mt-4 grid gap-3 md:grid-cols-2">{insights.data?.length?insights.data.map(x=><div key={x.document_id} className="rounded-xl border border-[var(--border)] p-4"><div className="flex items-start justify-between gap-3"><div><strong>{x.file_name}</strong><div className="mt-1 text-xs text-[var(--muted)]">Confianza interpretativa {Math.round(Number(x.analysis.confidence)*100)}%</div></div><Link className="text-xs underline" href={'/documents/?document='+encodeURIComponent(x.document_id)}>Evidencia</Link></div><p className="mt-3 text-sm">{x.analysis.summary}</p>{x.analysis.exclusions_or_limits.length>0&&<div className="mt-3 text-xs"><strong>Límites:</strong> {x.analysis.exclusions_or_limits.slice(0,3).map(i=>i.title||i.detail).join(' · ')}</div>}{x.analysis.optimization_opportunities.length>0&&<div className="mt-3 rounded-xl bg-[var(--brand-soft)] p-3 text-xs"><strong>A revisar:</strong> {x.analysis.optimization_opportunities.slice(0,3).map(i=>i.title||i.detail).join(' · ')}</div>}{x.analysis.cross_area_impacts.length>0&&<div className="mt-3 text-xs text-[var(--muted)]"><strong>Impactos en otras áreas:</strong> {x.analysis.cross_area_impacts.slice(0,3).map(i=>i.title||i.detail).join(' · ')}</div>}</div>):<EmptyState>Crea una póliza y asocia documentación para obtener conclusiones locales.</EmptyState>}</div>
+      <div><h2 className="font-bold">Lectura de los documentos de las pólizas</h2><p className="mt-1 text-sm text-[var(--muted)]">Resumen corto por póliza: qué cubre, ventajas, límites y penalizaciones. Para el detalle exacto abre el documento en la página indicada.</p></div>
+      <div className="mt-4 space-y-4">{data?.policies.length?data.policies.map(policy=>{
+        const policyDocs=new Set(policy.source_document_ids||[]);
+        const rows=(insights.data||[]).filter(item=>policyDocs.has(item.document_id));
+        return <div key={policy.id} className="rounded-xl border border-[var(--border)] p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold">{insuranceLabel[policy.insurance_type]||policy.insurance_type} · {policy.contract?.provider_name||'Proveedor pendiente'}</h3><div className="mt-1 text-xs text-[var(--muted)]">{policy.source_documents?.length||0} documento(s) asociados</div></div><button className="fin-button secondary py-1.5 text-xs" type="button" onClick={()=>setDocumentPolicyId(policy.id)}>Documentación</button></div>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <div className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="text-xs font-semibold">Qué cubre</div><div className="mt-2 space-y-1">{policy.coverages.length?policy.coverages.slice(0,6).map(coverage=><div key={coverage.id}>{coverage.coverage_type}{coverage.limit_amount?' · '+new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(Number(coverage.limit_amount)):''}</div>):<span className="text-[var(--muted)]">Sin coberturas verificadas todavía.</span>}</div></div>
+            <div className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="text-xs font-semibold">Ventajas / puntos favorables</div><div className="mt-2 space-y-1">{rows.flatMap(x=>x.analysis.advantages).slice(0,5).map((item,i)=><div key={i}>{item.title||item.detail}{item.pages?.length&&<a className="ml-1 text-xs underline" target="_blank" rel="noreferrer" href={'/api/v1/documents/'+rows.find(r=>r.analysis.advantages.includes(item))?.document_id+'/file#page='+item.pages[0]}>pág. {item.pages[0]}</a>}</div>)}{!rows.flatMap(x=>x.analysis.advantages).length&&<span className="text-[var(--muted)]">Sin ventajas específicas extraídas.</span>}</div></div>
+            <div className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="text-xs font-semibold">Penalizaciones</div><div className="mt-2 space-y-1">{rows.flatMap(x=>x.analysis.penalties).slice(0,5).map((item,i)=><div key={i}>{item.title||item.detail}</div>)}{!rows.flatMap(x=>x.analysis.penalties).length&&<span className="text-[var(--muted)]">No se han extraído penalizaciones explícitas.</span>}</div></div>
+            <div className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="text-xs font-semibold">Límites / exclusiones</div><div className="mt-2 space-y-1">{rows.flatMap(x=>x.analysis.exclusions_or_limits).slice(0,5).map((item,i)=><div key={i}>{item.title||item.detail}</div>)}{!rows.flatMap(x=>x.analysis.exclusions_or_limits).length&&<span className="text-[var(--muted)]">Sin límites adicionales extraídos.</span>}</div></div>
+          </div>
+        </div>;
+      }):<EmptyState>No hay pólizas consolidadas.</EmptyState>}</div>
     </Card>
+    {documentPolicyId&&<EntityDocumentsModal open={!!documentPolicyId} onClose={()=>setDocumentPolicyId(null)} entityType="insurance_policy" entityId={documentPolicyId} documentType="insurance" title={'Documentos del seguro · '+(data?.policies.find(p=>p.id===documentPolicyId)?.contract?.provider_name||insuranceLabel[data?.policies.find(p=>p.id===documentPolicyId)?.insurance_type||'unknown']||'Seguro')}/>}
   </>;
 }

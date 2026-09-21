@@ -8,6 +8,7 @@ import {PageHeader} from '@/components/page-header';
 import {Card} from '@/components/ui/card';
 import {Money,formatNumber} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
+import {EntityDocumentsModal} from '@/components/entity-documents-modal';
 
 type WealthSummary={
   accounts:string;manual_assets:string;investments:string;liabilities:string;mortgages:string;
@@ -72,6 +73,8 @@ export default function WealthPage(){
     rate_review_months:'',next_review_date:'',opening_fee_percent:'',early_repayment_fee_percent:'',subrogation_fee_percent:'',cancellation_fee_percent:'',notes:'',
   });
   const [homeValue,setHomeValue]=useState('');
+  const [showMortgageDocuments,setShowMortgageDocuments]=useState(false);
+  const [showMortgageEdit,setShowMortgageEdit]=useState(false);
 
   useEffect(()=>{
     if(!creatingMortgage&&!selectedMortgageId&&mortgages.data?.length)setSelectedMortgageId(mortgages.data[0].id);
@@ -235,65 +238,23 @@ export default function WealthPage(){
               <option value="">{mortgages.data?.length?'Selecciona una hipoteca…':'Sin hipotecas'}</option>
               {mortgages.data?.map(m=><option key={m.id} value={m.id}>{m.lender} · {Number(m.remaining_principal).toLocaleString('es-ES')} {m.currency}</option>)}
             </select>
-            <button className="fin-button py-2 text-xs" type="button" onClick={()=>{setCreatingMortgage(true);setSelectedMortgageId('');clearMortgageForms()}}>Nueva hipoteca</button>
-            {selectedMortgageId&&<Link className="fin-button secondary py-2 text-xs" href={'/documents/?entity_type=mortgage&entity_id='+encodeURIComponent(selectedMortgageId)+'&label='+encodeURIComponent('Hipoteca · '+(home.data?.mortgage?.lender||'seleccionada'))}>Documentación</Link>}
+            <button className="fin-button py-2 text-xs" type="button" onClick={()=>{setCreatingMortgage(true);setSelectedMortgageId('');clearMortgageForms();setShowMortgageEdit(true)}}>Nueva hipoteca</button>
+            {selectedMortgageId&&<button className="fin-button secondary py-2 text-xs" type="button" onClick={()=>setShowMortgageEdit(true)}>Datos de la hipoteca</button>}
+            {selectedMortgageId&&<button className="fin-button secondary py-2 text-xs" type="button" onClick={()=>setShowMortgageDocuments(true)}>Documentación</button>}
             <Link className="fin-button secondary py-2 text-xs" href="/tools/">Simulaciones</Link>
           </div>
         </div>
 
         {home.isLoading?<div className="mt-4"><Loading/></div>:home.error?<div className="mt-4"><ErrorState error={home.error}/></div>:home.data&&<>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-xl bg-[var(--surface-2)] p-4"><div className="text-xs text-[var(--muted)]">Valor vivienda</div><div className="mt-1 text-xl font-bold">{home.data.property?<Money value={home.data.property.value}/>:<span>—</span>}</div></div>
-            <div className="rounded-xl bg-[var(--surface-2)] p-4"><div className="text-xs text-[var(--muted)]">Capital pendiente</div><div className="mt-1 text-xl font-bold">{home.data.mortgage?<Money value={home.data.mortgage.remaining_principal}/>:<span>—</span>}</div></div>
-            <div className="rounded-xl bg-[var(--surface-2)] p-4"><div className="text-xs text-[var(--muted)]">Equity estimado</div><div className="mt-1 text-xl font-bold">{home.data.equity!==null?<Money value={home.data.equity}/>:<span>—</span>}</div><div className="mt-1 text-[11px] text-[var(--muted)]">Valor de la vivienda menos capital pendiente</div></div>
+            <div className="rounded-xl bg-[var(--surface-2)] p-4"><div className="text-xs text-[var(--muted)]">Valor vivienda</div><div className="mt-1 text-xl font-bold">{home.data.property?<Money value={home.data.property.value}/>:<span>—</span>}</div><div className="mt-1 text-[11px] text-[var(--muted)]">{home.data.property?new Date(home.data.property.valuation_date).toLocaleDateString('es-ES'):'Sin valoración'}</div></div>
+            <div className="rounded-xl bg-[var(--surface-2)] p-4"><div className="text-xs text-[var(--muted)]">Capital pendiente</div><div className="mt-1 text-xl font-bold">{home.data.mortgage?<Money value={home.data.mortgage.remaining_principal}/>:<span>—</span>}</div><div className="mt-1 text-[11px] text-[var(--muted)]">{home.data.mortgage?.lender||'Sin hipoteca'}</div></div>
+            <div className="rounded-xl bg-[var(--surface-2)] p-4"><div className="text-xs text-[var(--muted)]">Cuota mensual</div><div className="mt-1 text-xl font-bold">{home.data.mortgage?<Money value={home.data.mortgage.monthly_payment}/>:<span>—</span>}</div><div className="mt-1 text-[11px] text-[var(--muted)]">{home.data.mortgage?home.data.mortgage.remaining_months+' meses pendientes':'—'}</div></div>
+            <div className="rounded-xl bg-[var(--surface-2)] p-4"><div className="text-xs text-[var(--muted)]">Tipo / TIN</div><div className="mt-1 text-xl font-bold">{home.data.mortgage?(home.data.mortgage.interest_type==='fixed'?'Fija':home.data.mortgage.interest_type==='variable'?'Variable':'Mixta'):'—'}</div><div className="mt-1 text-[11px] text-[var(--muted)]">{home.data.mortgage?(Number(home.data.mortgage.nominal_rate)*100).toLocaleString('es-ES',{maximumFractionDigits:3})+'% TIN':'—'}</div></div>
+            <div className="rounded-xl bg-[var(--surface-2)] p-4"><div className="text-xs text-[var(--muted)]">TAE</div><div className="mt-1 text-xl font-bold">{home.data.extra.apr_rate===null?'—':(Number(home.data.extra.apr_rate)*100).toLocaleString('es-ES',{maximumFractionDigits:3})+'%'}</div><div className="mt-1 text-[11px] text-[var(--muted)]">{home.data.extra.reference_index||'Sin índice asociado'}</div></div>
+            <div className="rounded-xl bg-[var(--surface-2)] p-4"><div className="text-xs text-[var(--muted)]">Vencimiento</div><div className="mt-1 text-xl font-bold">{home.data.extra.maturity_date?new Date(home.data.extra.maturity_date).toLocaleDateString('es-ES'):'—'}</div><div className="mt-1 text-[11px] text-[var(--muted)]">{home.data.extra.next_review_date?'Próxima revisión '+new Date(home.data.extra.next_review_date).toLocaleDateString('es-ES'):'Sin próxima revisión informada'}</div></div>
+            <div className="rounded-xl bg-[var(--surface-2)] p-4"><div className="text-xs text-[var(--muted)]">Equity estimado</div><div className="mt-1 text-xl font-bold">{home.data.equity!==null?<Money value={home.data.equity}/>:<span>—</span>}</div><div className="mt-1 text-[11px] text-[var(--muted)]">Vivienda menos capital pendiente</div></div>
             <div className="rounded-xl bg-[var(--surface-2)] p-4"><div className="text-xs text-[var(--muted)]">LTV actual</div><div className="mt-1 text-xl font-bold">{home.data.ltv===null?'—':Number(home.data.ltv).toLocaleString('es-ES',{maximumFractionDigits:1})+'%'}</div><div className="mt-1 text-[11px] text-[var(--muted)]">Capital pendiente / valor atribuible</div></div>
-          </div>
-
-          <div className="mt-4 grid gap-4 xl:grid-cols-2">
-            <div className="rounded-xl border border-[var(--border)] p-4">
-              <div className="flex items-start justify-between gap-2"><h3 className="font-semibold">{creatingMortgage?'Nueva hipoteca':'Datos principales de la hipoteca'}</h3>{selectedMortgageId&&!creatingMortgage&&<button type="button" className="text-xs underline" onClick={()=>{if(window.confirm('¿Eliminar esta hipoteca? La documentación quedará en la biblioteca sin borrar los archivos.'))deleteMortgage.mutate(selectedMortgageId)}} disabled={deleteMortgage.isPending}>{deleteMortgage.isPending?'Eliminando…':'Eliminar hipoteca'}</button>}</div>
-              <p className="mt-1 text-xs text-[var(--muted)]">Si un campo está mal o ha cambiado, corrígelo aquí. No necesitas volver a subir documentación para actualizar un saldo o cuota actual.</p>
-              <form className="mt-3 grid gap-2 sm:grid-cols-2" onSubmit={(e:FormEvent)=>{e.preventDefault();saveMortgage.mutate()}}>
-                <input className="fin-input sm:col-span-2" placeholder="Entidad" value={mortgageForm.lender} onChange={e=>setMortgageForm({...mortgageForm,lender:e.target.value})} required/>
-                <input className="fin-input" type="number" min="0.01" step=".01" placeholder="Capital pendiente (€)" value={mortgageForm.remaining_principal} onChange={e=>setMortgageForm({...mortgageForm,remaining_principal:e.target.value})} required/>
-                <input className="fin-input" type="number" min="0.01" step=".01" placeholder="Cuota mensual (€)" value={mortgageForm.monthly_payment} onChange={e=>setMortgageForm({...mortgageForm,monthly_payment:e.target.value})} required/>
-                <select className="fin-input" aria-label="Tipo de hipoteca" value={mortgageForm.interest_type} onChange={e=>setMortgageForm({...mortgageForm,interest_type:e.target.value})}>
-                  <option value="fixed">Fija</option><option value="variable">Variable</option><option value="mixed">Mixta</option>
-                </select>
-                <input className="fin-input" type="number" min="0" step=".001" placeholder="TIN actual (%)" value={mortgageForm.nominal_rate_pct} onChange={e=>setMortgageForm({...mortgageForm,nominal_rate_pct:e.target.value})} required/>
-                <input className="fin-input" type="number" min="1" step="1" placeholder="Meses pendientes" value={mortgageForm.remaining_months} onChange={e=>setMortgageForm({...mortgageForm,remaining_months:e.target.value})} required/>
-                <input className="fin-input" type="number" min="0" step=".01" placeholder="Comisión amortización en € (si consta)" value={mortgageForm.early_repayment_fee} onChange={e=>setMortgageForm({...mortgageForm,early_repayment_fee:e.target.value})}/>
-                <button className="fin-button sm:col-span-2" disabled={saveMortgage.isPending}>{saveMortgage.isPending?'Guardando…':creatingMortgage?'Crear hipoteca':'Actualizar hipoteca'}</button>
-              </form>
-              {saveMortgage.error&&<div className="mt-3"><ErrorState error={saveMortgage.error}/></div>}
-            </div>
-
-            <div className="rounded-xl border border-[var(--border)] p-4">
-              <h3 className="font-semibold">Valor de la vivienda y datos para comparar</h3>
-              <p className="mt-1 text-xs text-[var(--muted)]">Completar estos datos mejora el cálculo de LTV, coste total y escenarios de cambio. Los hechos confirmados de tus documentos aparecen automáticamente cuando existen.</p>
-              <form className="mt-3 grid gap-2 sm:grid-cols-2" onSubmit={(e:FormEvent)=>{e.preventDefault();saveHomeValue.mutate()}}>
-                <input className="fin-input" type="number" min="0" step=".01" placeholder="Valor actual vivienda (€)" value={homeValue} onChange={e=>setHomeValue(e.target.value)} required/>
-                <button className="fin-button secondary" disabled={saveHomeValue.isPending}>{saveHomeValue.isPending?'Guardando…':'Guardar valoración'}</button>
-              </form>
-              <form className="mt-3 grid gap-2 sm:grid-cols-2" onSubmit={(e:FormEvent)=>{e.preventDefault();saveExtra.mutate()}}>
-                <input className="fin-input" type="number" min="0" step=".01" placeholder="Capital inicial (€)" value={extraForm.original_principal} onChange={e=>setExtraForm({...extraForm,original_principal:e.target.value})}/>
-                <input className="fin-input" type="number" min="1" step="1" placeholder="Plazo inicial (meses)" value={extraForm.original_term_months} onChange={e=>setExtraForm({...extraForm,original_term_months:e.target.value})}/>
-                <label className="text-xs text-[var(--muted)]">Inicio<input className="fin-input mt-1" type="date" value={extraForm.start_date} onChange={e=>setExtraForm({...extraForm,start_date:e.target.value})}/></label>
-                <label className="text-xs text-[var(--muted)]">Vencimiento<input className="fin-input mt-1" type="date" value={extraForm.maturity_date} onChange={e=>setExtraForm({...extraForm,maturity_date:e.target.value})}/></label>
-                <input className="fin-input" type="number" min="0" step=".001" placeholder="TAE actual (%)" value={extraForm.apr_rate_pct} onChange={e=>setExtraForm({...extraForm,apr_rate_pct:e.target.value})}/>
-                <input className="fin-input" placeholder="Índice, ej. Euríbor 12m" value={extraForm.reference_index} onChange={e=>setExtraForm({...extraForm,reference_index:e.target.value})}/>
-                <input className="fin-input" type="number" step=".001" placeholder="Diferencial (%)" value={extraForm.differential_rate_pct} onChange={e=>setExtraForm({...extraForm,differential_rate_pct:e.target.value})}/>
-                <input className="fin-input" type="number" min="1" step="1" placeholder="Revisión cada N meses" value={extraForm.rate_review_months} onChange={e=>setExtraForm({...extraForm,rate_review_months:e.target.value})}/>
-                <label className="text-xs text-[var(--muted)]">Próxima revisión<input className="fin-input mt-1" type="date" value={extraForm.next_review_date} onChange={e=>setExtraForm({...extraForm,next_review_date:e.target.value})}/></label>
-                <input className="fin-input" type="number" min="0" step=".001" placeholder="Comisión apertura (%)" value={extraForm.opening_fee_percent} onChange={e=>setExtraForm({...extraForm,opening_fee_percent:e.target.value})}/>
-                <input className="fin-input" type="number" min="0" step=".001" placeholder="Amortización anticipada (%)" value={extraForm.early_repayment_fee_percent} onChange={e=>setExtraForm({...extraForm,early_repayment_fee_percent:e.target.value})}/>
-                <input className="fin-input" type="number" min="0" step=".001" placeholder="Subrogación (%)" value={extraForm.subrogation_fee_percent} onChange={e=>setExtraForm({...extraForm,subrogation_fee_percent:e.target.value})}/>
-                <input className="fin-input" type="number" min="0" step=".001" placeholder="Cancelación/salida (%)" value={extraForm.cancellation_fee_percent} onChange={e=>setExtraForm({...extraForm,cancellation_fee_percent:e.target.value})}/>
-                <textarea className="fin-input sm:col-span-2" placeholder="Notas relevantes" value={extraForm.notes} onChange={e=>setExtraForm({...extraForm,notes:e.target.value})}/>
-                <button className="fin-button sm:col-span-2" disabled={saveExtra.isPending||!selectedMortgageId||creatingMortgage}>{saveExtra.isPending?'Guardando…':'Guardar datos de comparación'}</button>
-              </form>
-              {saveExtra.error&&<div className="mt-3"><ErrorState error={saveExtra.error}/></div>}
-            </div>
           </div>
 
           {home.data.pending_review?.length>0&&<div className="mt-4 rounded-xl border border-[var(--brand)] bg-[var(--brand-soft)] p-4">
@@ -356,13 +317,6 @@ export default function WealthPage(){
             </div>
           </div>
 
-          <div className="mt-4 rounded-xl border border-[var(--border)] p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div><h3 className="font-semibold">Seguros y protección</h3><p className="mt-1 text-xs text-[var(--muted)]">Todos tus seguros quedan dentro del área Casa para relacionar protección, coste, vivienda e hipoteca. Pulsa una póliza para abrir su ficha completa.</p></div>
-              <Link className="text-xs underline" href="/insurance/">Gestionar todos los seguros</Link>
-            </div>
-            <div className="mt-3 grid gap-2 md:grid-cols-2">{d.insurance.policies.length?d.insurance.policies.map(x=><Link href={'/insurance/?policy='+encodeURIComponent(x.id)} key={x.id} className="rounded-xl bg-[var(--surface-2)] p-3 text-sm hover:ring-1 hover:ring-[var(--brand)]"><div className="flex justify-between gap-3"><div><strong>{x.insurance_type}</strong><div className="text-xs text-[var(--muted)]">{x.provider||'Proveedor no identificado'}{x.deductible?' · franquicia '+formatNumber(x.deductible,2,2)+' €':''}</div></div><div className="text-right"><strong><Money value={x.annual_premium} currency={x.currency}/></strong><div className="text-[11px] text-[var(--muted)]">al año</div></div></div><div className="mt-2 text-[11px] underline">Ver condiciones, coberturas y documentos</div></Link>):<EmptyState>No hay pólizas registradas.</EmptyState>}</div>
-          </div>
         </>}
       </Card>
 
@@ -445,6 +399,56 @@ export default function WealthPage(){
           {(addDebt.error||removeDebt.error)&&<div className="mt-3"><ErrorState error={(addDebt.error||removeDebt.error)!}/></div>}
         </Card>
       </div>
+
+    {showMortgageEdit&&<div className="fixed inset-0 z-50 overflow-y-auto bg-black/45 p-4 md:p-8" role="dialog" aria-modal="true" aria-label={creatingMortgage?'Nueva hipoteca':'Datos de la hipoteca'}>
+      <div className="mx-auto max-w-5xl"><Card>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div><div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Casa</div><h2 className="mt-1 text-xl font-bold">{creatingMortgage?'Nueva hipoteca':'Actualizar datos de la hipoteca'}</h2><p className="mt-1 text-sm text-[var(--muted)]">Aquí mantienes los datos que usa Financito para patrimonio y simulaciones. La documentación se gestiona aparte y nunca se sustituye por datos inventados.</p></div>
+          <button className="fin-button secondary py-2 text-xs" type="button" onClick={()=>setShowMortgageEdit(false)}>Cerrar</button>
+        </div>
+        <form className="mt-4 grid gap-2 sm:grid-cols-2" onSubmit={(e:FormEvent)=>{e.preventDefault();saveMortgage.mutate()}}>
+          <input className="fin-input sm:col-span-2" placeholder="Entidad" value={mortgageForm.lender} onChange={e=>setMortgageForm({...mortgageForm,lender:e.target.value})} required/>
+          <input className="fin-input" type="number" min="0.01" step=".01" placeholder="Capital pendiente (€)" value={mortgageForm.remaining_principal} onChange={e=>setMortgageForm({...mortgageForm,remaining_principal:e.target.value})} required/>
+          <input className="fin-input" type="number" min="0.01" step=".01" placeholder="Cuota mensual (€)" value={mortgageForm.monthly_payment} onChange={e=>setMortgageForm({...mortgageForm,monthly_payment:e.target.value})} required/>
+          <select className="fin-input" aria-label="Tipo de hipoteca" value={mortgageForm.interest_type} onChange={e=>setMortgageForm({...mortgageForm,interest_type:e.target.value})}><option value="fixed">Fija</option><option value="variable">Variable</option><option value="mixed">Mixta</option></select>
+          <input className="fin-input" type="number" min="0" step=".001" placeholder="TIN actual (%)" value={mortgageForm.nominal_rate_pct} onChange={e=>setMortgageForm({...mortgageForm,nominal_rate_pct:e.target.value})} required/>
+          <input className="fin-input" type="number" min="1" step="1" placeholder="Meses pendientes" value={mortgageForm.remaining_months} onChange={e=>setMortgageForm({...mortgageForm,remaining_months:e.target.value})} required/>
+          <input className="fin-input" type="number" min="0" step=".01" placeholder="Comisión amortización en €" value={mortgageForm.early_repayment_fee} onChange={e=>setMortgageForm({...mortgageForm,early_repayment_fee:e.target.value})}/>
+          <button className="fin-button sm:col-span-2" disabled={saveMortgage.isPending}>{saveMortgage.isPending?'Guardando…':creatingMortgage?'Crear hipoteca':'Guardar datos principales'}</button>
+        </form>
+        {!creatingMortgage&&selectedMortgageId&&<>
+          <div className="my-5 border-t border-[var(--border)]"/>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <form className="grid gap-2" onSubmit={(e:FormEvent)=>{e.preventDefault();saveHomeValue.mutate()}}>
+              <h3 className="font-semibold">Valor de la vivienda</h3>
+              <input className="fin-input" type="number" min="0" step=".01" placeholder="Valor actual vivienda (€)" value={homeValue} onChange={e=>setHomeValue(e.target.value)} required/>
+              <button className="fin-button secondary" disabled={saveHomeValue.isPending}>{saveHomeValue.isPending?'Guardando…':'Guardar valoración'}</button>
+            </form>
+            <form className="grid gap-2 sm:grid-cols-2" onSubmit={(e:FormEvent)=>{e.preventDefault();saveExtra.mutate()}}>
+              <h3 className="font-semibold sm:col-span-2">Condiciones y calendario</h3>
+              <input className="fin-input" type="number" min="0" step=".01" placeholder="Capital inicial (€)" value={extraForm.original_principal} onChange={e=>setExtraForm({...extraForm,original_principal:e.target.value})}/>
+              <input className="fin-input" type="number" min="1" step="1" placeholder="Plazo inicial (meses)" value={extraForm.original_term_months} onChange={e=>setExtraForm({...extraForm,original_term_months:e.target.value})}/>
+              <label className="text-xs text-[var(--muted)]">Inicio<input className="fin-input mt-1" type="date" value={extraForm.start_date} onChange={e=>setExtraForm({...extraForm,start_date:e.target.value})}/></label>
+              <label className="text-xs text-[var(--muted)]">Vencimiento<input className="fin-input mt-1" type="date" value={extraForm.maturity_date} onChange={e=>setExtraForm({...extraForm,maturity_date:e.target.value})}/></label>
+              <input className="fin-input" type="number" min="0" step=".001" placeholder="TAE actual (%)" value={extraForm.apr_rate_pct} onChange={e=>setExtraForm({...extraForm,apr_rate_pct:e.target.value})}/>
+              <input className="fin-input" placeholder="Índice, ej. Euríbor 12m" value={extraForm.reference_index} onChange={e=>setExtraForm({...extraForm,reference_index:e.target.value})}/>
+              <input className="fin-input" type="number" step=".001" placeholder="Diferencial (%)" value={extraForm.differential_rate_pct} onChange={e=>setExtraForm({...extraForm,differential_rate_pct:e.target.value})}/>
+              <input className="fin-input" type="number" min="1" step="1" placeholder="Revisión cada N meses" value={extraForm.rate_review_months} onChange={e=>setExtraForm({...extraForm,rate_review_months:e.target.value})}/>
+              <label className="text-xs text-[var(--muted)] sm:col-span-2">Próxima revisión<input className="fin-input mt-1" type="date" value={extraForm.next_review_date} onChange={e=>setExtraForm({...extraForm,next_review_date:e.target.value})}/></label>
+              <input className="fin-input" type="number" min="0" step=".001" placeholder="Comisión apertura (%)" value={extraForm.opening_fee_percent} onChange={e=>setExtraForm({...extraForm,opening_fee_percent:e.target.value})}/>
+              <input className="fin-input" type="number" min="0" step=".001" placeholder="Amortización anticipada (%)" value={extraForm.early_repayment_fee_percent} onChange={e=>setExtraForm({...extraForm,early_repayment_fee_percent:e.target.value})}/>
+              <input className="fin-input" type="number" min="0" step=".001" placeholder="Subrogación (%)" value={extraForm.subrogation_fee_percent} onChange={e=>setExtraForm({...extraForm,subrogation_fee_percent:e.target.value})}/>
+              <input className="fin-input" type="number" min="0" step=".001" placeholder="Cancelación/salida (%)" value={extraForm.cancellation_fee_percent} onChange={e=>setExtraForm({...extraForm,cancellation_fee_percent:e.target.value})}/>
+              <textarea className="fin-input sm:col-span-2" placeholder="Notas relevantes" value={extraForm.notes} onChange={e=>setExtraForm({...extraForm,notes:e.target.value})}/>
+              <button className="fin-button sm:col-span-2" disabled={saveExtra.isPending}>{saveExtra.isPending?'Guardando…':'Guardar condiciones'}</button>
+            </form>
+          </div>
+          <div className="mt-4 flex justify-end"><button type="button" className="text-xs underline" onClick={()=>{if(window.confirm('¿Eliminar esta hipoteca? La documentación permanecerá en la biblioteca.')){deleteMortgage.mutate(selectedMortgageId);setShowMortgageEdit(false)}}}>Eliminar hipoteca</button></div>
+        </>}
+        {(saveMortgage.error||saveExtra.error||saveHomeValue.error)&&<div className="mt-3"><ErrorState error={(saveMortgage.error||saveExtra.error||saveHomeValue.error)!}/></div>}
+      </Card></div>
+    </div>}
+    {selectedMortgageId&&<EntityDocumentsModal open={showMortgageDocuments} onClose={()=>setShowMortgageDocuments(false)} entityType="mortgage" entityId={selectedMortgageId} documentType="mortgage" title={'Documentos de la hipoteca · '+(home.data?.mortgage?.lender||'seleccionada')}/>}
     </>}
   </>;
 }
