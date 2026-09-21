@@ -408,7 +408,7 @@ test('Para ti abre Seguros y coberturas en modal sin salir de Inicio',async({pag
   await expect(insuranceDialog).not.toBeVisible();
 });
 
-test('Patrimonio permite eliminar directamente un seguro de hogar',async({page})=>{
+test('Casa resume los seguros y la gestión se realiza desde Seguros',async({page})=>{
   await page.goto('/insurance/');
   await page.getByRole('button',{name:'Nuevo seguro'}).click();
   await page.getByRole('combobox',{name:'Cuenta bancaria del seguro'}).first().selectOption({index:1});
@@ -418,14 +418,17 @@ test('Patrimonio permite eliminar directamente un seguro de hogar',async({page})
   await expect(page.getByText('Seguro Borrar Patrimonio E2E',{exact:true})).toBeVisible();
 
   await page.goto('/wealth/');
-  const homeInsurance=page.getByRole('heading',{name:'Seguros relacionados con la vivienda'}).locator('..').locator('..').locator('..');
-  const targetInsurance=homeInsurance.locator('div.rounded-lg').filter({hasText:'Seguro Borrar Patrimonio E2E'});
-  await expect(targetInsurance.getByText('Seguro Borrar Patrimonio E2E',{exact:true})).toBeVisible();
-  page.once('dialog',dialog=>dialog.accept());
-  await targetInsurance.getByRole('button',{name:'Eliminar seguro'}).click();
-  await expect(homeInsurance.getByText('Seguro Borrar Patrimonio E2E',{exact:true})).not.toBeVisible();
+  await expect(page.getByRole('heading',{name:'Casa'})).toBeVisible();
+  await expect(page.getByText('Seguro Borrar Patrimonio E2E',{exact:true})).toBeVisible();
+  await page.getByRole('link',{name:'Ver seguros'}).click();
+  await expect(page.getByRole('heading',{name:'Seguros y coberturas'})).toBeVisible();
 
-  await page.goto('/insurance/');
+  await page.getByText('Seguro Borrar Patrimonio E2E',{exact:true}).click();
+  const detail=page.getByRole('dialog',{name:'Detalle del seguro'});
+  await expect(detail).toBeVisible();
+  page.once('dialog',dialog=>dialog.accept());
+  await detail.getByRole('button',{name:'Eliminar seguro'}).click();
+  await expect(detail).not.toBeVisible();
   await expect(page.getByText('Seguro Borrar Patrimonio E2E',{exact:true})).not.toBeVisible();
 });
 
