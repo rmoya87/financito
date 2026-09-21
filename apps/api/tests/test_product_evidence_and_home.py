@@ -225,6 +225,8 @@ def test_confirmed_mortgage_document_projects_extended_profile_fields():
             source_type="user",source_ref=document.id,
         ))
         values={
+            "start_date":"16/11/2015",
+            "maturity_date":"16/11/2045",
             "apr_rate":"3.45",
             "reference_index":"Euríbor 12 meses",
             "differential_rate":"0.75",
@@ -245,6 +247,8 @@ def test_confirmed_mortgage_document_projects_extended_profile_fields():
         synchronize_document_evidence(db,document)
         extra=db.scalar(select(MortgageProfileExtra).where(MortgageProfileExtra.mortgage_id==mortgage.id))
         assert extra is not None
+        assert str(extra.start_date)=="2015-11-16"
+        assert str(extra.maturity_date)=="2045-11-16"
         assert extra.apr_rate==Decimal("0.0345")
         assert extra.reference_index=="Euríbor 12 meses"
         assert extra.differential_rate==Decimal("0.0075")
