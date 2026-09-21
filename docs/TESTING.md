@@ -117,3 +117,11 @@ Las pruebas cubren:
 - proyección de hechos hipotecarios confirmados al perfil ampliado, incluido `differential_rate`;
 - conservación de hechos inferidos por IA como pendientes de revisión, separados de la evidencia confirmada;
 - presentación en Seguros de franquicia, renovación, preaviso y penalización localizados por IA como pendientes, sin tratarlos como ausentes ni utilizarlos todavía en cálculos.
+
+
+## Regresiones de documentación contextual por producto
+Las pruebas cubren:
+- selección explícita entre varias hipotecas en `/wealth/home?mortgage_id=...`;
+- borrado de una hipoteca manteniendo intactos los documentos y eliminando únicamente sus vínculos;
+- alta, edición y borrado de pólizas con categoría y datos contractuales;
+- filtrado de documentos por entidad para que una hipoteca o seguro no muestre archivos de otro producto.

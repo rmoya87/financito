@@ -18,7 +18,19 @@ class SecurityCreate(BaseModel):
 class TradeCreate(BaseModel):
     portfolio_id:str; security_id:str; side:str=Field(pattern="^(buy|sell)$"); quantity:Decimal=Field(gt=0); price:Decimal=Field(gt=0); fees:Decimal=Decimal("0"); currency:str="EUR"; fx_rate:Decimal=Decimal("1"); executed_at:datetime
 class InsuranceCreate(BaseModel):
-    insurance_type:str; annual_premium:Decimal; contract_id:str|None=None; deductible:Decimal|None=None; currency:str="EUR"; policy_number_masked:str|None=None
+    insurance_type:str=Field(min_length=1,max_length=60)
+    annual_premium:Decimal=Field(ge=0)
+    contract_id:str|None=None
+    deductible:Decimal|None=Field(default=None,ge=0)
+    currency:str="EUR"
+    policy_number_masked:str|None=Field(default=None,max_length=80)
+    provider_name:str|None=Field(default=None,max_length=180)
+    renewal_date:date|None=None
+    cancellation_notice_days:int|None=Field(default=None,ge=0,le=3650)
+    early_exit_penalty:Decimal|None=Field(default=None,ge=0)
+
+class InsuranceUpdate(InsuranceCreate):
+    pass
 class CoverageCreate(BaseModel):
     coverage_type:str; contract_id:str|None=None; insurance_policy_id:str|None=None; limit_amount:Decimal|None=None; deductible:Decimal|None=None; effective_from:date|None=None; effective_to:date|None=None; confidence:Decimal=Decimal("1"); user_verified:bool=True
 class GoalProgressUpdate(BaseModel):

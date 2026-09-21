@@ -472,3 +472,25 @@ La UX distingue tres estados:
 En hipotecas, los hechos confirmados de TAE, índice, diferencial, periodicidad/próxima revisión y porcentajes de comisión completan los huecos de `MortgageProfileExtra` sin sobrescribir silenciosamente valores manuales existentes. En seguros, prima, franquicia, renovación, preaviso y coste de salida siguen el mismo principio. Los contratos e inversiones conservan sus propuestas estructuradas para reutilización en sus áreas correspondientes.
 
 Los análisis de IA incluyen una versión de esquema. Al arrancar la aplicación, si el modelo local está disponible, los documentos con análisis ausente o de una versión anterior se reanalizan en segundo plano; esta actualización puede generar nuevas propuestas, pero nunca las confirma automáticamente.
+
+
+## Documentación contextual por producto
+
+La navegación documental parte del producto financiero y no de una biblioteca global:
+- una hipoteca abre una vista documental filtrada por su `mortgage_id`;
+- una póliza abre una vista documental filtrada por su `insurance_policy_id`;
+- los archivos subidos desde esa vista quedan vinculados al producto antes de lanzar el análisis de IA;
+- también se puede asociar un archivo ya existente o desvincularlo sin borrar el original del Vault.
+
+La biblioteca global se conserva como inventario técnico y para documentos todavía sin asociar, pero deja de ser el lugar donde se crean y mantienen las fichas de hipoteca o seguro.
+
+La eliminación de una hipoteca o póliza elimina su ficha y sus vínculos de evidencia, pero no borra los documentos físicos del Vault. Esos archivos quedan disponibles para asociarlos de nuevo.
+
+### Datos que faltan
+
+Cada producto distingue:
+1. dato confirmado;
+2. dato localizado por extractor/IA y pendiente de validar;
+3. dato realmente no encontrado.
+
+Desde la sección del producto se puede relanzar el análisis de IA local solo sobre sus documentos asociados. Si el dato sigue sin aparecer, la UI ofrece un campo manual para los campos estructurados editables. Los valores introducidos manualmente se guardan en el perfil del producto y pueden modificarse posteriormente desde sus opciones de edición.

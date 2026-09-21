@@ -9,7 +9,7 @@ from .db import SessionLocal
 from .models import Account,Contract,ExtractedFact,FinancialGoal,Mortgage,Portfolio,Security
 from .models_extended import Asset,BackupRecord,CoverageFact,InsurancePolicy,Liability,MortgageProfileExtra,RepairIssue,Trade,TrackedAsset
 from .models_analytics import EntityLink
-from .schemas_extended import AssetCreate,AssetSimulationStart,BackupCreate,BackupRestore,ChatRequest,ContractCreate,CoverageCompareRequest,CoverageCreate,CorporateActionCreate,GoalCreate,GoalProgressUpdate,InsuranceCreate,LiabilityCreate,MortgageExtraUpdate,MortgageProfileCreate,MortgageProfileUpdate,PortfolioCreate,RagSearchRequest,SecurityCreate,StoredMortgagePrepaymentRequest,StoredMortgageRatePathRequest,StoredMortgageScenarioRequest,StressRequest,TaxEstimateRequest,TaxProfileUpdate,TrackedAssetCreate,TradeCreate
+from .schemas_extended import AssetCreate,AssetSimulationStart,BackupCreate,BackupRestore,ChatRequest,ContractCreate,CoverageCompareRequest,CoverageCreate,CorporateActionCreate,GoalCreate,GoalProgressUpdate,InsuranceCreate,InsuranceUpdate,LiabilityCreate,MortgageExtraUpdate,MortgageProfileCreate,MortgageProfileUpdate,PortfolioCreate,RagSearchRequest,SecurityCreate,StoredMortgagePrepaymentRequest,StoredMortgageRatePathRequest,StoredMortgageScenarioRequest,StressRequest,TaxEstimateRequest,TaxProfileUpdate,TrackedAssetCreate,TradeCreate
 from .domain.portfolio import apply_trade,portfolio_summary
 from .domain.engines import MortgageEngine,MortgagePrepaymentEngine,MortgageRatePathEngine
 from .domain.stress import run_stress
@@ -74,8 +74,17 @@ def decision_lab_context(db:Session=Depends(dbdep)):
 
 @router.get("/mortgages")
 def mortgages(db:Session=Depends(dbdep)):
-    sources=_document_sources(db,"mortgage")
-    return [{**mortgage_row(r),"source_document_id":sources.get(r.id)} for r in db.scalars(select(Mortgage).order_by(Mortgage.updated_at.desc())).all()]
+    sources_multi=_document_sources_multi(db,"mortgage")
+    rows=[]
+    for r in db.scalars(select(Mortgage).order_by(Mortgage.updated_at.desc())).all():
+        document_ids=sources_multi.get(r.id,[])
+        rows.append({
+            **mortgage_row(r),
+            "source_document_id":document_ids[0] if document_ids else None,
+            "source_document_ids":document_ids,
+            "document_count":len(document_ids),
+        })
+    return rows
 
 @router.post("/mortgages")
 def add_mortgage(p:MortgageProfileCreate,db:Session=Depends(dbdep)):
@@ -106,6 +115,31 @@ def update_mortgage(mortgage_id:str,p:MortgageProfileUpdate,db:Session=Depends(d
         "currency":r.currency,
     },source="mortgage_updated")
     db.commit();return mortgage_row(r)
+
+@router.delete("/mortgages/{mortgage_id}")
+def delete_mortgage(mortgage_id:str,db:Session=Depends(dbdep)):
+    row=db.get(Mortgage,mortgage_id)
+    if not row:raise HTTPException(404,"Mortgage not found")
+    for link in db.scalars(select(EntityLink).where(
+        EntityLink.from_type=="document",
+        EntityLink.relation_type=="evidence_for",
+        EntityLink.to_type=="mortgage",
+        EntityLink.to_id==mortgage_id,
+    )).all():
+        db.delete(link)
+    extra=db.scalar(select(MortgageProfileExtra).where(MortgageProfileExtra.mortgage_id==mortgage_id))
+    if extra is not None:db.delete(extra)
+    record_snapshot(db,"mortgage",row.id,{
+        "remaining_principal":str(row.remaining_principal),
+        "nominal_rate":str(row.nominal_rate),
+        "monthly_payment":str(row.monthly_payment),
+        "remaining_months":row.remaining_months,
+        "deleted":True,
+        "currency":row.currency,
+    },source="mortgage_deleted")
+    db.delete(row);db.commit()
+    return {"id":mortgage_id,"deleted":True}
+
 
 def _mortgage_extra_payload(row:MortgageProfileExtra|None)->dict:
     if row is None:
@@ -151,8 +185,9 @@ def update_mortgage_profile_extra(mortgage_id:str,p:MortgageExtraUpdate,db:Sessi
     return _mortgage_extra_payload(row)
 
 @router.get("/wealth/home")
-def wealth_home(db:Session=Depends(dbdep)):
-    mortgage=db.scalar(select(Mortgage).order_by(Mortgage.updated_at.desc()))
+def wealth_home(mortgage_id:str|None=None,db:Session=Depends(dbdep)):
+    mortgage=db.get(Mortgage,mortgage_id) if mortgage_id else db.scalar(select(Mortgage).order_by(Mortgage.updated_at.desc()))
+    if mortgage_id and mortgage is None:raise HTTPException(404,"Mortgage not found")
     properties=db.scalars(select(Asset).where(
         Asset.asset_type.in_(["property","home","house","real_estate"])
     ).order_by(Asset.valuation_date.desc(),Asset.current_value.desc())).all()
@@ -693,12 +728,108 @@ def insurance_verdict_view(db:Session=Depends(dbdep)):
 def insurance_verdict_with_ai(db:Session=Depends(dbdep)):
     result=insurance_verdict(db,use_ai=True);db.commit();return result
 
+def _insurance_row(db:Session,row:InsurancePolicy,sources:dict[str,list[str]]|None=None)->dict:
+    sources=sources or _document_sources_multi(db,"insurance_policy")
+    document_ids=sources.get(row.id,[])
+    contract=db.get(Contract,row.contract_id) if row.contract_id else None
+    return {
+        "id":row.id,
+        "insurance_type":row.insurance_type,
+        "annual_premium":str(row.annual_premium),
+        "deductible":None if row.deductible is None else str(row.deductible),
+        "currency":row.currency,
+        "policy_number_masked":row.policy_number_masked,
+        "contract_id":row.contract_id,
+        "provider_name":None if contract is None else contract.provider_name,
+        "renewal_date":None if contract is None else contract.renewal_date,
+        "cancellation_notice_days":None if contract is None else contract.cancellation_notice_days,
+        "early_exit_penalty":None if contract is None or contract.early_exit_penalty is None else str(contract.early_exit_penalty),
+        "evidence_status":None if contract is None else contract.evidence_status,
+        "source_document_id":document_ids[0] if document_ids else None,
+        "source_document_ids":document_ids,
+        "document_count":len(document_ids),
+    }
+
+def _ensure_insurance_contract(db:Session,p:InsuranceCreate|InsuranceUpdate,current:InsurancePolicy|None=None)->Contract|None:
+    contract=db.get(Contract,p.contract_id) if p.contract_id else (db.get(Contract,current.contract_id) if current is not None and current.contract_id else None)
+    needs_contract=bool(p.provider_name or p.renewal_date or p.cancellation_notice_days is not None or p.early_exit_penalty is not None or contract)
+    if not needs_contract:return contract
+    if contract is None:
+        contract=Contract(
+            provider_name=(p.provider_name or "Aseguradora pendiente").strip()[:180],
+            contract_type="insurance",
+            currency=p.currency,
+            evidence_status="manual",
+        )
+        db.add(contract);db.flush()
+    if p.provider_name:contract.provider_name=p.provider_name.strip()[:180]
+    contract.contract_type="insurance"
+    contract.annual_cost=p.annual_premium
+    contract.renewal_date=p.renewal_date
+    contract.cancellation_notice_days=p.cancellation_notice_days
+    contract.early_exit_penalty=p.early_exit_penalty
+    if contract.evidence_status=="needs_more_data" and p.provider_name:
+        contract.evidence_status="manual"
+    return contract
+
 @router.post("/insurance")
-def add_insurance(p:InsuranceCreate,db:Session=Depends(dbdep)):r=InsurancePolicy(**p.model_dump(),insured_object_json="{}");db.add(r);db.commit();return {"id":r.id}
+def add_insurance(p:InsuranceCreate,db:Session=Depends(dbdep)):
+    contract=_ensure_insurance_contract(db,p)
+    payload=p.model_dump(exclude={"provider_name","renewal_date","cancellation_notice_days","early_exit_penalty"})
+    payload["contract_id"]=None if contract is None else contract.id
+    row=InsurancePolicy(**payload,insured_object_json="{}")
+    db.add(row);db.flush();db.commit()
+    return _insurance_row(db,row)
+
 @router.get("/insurance")
 def insurance(db:Session=Depends(dbdep)):
     sources=_document_sources_multi(db,"insurance_policy")
-    return [{"id":r.id,"insurance_type":r.insurance_type,"annual_premium":str(r.annual_premium),"deductible":None if r.deductible is None else str(r.deductible),"contract_id":r.contract_id,"source_document_id":(sources.get(r.id) or [None])[0],"source_document_ids":sources.get(r.id,[]),"document_count":len(sources.get(r.id,[]))} for r in db.scalars(select(InsurancePolicy)).all()]
+    return [_insurance_row(db,r,sources) for r in db.scalars(select(InsurancePolicy).order_by(InsurancePolicy.updated_at.desc())).all()]
+
+@router.patch("/insurance/{policy_id}")
+def update_insurance(policy_id:str,p:InsuranceUpdate,db:Session=Depends(dbdep)):
+    row=db.get(InsurancePolicy,policy_id)
+    if not row:raise HTTPException(404,"Insurance policy not found")
+    contract=_ensure_insurance_contract(db,p,row)
+    row.insurance_type=p.insurance_type
+    row.annual_premium=p.annual_premium
+    row.deductible=p.deductible
+    row.currency=p.currency
+    row.policy_number_masked=p.policy_number_masked
+    row.contract_id=None if contract is None else contract.id
+    db.commit()
+    return _insurance_row(db,row)
+
+@router.delete("/insurance/{policy_id}")
+def delete_insurance(policy_id:str,db:Session=Depends(dbdep)):
+    row=db.get(InsurancePolicy,policy_id)
+    if not row:raise HTTPException(404,"Insurance policy not found")
+    contract_id=row.contract_id
+    for link in db.scalars(select(EntityLink).where(
+        EntityLink.from_type=="document",
+        EntityLink.relation_type=="evidence_for",
+        EntityLink.to_type=="insurance_policy",
+        EntityLink.to_id==policy_id,
+    )).all():
+        db.delete(link)
+    if contract_id:
+        for link in db.scalars(select(EntityLink).where(
+            EntityLink.from_type=="document",
+            EntityLink.relation_type=="evidence_for",
+            EntityLink.to_type=="contract",
+            EntityLink.to_id==contract_id,
+        )).all():
+            db.delete(link)
+    for coverage in db.scalars(select(CoverageFact).where(CoverageFact.insurance_policy_id==policy_id)).all():
+        db.delete(coverage)
+    db.delete(row);db.flush()
+    if contract_id:
+        contract=db.get(Contract,contract_id)
+        other=db.scalar(select(InsurancePolicy.id).where(InsurancePolicy.contract_id==contract_id))
+        if contract is not None and other is None and contract.contract_type=="insurance":
+            db.delete(contract)
+    db.commit()
+    return {"id":policy_id,"deleted":True}
 @router.post("/coverage")
 def add_coverage(p:CoverageCreate,db:Session=Depends(dbdep)):r=CoverageFact(**p.model_dump(),conditions_json="{}",exclusions_json="{}");db.add(r);db.commit();return {"id":r.id}
 @router.post("/coverage/compare")
