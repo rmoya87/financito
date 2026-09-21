@@ -44,7 +44,6 @@ const areas:Area[]=[
     secondary:[
       {href:'/wealth/',label:'Resumen'},
       {href:'/wealth/#casa',label:'Casa'},
-      {href:'/insurance/',label:'Seguros y protección'},
       {href:'/investments/',label:'Inversiones'},
       {href:'/markets/',label:'Mercado'},
       {href:'/tax/',label:'Fiscalidad'},
