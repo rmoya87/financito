@@ -37,7 +37,9 @@ type Verdict={
   ai:null|{plain_summary?:string;priorities?:string[];questions?:string[];model?:string;error?:string};
 };
 type InsightItem={title:string;detail:string;pages:number[];impact?:string};
-type DocInsight={document_id:string;file_name:string;document_type:string;analysis:{summary:string;confidence:string;advantages:InsightItem[];penalties:InsightItem[];risks:InsightItem[];exclusions_or_limits:InsightItem[];optimization_opportunities:InsightItem[];negotiation_points:InsightItem[];comparison_requirements:InsightItem[];cross_area_impacts:InsightItem[];missing_information:InsightItem[]}};
+type InsightAnalysis={summary:string;confidence:string;advantages:InsightItem[];penalties:InsightItem[];obligations:InsightItem[];risks:InsightItem[];exclusions_or_limits:InsightItem[];linked_products:InsightItem[];optimization_opportunities:InsightItem[];negotiation_points:InsightItem[];comparison_requirements:InsightItem[];cross_area_impacts:InsightItem[];missing_information:InsightItem[]};
+type DocInsight={document_id:string;file_name:string;document_type:string;analysis:InsightAnalysis};
+type InsightKey='advantages'|'penalties'|'obligations'|'risks'|'exclusions_or_limits'|'linked_products'|'optimization_opportunities'|'negotiation_points'|'comparison_requirements'|'cross_area_impacts'|'missing_information';
 
 const statusText:Record<Verdict['status'],{title:string;detail:string}>={
   consistent:{title:'Datos consistentes',detail:'No hay huecos ni duplicidades materiales pendientes respecto a tus requisitos confirmados.'},
@@ -58,13 +60,25 @@ function readableDetail(value:any):string{
   return String(value);
 }
 
+function PolicyInsightGroup({title,rows,field}:{title:string;rows:DocInsight[];field:InsightKey}){
+  const items=rows.flatMap(row=>(row.analysis[field]||[]).map(item=>({item,documentId:row.document_id}))).slice(0,10);
+  return <div className="rounded-xl bg-[var(--surface-2)] p-3 text-sm">
+    <h4 className="font-semibold">{title}</h4>
+    <div className="mt-2 space-y-2">{items.length?items.map(({item,documentId},i)=><div key={field+i} className="text-xs">
+      <div><strong>{item.title||item.detail}</strong>{item.title&&item.detail?<span> · {item.detail}</span>:null}</div>
+      {item.impact&&<div className="mt-1 text-[var(--muted)]">{item.impact}</div>}
+      {!!item.pages?.length&&<a className="mt-1 inline-block underline" target="_blank" rel="noreferrer" href={'/api/v1/documents/'+documentId+'/file#page='+item.pages[0]}>Ver evidencia · pág. {item.pages[0]}</a>}
+    </div>):<span className="text-xs text-[var(--muted)]">Sin información específica extraída.</span>}</div>
+  </div>;
+}
+
 
 export default function InsurancePage(){
   const qc=useQueryClient();
   const profiles=useQuery({queryKey:['insurance'],queryFn:()=>apiGet<InsuranceProfile[]>('/api/v1/insurance')});
   const verdict=useQuery({queryKey:['insurance-verdict'],queryFn:()=>apiGet<Verdict>('/api/v1/insurance/verdict')});
   const requirements=useQuery({queryKey:['coverage-requirements'],queryFn:()=>apiGet<CoverageRequirement[]>('/api/v1/coverage-requirements')});
-  const insights=useQuery({queryKey:['document-insights','insurance'],queryFn:()=>apiGet<DocInsight[]>('/api/v1/document-insights?document_type=insurance')});
+  const insights=useQuery({queryKey:['document-insights','all'],queryFn:()=>apiGet<DocInsight[]>('/api/v1/document-insights')});
   const analyze=useMutation({
     mutationFn:()=>apiMutate<Verdict>('/api/v1/insurance/verdict/analyze','POST'),
     onSuccess:data=>qc.setQueryData(['insurance-verdict'],data),
@@ -172,6 +186,8 @@ export default function InsurancePage(){
   const selectedProfile=profiles.data?.find(p=>p.id===selectedPolicyId)||null;
   const selectedPending=selectedPolicy?data?.pending_review.filter(item=>item.policy_id===selectedPolicy.id)||[]:[];
   const selectedMissing=selectedPolicy?data?.missing_information.filter(item=>item.policy_id===selectedPolicy.id)||[]:[];
+  const selectedPolicyDocuments=new Set(selectedPolicy?.source_document_ids||[]);
+  const selectedInsightRows=selectedPolicy?(insights.data||[]).filter(item=>selectedPolicyDocuments.has(item.document_id)):[];
 
   return <>
     <PageHeader title="Seguros y coberturas" description="La fuente de verdad son tus documentos confirmados. Financito los cruza con movimientos, ingresos, coste, coberturas, duplicidades y productos vinculados antes de darte una conclusión."/>
@@ -320,6 +336,24 @@ export default function InsurancePage(){
                 <div className="mt-2 text-xs"><strong>Exclusiones:</strong> {readableDetail(coverage.exclusions)}</div>
                 {coverage.source_document_id&&<a className="mt-2 inline-block text-xs underline" target="_blank" rel="noreferrer" href={'/api/v1/documents/'+coverage.source_document_id+'/file'+(coverage.source_page?'#page='+coverage.source_page:'')}>Ver en el documento{coverage.source_page?' · pág. '+coverage.source_page:''}</a>}
               </div>):<EmptyState>No hay coberturas verificadas o extraídas para esta póliza.</EmptyState>}</div>
+            </div>
+
+            <div className="mt-5">
+              <h3 className="font-semibold">Todo lo indicado por la documentación</h3>
+              <p className="mt-1 text-xs text-[var(--muted)]">Agrupa para esta póliza la misma interpretación que aparece en Detalle del documento, incluso cuando el seguro está incluido dentro de documentación hipotecaria.</p>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <PolicyInsightGroup title="Ventajas y coberturas útiles" rows={selectedInsightRows} field="advantages"/>
+                <PolicyInsightGroup title="Penalizaciones y costes de salida" rows={selectedInsightRows} field="penalties"/>
+                <PolicyInsightGroup title="Obligaciones" rows={selectedInsightRows} field="obligations"/>
+                <PolicyInsightGroup title="Riesgos" rows={selectedInsightRows} field="risks"/>
+                <PolicyInsightGroup title="Exclusiones o límites" rows={selectedInsightRows} field="exclusions_or_limits"/>
+                <PolicyInsightGroup title="Productos vinculados" rows={selectedInsightRows} field="linked_products"/>
+                <PolicyInsightGroup title="Oportunidades de optimizar" rows={selectedInsightRows} field="optimization_opportunities"/>
+                <PolicyInsightGroup title="Puntos para negociar" rows={selectedInsightRows} field="negotiation_points"/>
+                <PolicyInsightGroup title="Qué exigir para comparar ofertas" rows={selectedInsightRows} field="comparison_requirements"/>
+                <PolicyInsightGroup title="Impactos en otras áreas" rows={selectedInsightRows} field="cross_area_impacts"/>
+                <PolicyInsightGroup title="Información que falta" rows={selectedInsightRows} field="missing_information"/>
+              </div>
             </div>
 
             {(selectedPending.length>0||selectedMissing.length>0)&&<div className="mt-5 grid gap-4 lg:grid-cols-2">
