@@ -1094,17 +1094,23 @@ Un filtro de cuenta no debe comparar su gasto con un presupuesto de hogar ni reu
 
 ### Disponible para gastar
 
-Inicio calcula una cifra operativa de **Disponible para gastar**. Parte de la liquidez actual y protege, en este orden, el dinero reservado para objetivos, el gasto previsto hasta el siguiente ingreso detectado y el colchón mínimo de liquidez que todavía no esté cubierto por el fondo de emergencia.
+En un periodo que incluye hoy, Inicio calcula **Disponible para gastar** como una cifra operativa actual:
 
-El gasto protegido hasta el siguiente ingreso usa el mayor entre:
-- los cargos futuros conocidos (compromisos, recurrentes y patrones ya detectados);
-- el ritmo mensual de gasto real normalizado a partir del **periodo global seleccionado por el usuario**.
+**liquidez actual + ingresos recurrentes pendientes de cobro − dinero reservado para objetivos − gasto protegido hasta el horizonte − colchón aún no cubierto**.
 
-Por tanto, cambiar entre Mes anterior, Últimos 30 días, Últimos 3 meses, etc. puede cambiar el Disponible para gastar porque cambia el ritmo de gasto utilizado. La liquidez y las reservas de objetivos siguen siendo las actuales: la cifra responde a la pregunta «¿cuánto parece libre hoy si gasto al ritmo del periodo seleccionado?», no reconstruye un saldo bancario histórico.
+Los ingresos futuros solo se incluyen cuando existe un patrón mensual observable y el último cobro de esa misma fuente **todavía no ha entrado en el mes actual**. La pantalla muestra fecha esperada, importe, base y confianza para que una nómina, pensión u otro ingreso recurrente no se trate como dinero confirmado.
 
-Inicio debe mostrar la fórmula y sus componentes para que cualquier cifra pueda auditarse visualmente: **Liquidez actual − objetivos reservados − gasto protegido − colchón no cubierto = disponible**.
+El gasto protegido no extrapola ciegamente el gasto acumulado del mes. Usa la mayor señal prudente entre:
+- ritmo suavizado del periodo seleccionado;
+- ritmo de los últimos 90 días;
+- mismo tramo del año anterior;
+- compromisos y recurrentes futuros conocidos;
+- patrones históricos por categoría.
 
-El resultado nunca puede ser negativo y nunca debe presentar como libre dinero ya asignado a un objetivo.
+Los gastos marcados como extraordinarios no se extrapolan. Las señales alternativas no se suman entre sí cuando pueden representar el mismo gasto.
+
+Si el selector apunta a un **periodo completamente cerrado**, Inicio no muestra un «disponible hoy» porque mezclaría el saldo actual con una fotografía histórica. En su lugar muestra el **resultado consolidado del periodo**: ingresos reales, gasto real, ahorro real y su diferencia frente a una previsión reconstruida con el histórico anterior al periodo. Debe indicarse expresamente que esa previsión es reconstruida y no una captura de forecast guardada en aquel momento.
+
 
 ### Estructura del gasto
 
