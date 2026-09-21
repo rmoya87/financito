@@ -461,9 +461,15 @@ test('Casa resume los seguros y la gestión se realiza desde Seguros',async({pag
   await page.goto('/wealth/');
   await expect(page.getByRole('heading',{name:'Casa'})).toBeVisible();
   await expect(page.getByText('Seguro Borrar Patrimonio E2E',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Ver detalle de Seguro Borrar Patrimonio E2E'}).click();
+  const casaDetail=page.getByRole('dialog',{name:'Detalle de Seguros y coberturas'});
+  await expect(casaDetail).toBeVisible();
+  await expect(casaDetail.getByText('Seguro Borrar Patrimonio E2E',{exact:true})).toBeVisible();
+  await casaDetail.getByRole('button',{name:'Cerrar'}).click();
+  await expect(casaDetail).not.toBeVisible();
+
   await page.getByRole('link',{name:'Ver seguros'}).click();
   await expect(page.getByRole('heading',{name:'Seguros y coberturas'})).toBeVisible();
-
   await page.getByText('Seguro Borrar Patrimonio E2E',{exact:true}).click();
   const detail=page.getByRole('dialog',{name:'Detalle del seguro'});
   await expect(detail).toBeVisible();
