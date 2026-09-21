@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .models import Account,Contract,ExtractedFact,FinancialGoal,Mortgage,Portfolio,Security
 from .models_extended import Asset,BackupRecord,CoverageFact,InsurancePolicy,Liability,MortgageProfileExtra,RepairIssue,Trade,TrackedAsset
-from .models_analytics import EntityLink,EntitySnapshot
+from .models_analytics import EntityLink,EntitySnapshot,LinkedProduct
 from .schemas_extended import AssetCreate,AssetSimulationStart,BackupCreate,BackupRestore,ChatRequest,ContractCreate,CoverageCompareRequest,CoverageCreate,CorporateActionCreate,GoalCreate,GoalProgressUpdate,InsuranceCreate,InsuranceUpdate,LiabilityCreate,MortgageExtraUpdate,MortgageProfileCreate,MortgageProfileUpdate,PortfolioCreate,RagSearchRequest,SecurityCreate,StoredMortgagePrepaymentRequest,StoredMortgageRatePathRequest,StoredMortgageScenarioRequest,StressRequest,TaxEstimateRequest,TaxProfileUpdate,TrackedAssetCreate,TradeCreate
 from .domain.portfolio import apply_trade,portfolio_summary
 from .domain.engines import MortgageEngine,MortgagePrepaymentEngine,MortgageRatePathEngine
@@ -194,10 +194,21 @@ def wealth_home(mortgage_id:str|None=None,db:Session=Depends(dbdep)):
     ).order_by(Asset.valuation_date.desc(),Asset.current_value.desc())).all()
     home=properties[0] if properties else None
     contracts={row.id:row for row in db.scalars(select(Contract)).all()}
+    linked_policy_ids=set()
+    if mortgage is not None:
+        linked_policy_ids=set(db.scalars(select(LinkedProduct.linked_product_id).where(
+            LinkedProduct.parent_product_type=="mortgage",
+            LinkedProduct.parent_product_id==mortgage.id,
+            LinkedProduct.linked_product_type=="insurance_policy",
+        )).all())
     policies=[]
     for policy in db.scalars(select(InsurancePolicy)).all():
         kind=(policy.insurance_type or "").lower()
-        if not any(token in kind for token in ("home","house","hogar","life","vida","mortgage","hipoteca")):
+        property_related=any(token in kind for token in ("home","house","hogar","mortgage","hipoteca"))
+        explicitly_linked=policy.id in linked_policy_ids
+        # Life insurance is only shown in Casa when evidence actually links it
+        # to the selected mortgage. Home insurance remains property-relevant.
+        if not property_related and not explicitly_linked:
             continue
         contract=contracts.get(policy.contract_id or "")
         policies.append({
@@ -206,6 +217,7 @@ def wealth_home(mortgage_id:str|None=None,db:Session=Depends(dbdep)):
             "annual_premium":str(policy.annual_premium),
             "provider":None if contract is None else contract.provider_name,
             "renewal_date":None if contract is None else contract.renewal_date,
+            "linked_to_mortgage":explicitly_linked,
         })
 
     if mortgage is None:
@@ -861,6 +873,11 @@ def delete_insurance(policy_id:str,db:Session=Depends(dbdep)):
             db.delete(link)
     for coverage in db.scalars(select(CoverageFact).where(CoverageFact.insurance_policy_id==policy_id)).all():
         db.delete(coverage)
+    for linked in db.scalars(select(LinkedProduct).where(
+        LinkedProduct.linked_product_type=="insurance_policy",
+        LinkedProduct.linked_product_id==policy_id,
+    )).all():
+        db.delete(linked)
     db.delete(row);db.flush()
     if contract_id:
         contract=db.get(Contract,contract_id)
