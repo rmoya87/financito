@@ -8,6 +8,7 @@ import {PageHeader} from '@/components/page-header';
 import {Card} from '@/components/ui/card';
 import {Money} from '@/components/ui/money';
 import {EmptyState,ErrorState} from '@/components/ui/states';
+import {MetricTile,SectionIntro,VisualPanel} from '@/components/finance-ui';
 
 type Quote={symbol:string;price:string;provider:string;as_of:string|null;delayed:boolean};
 type CryptoPrice={provider?:string;assets?:{id:string;currency:string;price?:number|null;market_cap?:number|null;volume_24h?:number|null;change_24h_pct?:number|null;last_updated_at?:number|null}[]};
@@ -123,6 +124,8 @@ export default function MarketsPage(){
   },[tracked.isLoading,tracked.data?.length]);
 
   const simulations=useMemo(()=>tracked.data?.filter(a=>a.simulation)||[],[tracked.data]);
+  const ownedCount=useMemo(()=>tracked.data?.filter(a=>a.owned).length||0,[tracked.data]);
+  const watchingCount=useMemo(()=>tracked.data?.filter(a=>!a.owned).length||0,[tracked.data]);
   const simulatedTotals=useMemo(()=>simulations.reduce((acc,a)=>{
     acc.invested+=Number(a.simulation?.invested_amount||0);
     acc.current+=Number(a.simulation?.current_value||a.simulation?.invested_amount||0);
@@ -152,11 +155,15 @@ export default function MarketsPage(){
 
   return <>
     <PageHeader title="Mercados e inversiones seguidas" description="Carteras reales y simuladas persistentes, precios externos normalizados y noticias analizadas contra tus activos. Los escenarios no son predicciones ni recomendaciones."/>
-    <Card className="mb-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">IA local</div><h2 className="mt-1 text-xl font-bold">Lectura de tus activos ahora</h2><p className="mt-1 text-sm text-[var(--muted)]">Cruza valoración real o simulada, histórico guardado, riesgo y noticias vinculadas. La orientación sirve para decidir qué revisar; no ejecuta compras ni ventas.</p></div>
-        <button className="fin-button secondary py-2 text-xs" type="button" onClick={()=>portfolioInsights.mutate()} disabled={portfolioInsights.isPending}>{portfolioInsights.isPending?'Analizando…':'Actualizar análisis'}</button>
-      </div>
+    <SectionIntro eyebrow="Lectura rápida" title="Tu exposición y seguimiento" description="Distingue lo que realmente posees, lo que solo sigues y lo que estás simulando antes de entrar en precios o noticias."/>
+    <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <MetricTile label="Activos reales" value={ownedCount} detail="Posiciones marcadas como poseídas" status="Cartera real" statusTone="confirmed"/>
+      <MetricTile label="En seguimiento" value={watchingCount} detail="Activos observados sin posición real"/>
+      <MetricTile label="Simulaciones" value={simulations.length} detail="Compras hipotéticas guardadas" status="Hipótesis" statusTone="calculated"/>
+      <MetricTile label="P&L simulado" value={<Money value={simulatedTotals.pnl}/>} detail="Resultado de las simulaciones, no de tu cartera real" emphasis/>
+    </div>
+    <VisualPanel title="Lectura de tus activos ahora" description="Cruza valoración real o simulada, histórico guardado, riesgo y noticias vinculadas. La orientación sirve para decidir qué revisar; no ejecuta compras ni ventas." eyebrow="IA local" status={portfolioInsights.data?.ai_available?'IA local disponible':'Análisis determinista'} statusTone="calculated" action={<button className="fin-button secondary py-2 text-xs" type="button" onClick={()=>portfolioInsights.mutate()} disabled={portfolioInsights.isPending}>{portfolioInsights.isPending?'Analizando…':'Actualizar análisis'}</button>} className="mb-4">
+      <div className="text-xs text-[var(--muted)]">Las conclusiones se muestran separadas de las cotizaciones y de las simulaciones.</div>
       {portfolioInsights.isPending&&!portfolioInsights.data&&<div className="mt-4 text-sm text-[var(--muted)]">Actualizando precios, histórico, noticias y análisis local…</div>}
       {portfolioInsights.error&&<div className="mt-3"><ErrorState error={portfolioInsights.error}/></div>}
       {portfolioInsights.data&&<>
@@ -178,8 +185,9 @@ export default function MarketsPage(){
           </div>;
         })}</div>
       </>}
-    </Card>
+    </VisualPanel>
 
+    <SectionIntro eyebrow="Cartera y seguimiento" title="Mis activos" description="Gestiona lo que posees, lo que sigues y las simulaciones desde un único bloque."/>
     <Card className="mb-4">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Mis activos</h2><p className="mt-1 text-sm text-[var(--muted)]">Registra una tenencia real o sigue un activo. Si no lo tienes puedes iniciar una compra simulada y ver cómo habría evolucionado.</p></div><button className="fin-button secondary" disabled={refreshAll.isPending||!tracked.data?.length} onClick={()=>refreshAll.mutate()}>{refreshAll.isPending?'Actualizando…':'Actualizar precios e histórico'}</button></div>
       <form className="mt-4 grid gap-2 md:grid-cols-4" onSubmit={(e:FormEvent)=>{e.preventDefault();saveTracked.mutate()}}>
@@ -246,6 +254,7 @@ export default function MarketsPage(){
       {chartData.length?<div className="mt-4 h-72"><ResponsiveContainer width="100%" height="100%"><LineChart data={chartData}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date"/><YAxis/><Tooltip formatter={(v)=>new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(Number(v))}/><Line type="monotone" dataKey="value" name="Valor simulado" stroke="var(--chart-income)" strokeWidth={3} dot={false}/></LineChart></ResponsiveContainer></div>:<EmptyState>Aún no hay histórico suficiente para dibujar la evolución.</EmptyState>}
     </Card>}
 
+    <div className="mt-6"><SectionIntro eyebrow="Herramientas de mercado" title="Datos externos y noticias" description="Cotización, cripto, fundamentales y noticias quedan separados de tus posiciones reales y simuladas."/></div>
     <div className="grid gap-4 xl:grid-cols-2">
       <Card>
         <h2 className="font-bold">Cotización</h2>
