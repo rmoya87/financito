@@ -135,3 +135,8 @@ La regresión incluye cobertura para detección determinista de una serie mensua
 ## Selector temporal compartido
 
 La regresión comprueba que Movimientos y Análisis exponen el mismo selector temporal que Inicio, que un rango personalizado filtra realmente movimientos fuera de fecha y que recurrentes/anomalías respetan los parámetros `start`/`end` del backend.
+
+
+## Análisis diario, comercios y eliminación de cuentas
+
+Las regresiones comprueban que la serie diaria incluye todos los días del intervalo, que el total de comercios es coherente con el gasto, que Recurrentes no depende del filtro mensual, que Análisis muestra el horizonte de 30 días y permite alternar gráfica/listado, y que eliminar una cuenta elimina solo sus movimientos sin afectar a otras cuentas.
