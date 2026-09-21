@@ -182,7 +182,7 @@ def useful_alerts(
             "id":"renewal:"+c.id,"kind":"insurance_or_contract_renewal","severity":"medium",
             "title":"Renovación próxima · "+c.provider_name,
             "detail":f"Renueva el {c.renewal_date}. Revisa coste, cobertura y preaviso antes de esa fecha.",
-            "action_path":"/insurance/" if c.contract_type=="insurance" else "/contracts/","source_id":c.id,
+            "action_path":"/insurance/" if "insurance" in (c.contract_type or "").lower() or "seguro" in (c.contract_type or "").lower() else "/contracts/","source_id":c.id,
         })
     for account in accounts:
         due=sum((c.amount for c in session.scalars(select(Commitment).where(
@@ -199,6 +199,16 @@ def useful_alerts(
             })
     essential=essential_monthly if essential_monthly is not None else essential_monthly_average(session,as_of,account_id,account_type)
     alerts.extend(_goal_alerts(session,essential))
+    for action in session.scalars(select(ActionItem).where(
+        ActionItem.action_type=="recurring_price_increase",
+        ActionItem.status.in_(["pending","in_progress"]),
+    ).order_by(ActionItem.created_at.desc()).limit(20)).all():
+        alerts.append({
+            "id":"price_increase:"+action.id,"kind":"recurring_price_increase","severity":"medium",
+            "title":action.title,
+            "detail":action.notes or "El último cargo recurrente se ha separado de su importe histórico habitual.",
+            "action_path":"/analytics/","source_id":action.id,
+        })
     pending=int(session.query(ExtractedFact).filter(
         ExtractedFact.user_verified.is_(False),
         ExtractedFact.status.in_(["inferred","ambiguous","conflicting"]),

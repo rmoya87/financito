@@ -108,10 +108,20 @@ def events(session:Session,start:date,end:date,account_id:str|None=None,account_
     scope_ids=None
     if account_id:scope_ids={account_id}
     elif account_type:scope_ids=set(session.scalars(select(Account.id).where(Account.account_type==account_type)).all())
-    commitment_stmt=select(Commitment).where(Commitment.due_date>=start,Commitment.due_date<=end,Commitment.status=="active")
+    commitment_stmt=select(Commitment).where(Commitment.status=="active",Commitment.due_date<=end)
     if scope_ids is not None:commitment_stmt=commitment_stmt.where(Commitment.account_id.in_(scope_ids))
     for c in session.scalars(commitment_stmt).all():
-        out.append({"date":c.due_date,"type":"commitment","title":c.title,"amount":str(c.amount),"entity_id":c.id,"confidence":str(c.confidence),"basis":"Compromiso conocido"})
+        occurrence=c.due_date;guard=0
+        while c.recurrence and occurrence<start and guard<120:
+            occurrence=_advance(occurrence,c.recurrence);guard+=1
+        if not c.recurrence:
+            if start<=occurrence<=end:
+                out.append({"date":occurrence,"type":"commitment","title":c.title,"amount":str(c.amount),"entity_id":c.id,"confidence":str(c.confidence),"basis":"Compromiso conocido"})
+            continue
+        while occurrence<=end and guard<240:
+            if occurrence>=start:
+                out.append({"date":occurrence,"type":"commitment","title":c.title,"amount":str(c.amount),"entity_id":c.id+":"+occurrence.isoformat(),"confidence":str(c.confidence),"basis":"Compromiso conocido · "+c.recurrence})
+            occurrence=_advance(occurrence,c.recurrence);guard+=1
     for c in session.scalars(select(Contract).where(Contract.renewal_date>=start,Contract.renewal_date<=end)).all():
         out.append({"date":c.renewal_date,"type":"renewal","title":"Renovación "+c.provider_name,"amount":None,"entity_id":c.id,"confidence":"1","basis":"Fecha contractual"})
     goal_stmt=select(FinancialGoal).where(FinancialGoal.target_date>=start,FinancialGoal.target_date<=end,FinancialGoal.status=="active")
