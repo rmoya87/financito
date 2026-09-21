@@ -99,12 +99,14 @@ export default function InsurancePage(){
   const [showPolicyForm,setShowPolicyForm]=useState(false);
   const [selectedPolicyId,setSelectedPolicyId]=useState<string|null>(null);
   const [documentPolicyId,setDocumentPolicyId]=useState<string|null>(null);
+  const [detailSection,setDetailSection]=useState<'general'|'transactions'|'details'>('general');
   const [manualMissing,setManualMissing]=useState<Record<string,string>>({});
 
   useEffect(()=>{
     const requested=new URLSearchParams(window.location.search).get('policy');
     if(requested)setSelectedPolicyId(requested);
   },[]);
+  useEffect(()=>{if(selectedPolicyId)setDetailSection('general')},[selectedPolicyId]);
   const [req,setReq]=useState({insurance_type:'',coverage_type:'',minimum_limit:'',notes:''});
   const refreshInsurance=()=>{
     qc.invalidateQueries({queryKey:['insurance']});
@@ -143,6 +145,11 @@ export default function InsurancePage(){
   });
   const unlinkPayment=useMutation({
     mutationFn:(transactionId:string)=>apiMutate('/api/v1/transactions/'+transactionId+'/insurance','DELETE'),
+    onSuccess:()=>{refreshInsurance();qc.invalidateQueries({queryKey:['transactions']})},
+  });
+  const linkPendingPayment=useMutation({
+    mutationFn:({transactionId,policyId}:{transactionId:string;policyId:string})=>
+      apiMutate('/api/v1/transactions/'+transactionId+'/insurance/'+policyId,'PUT'),
     onSuccess:()=>{refreshInsurance();qc.invalidateQueries({queryKey:['transactions']})},
   });
   const saveMissingPolicy=useMutation({
@@ -250,26 +257,24 @@ export default function InsurancePage(){
       </div>
 
       <Card className="mt-4">
-          <h2 className="font-bold">Pólizas consolidadas</h2>
-          <p className="mt-1 text-sm text-[var(--muted)]">Una póliza puede tener varios PDFs, anexos o condiciones. Financito los reúne en una sola ficha y combina su evidencia sin multiplicar seguros.</p>
-          <div className="mt-4 space-y-3">{data.policies.length?data.policies.map(p=><div key={p.id} onClick={()=>setSelectedPolicyId(p.id)} className="cursor-pointer rounded-xl bg-[var(--surface-2)] p-4 hover:ring-1 hover:ring-[var(--brand)]">
-            <div className="flex items-start justify-between gap-3"><div><strong>{insuranceLabel[p.insurance_type]||p.insurance_type}</strong><div className="text-xs text-[var(--muted)]">{p.contract?.provider_name||p.source_document_name||'Proveedor pendiente'}</div></div><div className="text-right"><strong><Money value={p.annual_premium}/>/año</strong><div className="text-xs text-[var(--muted)]"><Money value={p.monthly_equivalent}/>/mes equivalente</div><div className="mt-2 flex gap-2"><button className="text-xs underline" type="button" onClick={e=>{e.stopPropagation();editPolicy(p)}}>Editar</button><button className="text-xs underline" type="button" onClick={e=>{e.stopPropagation();if(window.confirm('¿Eliminar este seguro? Los documentos no se borrarán del Vault.'))deletePolicy.mutate(p.id)}}>Eliminar</button></div></div></div>
-            <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
-              <div>Franquicia: <strong><Money value={p.deductible}/></strong></div>
-              <div>Renovación: <strong>{p.contract?.renewal_date?new Date(p.contract.renewal_date).toLocaleDateString('es-ES'):'—'}</strong></div>
-              <div>Preaviso: <strong>{p.contract?.cancellation_notice_days===null||p.contract?.cancellation_notice_days===undefined?'—':p.contract.cancellation_notice_days+' días'}</strong></div>
-              <div>Penalización: <strong><Money value={p.contract?.early_exit_penalty}/></strong></div>
-            </div>
-            {!!p.linked_mortgage_ids?.length&&<div className="mt-2 text-xs font-medium text-[var(--brand)]">Vinculado a {p.linked_mortgage_ids.length} hipoteca(s)</div>}
-            {p.coverages.length>0&&<div className="mt-3 flex flex-wrap gap-1">{p.coverages.map(c=><span key={c.id} className="rounded-full bg-white px-2 py-1 text-[11px]">{c.coverage_type}{c.limit_amount?' · '+new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(Number(c.limit_amount)):''}</span>)}</div>}
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <button onClick={e=>{e.stopPropagation();setDocumentPolicyId(p.id)}} className="fin-button secondary py-1.5 text-xs" type="button">Documentación</button>
-              <button className="fin-button secondary py-1.5 text-xs" type="button" onClick={e=>{e.stopPropagation();analyzePolicyDocs.mutate(p.id)}} disabled={analyzePolicyDocs.isPending}>Buscar datos con IA</button>
-              <button className="fin-button secondary py-1.5 text-xs" type="button" onClick={e=>{e.stopPropagation();setSelectedPolicyId(p.id)}}>Ver detalle</button>
-              <span className="text-xs text-[var(--muted)]">{p.source_documents?.length??(p.source_document_id?1:0)} documento(s) asociados</span>
-            </div>
-          </div>):<EmptyState>Crea tu primer seguro y después asocia su documentación desde la propia póliza.</EmptyState>}</div>
-        </Card>
+        <h2 className="font-bold">Pólizas consolidadas</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">Una póliza puede tener varios PDFs, anexos o condiciones. Financito los reúne en una sola ficha; la documentación y su lectura están dentro del detalle.</p>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">{data.policies.length?data.policies.map(p=><div key={p.id} onClick={()=>setSelectedPolicyId(p.id)} className="cursor-pointer rounded-xl bg-[var(--surface-2)] p-4 hover:ring-1 hover:ring-[var(--brand)]">
+          <div className="flex items-start justify-between gap-3"><div><strong>{insuranceLabel[p.insurance_type]||p.insurance_type}</strong><div className="text-xs text-[var(--muted)]">{p.contract?.provider_name||p.source_document_name||'Proveedor pendiente'}</div></div><strong className="shrink-0"><Money value={p.annual_premium}/>/año</strong></div>
+          <div className="mt-3 grid gap-1 text-xs">
+            <div>Mensual equivalente: <strong><Money value={p.monthly_equivalent}/></strong></div>
+            <div>Franquicia: <strong><Money value={p.deductible}/></strong></div>
+            <div>Renovación: <strong>{p.contract?.renewal_date?new Date(p.contract.renewal_date).toLocaleDateString('es-ES'):'—'}</strong></div>
+            <div>Pagos vinculados: <strong>{p.linked_payment_count}</strong></div>
+          </div>
+          {!!p.linked_mortgage_ids?.length&&<div className="mt-2 text-xs font-medium text-[var(--brand)]">Vinculado a {p.linked_mortgage_ids.length} hipoteca(s)</div>}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button className="fin-button secondary py-1.5 text-xs" type="button" onClick={e=>{e.stopPropagation();setSelectedPolicyId(p.id)}}>Ver detalle</button>
+            <button className="text-xs underline" type="button" onClick={e=>{e.stopPropagation();editPolicy(p);setSelectedPolicyId(p.id)}}>Editar</button>
+            <button className="text-xs underline" type="button" onClick={e=>{e.stopPropagation();if(window.confirm('¿Eliminar este seguro? Los documentos no se borrarán del Vault.'))deletePolicy.mutate(p.id)}}>Eliminar</button>
+          </div>
+        </div>):<EmptyState>Crea tu primer seguro y después asocia su documentación desde la propia póliza.</EmptyState>}</div>
+      </Card>
 
       {data.finances.spend_reconciliation.needs_attention&&<Card className="mt-4">
         <h2 className="font-bold">Pagos de seguros por revisar</h2>
@@ -278,9 +283,16 @@ export default function InsurancePage(){
           <h3 className="text-sm font-semibold">Movimientos sin vincular</h3>
           <div className="mt-2 space-y-2">{data.finances.spend_reconciliation.unlinked_transactions.map(tx=><div key={tx.transaction_id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm">
             <div><strong>{tx.merchant||tx.description}</strong><div className="text-xs text-[var(--muted)]">{new Date(tx.booking_date).toLocaleDateString('es-ES')} · {tx.description}</div></div>
-            <div className="flex items-center gap-3"><strong><Money value={tx.amount} currency={tx.currency}/></strong><Link className="text-xs underline" href={'/transactions/?q='+encodeURIComponent(tx.description)}>Vincular</Link></div>
+            <div className="flex flex-wrap items-center gap-3">
+              <strong><Money value={tx.amount} currency={tx.currency}/></strong>
+              <select className="fin-input min-w-56 py-1.5 text-xs" aria-label={'Vincular '+tx.description+' a seguro'} defaultValue="" disabled={linkPendingPayment.isPending} onChange={e=>{if(e.target.value)linkPendingPayment.mutate({transactionId:tx.transaction_id,policyId:e.target.value})}}>
+                <option value="">Vincular a póliza…</option>
+                {data.policies.map(policy=><option key={policy.id} value={policy.id}>{policy.contract?.provider_name||insuranceLabel[policy.insurance_type]||'Seguro'} · {insuranceLabel[policy.insurance_type]||policy.insurance_type}</option>)}
+              </select>
+            </div>
           </div>)}</div>
         </div>}
+        {linkPendingPayment.error&&<div className="mt-3"><ErrorState error={linkPendingPayment.error}/></div>}
         {data.finances.spend_reconciliation.policy_differences.length>0&&<div className="mt-4">
           <h3 className="text-sm font-semibold">Pólizas con diferencia</h3>
           <div className="mt-2 grid gap-2 md:grid-cols-2">{data.finances.spend_reconciliation.policy_differences.map(item=><button key={item.policy_id} type="button" onClick={()=>setSelectedPolicyId(item.policy_id)} className="rounded-xl bg-[var(--surface-2)] p-3 text-left text-sm">
@@ -327,106 +339,121 @@ export default function InsurancePage(){
               <button className="fin-button secondary py-2 text-xs" type="button" onClick={()=>setSelectedPolicyId(null)}>Cerrar</button>
             </div>
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Prima anual</div><strong><Money value={selectedPolicy.annual_premium}/></strong></div>
-              <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Equivalente mensual</div><strong><Money value={selectedPolicy.monthly_equivalent}/></strong></div>
-              <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Franquicia general</div><strong><Money value={selectedPolicy.deductible}/></strong></div>
-              <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Pagado últimos 365 días</div><strong><Money value={selectedPolicy.linked_payments_last_365_total}/></strong><div className="text-[11px] text-[var(--muted)]">{selectedPolicy.linked_payment_count} pago(s) vinculados</div></div>
+            <div className="mt-5 flex flex-wrap gap-2 border-b border-[var(--border)] pb-3" role="tablist" aria-label="Secciones del seguro">
+              {([
+                ['general','General'],
+                ['transactions','Transacciones'],
+                ['details','Detalles'],
+              ] as const).map(([key,label])=><button key={key} role="tab" aria-selected={detailSection===key} type="button" className={detailSection===key?'fin-button py-2 text-xs':'fin-button secondary py-2 text-xs'} onClick={()=>setDetailSection(key)}>{label}</button>)}
             </div>
 
-            <div className="mt-5 rounded-xl border border-[var(--border)] p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold">Pagos vinculados</h3><p className="mt-1 text-xs text-[var(--muted)]">Son movimientos que has asociado explícitamente a esta póliza. Se usan para comprobar el coste real sin contar dos veces el gasto.</p></div><Link className="text-xs underline" href="/transactions/">Ir a Movimientos</Link></div>
+            {detailSection==='general'&&<>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Prima anual</div><strong><Money value={selectedPolicy.annual_premium}/></strong></div>
+                <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Equivalente mensual</div><strong><Money value={selectedPolicy.monthly_equivalent}/></strong></div>
+                <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Franquicia general</div><strong><Money value={selectedPolicy.deductible}/></strong></div>
+                <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Pagado últimos 365 días</div><strong><Money value={selectedPolicy.linked_payments_last_365_total}/></strong><div className="text-[11px] text-[var(--muted)]">{selectedPolicy.linked_payment_count} pago(s) vinculados</div></div>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <div className="rounded-xl border border-[var(--border)] p-4 text-sm"><h3 className="font-semibold">Identificación</h3><div className="mt-3 space-y-2"><div>Aseguradora: <strong>{selectedPolicy.contract?.provider_name||selectedProfile?.provider_name||'—'}</strong></div><div>Nº póliza: <strong>{selectedPolicy.policy_number_masked||selectedProfile?.policy_number_masked||'—'}</strong></div><div>Tipo: <strong>{insuranceLabel[selectedPolicy.insurance_type]||selectedPolicy.insurance_type}</strong></div><div>Documentos: <strong>{selectedPolicy.source_documents?.length||0}</strong></div></div></div>
+                <div className="rounded-xl border border-[var(--border)] p-4 text-sm"><h3 className="font-semibold">Situación</h3><div className="mt-3 space-y-2"><div>Renovación: <strong>{selectedPolicy.contract?.renewal_date||'—'}</strong></div><div>Evidencia: <strong>{selectedPolicy.contract?.evidence_status||'Sin contrato consolidado'}</strong></div><div>Hipotecas vinculadas: <strong>{selectedPolicy.linked_mortgage_ids?.length||0}</strong></div><div>Objeto asegurado: <strong>{readableDetail(selectedPolicy.insured_object)}</strong></div></div></div>
+              </div>
+
+              {editingPolicyId===selectedPolicy.id&&showPolicyForm&&<form className="mt-5 grid gap-2 rounded-xl border border-[var(--border)] p-4 sm:grid-cols-2" onSubmit={e=>{e.preventDefault();savePolicy.mutate()}}>
+                <div className="sm:col-span-2"><h3 className="font-semibold">Editar seguro</h3><p className="mt-1 text-xs text-[var(--muted)]">Actualiza solo los datos que conoces. La documentación sigue siendo la fuente de verdad de las condiciones extraídas.</p></div>
+                <input className="fin-input" placeholder="Aseguradora" value={policyForm.provider_name} onChange={e=>setPolicyForm({...policyForm,provider_name:e.target.value})}/>
+                <select className="fin-input" value={policyForm.insurance_type} onChange={e=>setPolicyForm({...policyForm,insurance_type:e.target.value})}><option value="home">Hogar</option><option value="car">Coche</option><option value="life">Vida</option><option value="health">Salud</option><option value="pet">Mascota</option><option value="travel">Viaje</option><option value="other">Otro</option></select>
+                <input className="fin-input" type="number" min="0" step=".01" placeholder="Prima anual (€)" value={policyForm.annual_premium} onChange={e=>setPolicyForm({...policyForm,annual_premium:e.target.value})} required/>
+                <input className="fin-input" type="number" min="0" step=".01" placeholder="Franquicia (€)" value={policyForm.deductible} onChange={e=>setPolicyForm({...policyForm,deductible:e.target.value})}/>
+                <input className="fin-input" placeholder="Nº póliza" value={policyForm.policy_number_masked} onChange={e=>setPolicyForm({...policyForm,policy_number_masked:e.target.value})}/>
+                <input className="fin-input" type="date" aria-label="Fecha renovación en detalle" value={policyForm.renewal_date} onChange={e=>setPolicyForm({...policyForm,renewal_date:e.target.value})}/>
+                <input className="fin-input" type="number" min="0" step="1" placeholder="Preaviso cancelación (días)" value={policyForm.cancellation_notice_days} onChange={e=>setPolicyForm({...policyForm,cancellation_notice_days:e.target.value})}/>
+                <input className="fin-input" type="number" min="0" step=".01" placeholder="Penalización salida (€)" value={policyForm.early_exit_penalty} onChange={e=>setPolicyForm({...policyForm,early_exit_penalty:e.target.value})}/>
+                <div className="sm:col-span-2 flex gap-2"><button className="fin-button" disabled={savePolicy.isPending}>{savePolicy.isPending?'Guardando…':'Guardar cambios'}</button><button className="fin-button secondary" type="button" onClick={()=>{setEditingPolicyId(null);setShowPolicyForm(false)}}>Cancelar</button></div>
+                {savePolicy.error&&<div className="sm:col-span-2"><ErrorState error={savePolicy.error}/></div>}
+              </form>}
+            </>}
+
+            {detailSection==='transactions'&&<div className="mt-4 rounded-xl border border-[var(--border)] p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold">Transacciones del seguro</h3><p className="mt-1 text-xs text-[var(--muted)]">Pagos bancarios vinculados explícitamente a esta póliza. No crean un segundo gasto.</p></div><Link className="text-xs underline" href="/transactions/">Ir a Movimientos</Link></div>
               <div className="mt-3 space-y-2">{selectedPolicy.linked_payments.length?selectedPolicy.linked_payments.map(payment=><div key={payment.transaction_id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-[var(--surface-2)] p-3 text-sm">
                 <div><strong>{payment.merchant||payment.description}</strong><div className="mt-0.5 text-xs text-[var(--muted)]">{new Date(payment.booking_date).toLocaleDateString('es-ES')} · {payment.description}{payment.account_name?' · '+payment.account_name:''}{payment.institution_name?' · '+payment.institution_name:''}</div></div>
                 <div className="text-right"><strong><Money value={payment.amount} currency={payment.currency}/></strong><div><button className="mt-1 text-xs underline" type="button" disabled={unlinkPayment.isPending} onClick={()=>unlinkPayment.mutate(payment.transaction_id)}>Desvincular</button></div></div>
-              </div>):<EmptyState>No hay pagos vinculados todavía. En Movimientos puedes seleccionar esta póliza en cualquier cargo de seguro.</EmptyState>}</div>
+              </div>):<EmptyState>No hay pagos vinculados todavía. Puedes vincularlos desde Movimientos o desde los pagos pendientes de esta misma pantalla.</EmptyState>}</div>
               {unlinkPayment.error&&<div className="mt-3"><ErrorState error={unlinkPayment.error}/></div>}
-            </div>
+            </div>}
 
-            <div className="mt-5 rounded-xl border border-[var(--border)] p-4">
-              <h3 className="font-semibold">Vinculación con hipoteca</h3>
-              <p className="mt-1 text-xs text-[var(--muted)]">Marca aquí qué pólizas forman parte de las condiciones de cada hipoteca. Esto permite que Casa, el comparador y las simulaciones sepan qué seguro de hogar o vida puede afectar a la bonificación. El vínculo por sí solo no inventa una subida del TIN: ese porcentaje solo se usa cuando está confirmado en la documentación hipotecaria.</p>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">{mortgages.data?.length?mortgages.data.map(m=>{
-                const checked=!!selectedPolicy.linked_mortgage_ids?.includes(m.id);
-                return <label key={m.id} className="flex cursor-pointer items-center gap-3 rounded-lg bg-[var(--surface-2)] p-3 text-sm">
-                  <input type="checkbox" checked={checked} disabled={setMortgageLink.isPending} onChange={e=>setMortgageLink.mutate({policyId:selectedPolicy.id,mortgageId:m.id,linked:e.target.checked})}/>
-                  <span><strong>{m.lender}</strong><span className="block text-xs text-[var(--muted)]"><Money value={m.remaining_principal}/> pendientes</span></span>
-                </label>;
-              }):<EmptyState>No hay hipotecas creadas. Crea primero la hipoteca en Casa.</EmptyState>}</div>
-              {setMortgageLink.error&&<div className="mt-3"><ErrorState error={setMortgageLink.error}/></div>}
-            </div>
+            {detailSection==='details'&&<>
+              <div className="mt-4 rounded-xl border border-[var(--border)] p-4">
+                <h3 className="font-semibold">Vinculación con hipoteca</h3>
+                <p className="mt-1 text-xs text-[var(--muted)]">Marca qué pólizas forman parte de las condiciones de cada hipoteca. El vínculo no inventa una subida del TIN: solo se usa un impacto cuando está confirmado documentalmente.</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">{mortgages.data?.length?mortgages.data.map(m=>{
+                  const checked=!!selectedPolicy.linked_mortgage_ids?.includes(m.id);
+                  return <label key={m.id} className="flex cursor-pointer items-center gap-3 rounded-lg bg-[var(--surface-2)] p-3 text-sm">
+                    <input type="checkbox" checked={checked} disabled={setMortgageLink.isPending} onChange={e=>setMortgageLink.mutate({policyId:selectedPolicy.id,mortgageId:m.id,linked:e.target.checked})}/>
+                    <span><strong>{m.lender}</strong><span className="block text-xs text-[var(--muted)]"><Money value={m.remaining_principal}/> pendientes</span></span>
+                  </label>;
+                }):<EmptyState>No hay hipotecas creadas. Crea primero la hipoteca en Casa.</EmptyState>}</div>
+                {setMortgageLink.error&&<div className="mt-3"><ErrorState error={setMortgageLink.error}/></div>}
+              </div>
 
-            <div className="mt-5 grid gap-4 lg:grid-cols-2">
-              <div className="rounded-xl border border-[var(--border)] p-4">
-                <h3 className="font-semibold">Condiciones contractuales</h3>
-                <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
-                  <div>Inicio: <strong>{selectedPolicy.contract?.start_date||'—'}</strong></div>
-                  <div>Renovación: <strong>{selectedPolicy.contract?.renewal_date||'—'}</strong></div>
-                  <div>Preaviso: <strong>{selectedPolicy.contract?.cancellation_notice_days==null?'—':selectedPolicy.contract.cancellation_notice_days+' días'}</strong></div>
-                  <div>Fin permanencia: <strong>{selectedPolicy.contract?.permanence_end_date||'—'}</strong></div>
-                  <div>Penalización salida: <strong><Money value={selectedPolicy.contract?.early_exit_penalty}/></strong></div>
-                  <div>Coste contractual anual: <strong><Money value={selectedPolicy.contract?.annual_cost||selectedPolicy.annual_premium}/></strong></div>
-                  <div className="sm:col-span-2">Objeto asegurado: <strong>{readableDetail(selectedPolicy.insured_object)}</strong></div>
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                <div className="rounded-xl border border-[var(--border)] p-4">
+                  <h3 className="font-semibold">Condiciones contractuales</h3>
+                  <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+                    <div>Inicio: <strong>{selectedPolicy.contract?.start_date||'—'}</strong></div>
+                    <div>Renovación: <strong>{selectedPolicy.contract?.renewal_date||'—'}</strong></div>
+                    <div>Preaviso: <strong>{selectedPolicy.contract?.cancellation_notice_days==null?'—':selectedPolicy.contract.cancellation_notice_days+' días'}</strong></div>
+                    <div>Fin permanencia: <strong>{selectedPolicy.contract?.permanence_end_date||'—'}</strong></div>
+                    <div>Penalización salida: <strong><Money value={selectedPolicy.contract?.early_exit_penalty}/></strong></div>
+                    <div>Coste contractual anual: <strong><Money value={selectedPolicy.contract?.annual_cost||selectedPolicy.annual_premium}/></strong></div>
+                  </div>
+                </div>
+                <div className="rounded-xl border border-[var(--border)] p-4">
+                  <h3 className="font-semibold">Documentación</h3>
+                  <p className="mt-1 text-xs text-[var(--muted)]">La lectura de los documentos se concentra aquí, dentro de la póliza.</p>
+                  <div className="mt-3 space-y-2">{selectedPolicy.source_documents?.length?selectedPolicy.source_documents.map(doc=><button key={doc.id} type="button" onClick={()=>setDocumentPolicyId(selectedPolicy.id)} className="block w-full rounded-xl bg-[var(--surface-2)] p-3 text-left text-sm underline">{doc.file_name}</button>):<EmptyState>Esta póliza no tiene documentos asociados todavía.</EmptyState>}</div>
+                  <button className="fin-button secondary mt-3 py-1.5 text-xs" type="button" onClick={()=>setDocumentPolicyId(selectedPolicy.id)}>Gestionar documentación</button>
                 </div>
               </div>
 
-              <div className="rounded-xl border border-[var(--border)] p-4">
-                <h3 className="font-semibold">Documentos a consultar</h3>
-                <div className="mt-3 space-y-2">{selectedPolicy.source_documents?.length?selectedPolicy.source_documents.map(doc=><button key={doc.id} type="button" onClick={()=>setDocumentPolicyId(selectedPolicy.id)} className="block w-full rounded-xl bg-[var(--surface-2)] p-3 text-left text-sm underline">{doc.file_name}</button>):<EmptyState>Esta póliza no tiene documentos asociados todavía.</EmptyState>}</div>
-                <button className="fin-button secondary mt-3 py-1.5 text-xs" type="button" onClick={()=>setDocumentPolicyId(selectedPolicy.id)}>Gestionar documentación</button>
+              <div className="mt-5">
+                <h3 className="font-semibold">Coberturas, límites y exclusiones</h3>
+                <div className="mt-3 space-y-3">{selectedPolicy.coverages.length?selectedPolicy.coverages.map(coverage=><div key={coverage.id} className="rounded-xl bg-[var(--surface-2)] p-4 text-sm">
+                  <div className="flex flex-wrap items-start justify-between gap-3"><strong>{coverage.coverage_type}</strong><span className="text-xs text-[var(--muted)]">{coverage.user_verified?'Verificada':'Pendiente de validar'} · confianza {Math.round(Number(coverage.confidence||0)*100)}%</span></div>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2"><div>Límite: <strong><Money value={coverage.limit_amount}/></strong></div><div>Franquicia: <strong><Money value={coverage.deductible}/></strong></div><div>Vigencia desde: <strong>{coverage.effective_from||'—'}</strong></div><div>Vigencia hasta: <strong>{coverage.effective_to||'—'}</strong></div></div>
+                  <div className="mt-3 text-xs"><strong>Condiciones:</strong> {readableDetail(coverage.conditions)}</div>
+                  <div className="mt-2 text-xs"><strong>Exclusiones:</strong> {readableDetail(coverage.exclusions)}</div>
+                  {coverage.source_document_id&&<a className="mt-2 inline-block text-xs underline" target="_blank" rel="noreferrer" href={'/api/v1/documents/'+coverage.source_document_id+'/file'+(coverage.source_page?'#page='+coverage.source_page:'')}>Ver en el documento{coverage.source_page?' · pág. '+coverage.source_page:''}</a>}
+                </div>):<EmptyState>No hay coberturas verificadas o extraídas para esta póliza.</EmptyState>}</div>
               </div>
-            </div>
 
-            <div className="mt-5">
-              <h3 className="font-semibold">Coberturas, límites y exclusiones</h3>
-              <div className="mt-3 space-y-3">{selectedPolicy.coverages.length?selectedPolicy.coverages.map(coverage=><div key={coverage.id} className="rounded-xl bg-[var(--surface-2)] p-4 text-sm">
-                <div className="flex flex-wrap items-start justify-between gap-3"><strong>{coverage.coverage_type}</strong><span className="text-xs text-[var(--muted)]">{coverage.user_verified?'Verificada':'Pendiente de validar'} · confianza {Math.round(Number(coverage.confidence||0)*100)}%</span></div>
-                <div className="mt-2 grid gap-2 sm:grid-cols-2"><div>Límite: <strong><Money value={coverage.limit_amount}/></strong></div><div>Franquicia: <strong><Money value={coverage.deductible}/></strong></div><div>Vigencia desde: <strong>{coverage.effective_from||'—'}</strong></div><div>Vigencia hasta: <strong>{coverage.effective_to||'—'}</strong></div></div>
-                <div className="mt-3 text-xs"><strong>Condiciones:</strong> {readableDetail(coverage.conditions)}</div>
-                <div className="mt-2 text-xs"><strong>Exclusiones:</strong> {readableDetail(coverage.exclusions)}</div>
-                {coverage.source_document_id&&<a className="mt-2 inline-block text-xs underline" target="_blank" rel="noreferrer" href={'/api/v1/documents/'+coverage.source_document_id+'/file'+(coverage.source_page?'#page='+coverage.source_page:'')}>Ver en el documento{coverage.source_page?' · pág. '+coverage.source_page:''}</a>}
-              </div>):<EmptyState>No hay coberturas verificadas o extraídas para esta póliza.</EmptyState>}</div>
-            </div>
-
-            <div className="mt-5">
-              <h3 className="font-semibold">Todo lo indicado por la documentación</h3>
-              <p className="mt-1 text-xs text-[var(--muted)]">Agrupa para esta póliza la misma interpretación que aparece en Detalle del documento, incluso cuando el seguro está incluido dentro de documentación hipotecaria.</p>
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
-                <PolicyInsightGroup title="Ventajas y coberturas útiles" rows={selectedInsightRows} field="advantages"/>
-                <PolicyInsightGroup title="Penalizaciones y costes de salida" rows={selectedInsightRows} field="penalties"/>
-                <PolicyInsightGroup title="Obligaciones" rows={selectedInsightRows} field="obligations"/>
-                <PolicyInsightGroup title="Riesgos" rows={selectedInsightRows} field="risks"/>
-                <PolicyInsightGroup title="Exclusiones o límites" rows={selectedInsightRows} field="exclusions_or_limits"/>
-                <PolicyInsightGroup title="Productos vinculados" rows={selectedInsightRows} field="linked_products"/>
-                <PolicyInsightGroup title="Oportunidades de optimizar" rows={selectedInsightRows} field="optimization_opportunities"/>
-                <PolicyInsightGroup title="Puntos para negociar" rows={selectedInsightRows} field="negotiation_points"/>
-                <PolicyInsightGroup title="Qué exigir para comparar ofertas" rows={selectedInsightRows} field="comparison_requirements"/>
-                <PolicyInsightGroup title="Impactos en otras áreas" rows={selectedInsightRows} field="cross_area_impacts"/>
-                <PolicyInsightGroup title="Información que falta" rows={selectedInsightRows} field="missing_information"/>
+              <div className="mt-5">
+                <h3 className="font-semibold">Lectura de la documentación</h3>
+                <p className="mt-1 text-xs text-[var(--muted)]">Toda la interpretación extraída de los documentos asociados a esta póliza.</p>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <PolicyInsightGroup title="Ventajas y coberturas útiles" rows={selectedInsightRows} field="advantages"/>
+                  <PolicyInsightGroup title="Penalizaciones y costes de salida" rows={selectedInsightRows} field="penalties"/>
+                  <PolicyInsightGroup title="Obligaciones" rows={selectedInsightRows} field="obligations"/>
+                  <PolicyInsightGroup title="Riesgos" rows={selectedInsightRows} field="risks"/>
+                  <PolicyInsightGroup title="Exclusiones o límites" rows={selectedInsightRows} field="exclusions_or_limits"/>
+                  <PolicyInsightGroup title="Productos vinculados" rows={selectedInsightRows} field="linked_products"/>
+                  <PolicyInsightGroup title="Oportunidades de optimizar" rows={selectedInsightRows} field="optimization_opportunities"/>
+                  <PolicyInsightGroup title="Puntos para negociar" rows={selectedInsightRows} field="negotiation_points"/>
+                  <PolicyInsightGroup title="Qué exigir para comparar ofertas" rows={selectedInsightRows} field="comparison_requirements"/>
+                  <PolicyInsightGroup title="Impactos en otras áreas" rows={selectedInsightRows} field="cross_area_impacts"/>
+                  <PolicyInsightGroup title="Información que falta" rows={selectedInsightRows} field="missing_information"/>
+                </div>
               </div>
-            </div>
 
-            {(selectedPending.length>0||selectedMissing.length>0)&&<div className="mt-5 grid gap-4 lg:grid-cols-2">
-              <div><h3 className="font-semibold">Datos encontrados pendientes</h3><div className="mt-2 space-y-2">{selectedPending.length?selectedPending.map((item,i)=><div key={item.field+i} className="rounded-xl bg-[var(--brand-soft)] p-3 text-xs"><strong>{item.label}</strong><div className="mt-1">{readableDetail(item.value)}{item.unit?' '+item.unit:''}</div></div>):<EmptyState>Sin datos pendientes.</EmptyState>}</div></div>
-              <div><h3 className="font-semibold">Información que todavía falta</h3><div className="mt-2 space-y-2">{selectedMissing.length?selectedMissing.map((item,i)=><div key={item.field+i} className="rounded-xl bg-[var(--surface-2)] p-3 text-xs"><strong>{item.label}</strong><div className="mt-1 text-[var(--muted)]">{item.why}</div></div>):<EmptyState>No faltan campos básicos.</EmptyState>}</div></div>
-            </div>}
+              {(selectedPending.length>0||selectedMissing.length>0)&&<div className="mt-5 grid gap-4 lg:grid-cols-2">
+                <div><h3 className="font-semibold">Datos encontrados pendientes</h3><div className="mt-2 space-y-2">{selectedPending.length?selectedPending.map((item,i)=><div key={item.field+i} className="rounded-xl bg-[var(--brand-soft)] p-3 text-xs"><strong>{item.label}</strong><div className="mt-1">{readableDetail(item.value)}{item.unit?' '+item.unit:''}</div></div>):<EmptyState>Sin datos pendientes.</EmptyState>}</div></div>
+                <div><h3 className="font-semibold">Información que todavía falta</h3><div className="mt-2 space-y-2">{selectedMissing.length?selectedMissing.map((item,i)=><div key={item.field+i} className="rounded-xl bg-[var(--surface-2)] p-3 text-xs"><strong>{item.label}</strong><div className="mt-1 text-[var(--muted)]">{item.why}</div></div>):<EmptyState>No faltan campos básicos.</EmptyState>}</div></div>
+              </div>}
+            </>}
 
-            {editingPolicyId===selectedPolicy.id&&showPolicyForm&&<form className="mt-5 grid gap-2 rounded-xl border border-[var(--border)] p-4 sm:grid-cols-2" onSubmit={e=>{e.preventDefault();savePolicy.mutate()}}>
-              <div className="sm:col-span-2"><h3 className="font-semibold">Editar seguro</h3><p className="mt-1 text-xs text-[var(--muted)]">Actualiza solo los datos que conoces. La documentación sigue siendo la fuente de verdad de las condiciones extraídas.</p></div>
-              <input className="fin-input" placeholder="Aseguradora" value={policyForm.provider_name} onChange={e=>setPolicyForm({...policyForm,provider_name:e.target.value})}/>
-              <select className="fin-input" value={policyForm.insurance_type} onChange={e=>setPolicyForm({...policyForm,insurance_type:e.target.value})}><option value="home">Hogar</option><option value="car">Coche</option><option value="life">Vida</option><option value="health">Salud</option><option value="pet">Mascota</option><option value="travel">Viaje</option><option value="other">Otro</option></select>
-              <input className="fin-input" type="number" min="0" step=".01" placeholder="Prima anual (€)" value={policyForm.annual_premium} onChange={e=>setPolicyForm({...policyForm,annual_premium:e.target.value})} required/>
-              <input className="fin-input" type="number" min="0" step=".01" placeholder="Franquicia (€)" value={policyForm.deductible} onChange={e=>setPolicyForm({...policyForm,deductible:e.target.value})}/>
-              <input className="fin-input" placeholder="Nº póliza" value={policyForm.policy_number_masked} onChange={e=>setPolicyForm({...policyForm,policy_number_masked:e.target.value})}/>
-              <input className="fin-input" type="date" aria-label="Fecha renovación en detalle" value={policyForm.renewal_date} onChange={e=>setPolicyForm({...policyForm,renewal_date:e.target.value})}/>
-              <input className="fin-input" type="number" min="0" step="1" placeholder="Preaviso cancelación (días)" value={policyForm.cancellation_notice_days} onChange={e=>setPolicyForm({...policyForm,cancellation_notice_days:e.target.value})}/>
-              <input className="fin-input" type="number" min="0" step=".01" placeholder="Penalización salida (€)" value={policyForm.early_exit_penalty} onChange={e=>setPolicyForm({...policyForm,early_exit_penalty:e.target.value})}/>
-              <div className="sm:col-span-2 flex gap-2"><button className="fin-button" disabled={savePolicy.isPending}>{savePolicy.isPending?'Guardando…':'Guardar cambios'}</button><button className="fin-button secondary" type="button" onClick={()=>{setEditingPolicyId(null);setShowPolicyForm(false)}}>Cancelar</button></div>
-              {savePolicy.error&&<div className="sm:col-span-2"><ErrorState error={savePolicy.error}/></div>}
-            </form>}
-
-            <div className="mt-5 flex flex-wrap gap-2">
-              <button className="fin-button" type="button" onClick={()=>editPolicy(selectedPolicy)}>Editar seguro</button>
+            <div className="mt-5 flex flex-wrap gap-2 border-t border-[var(--border)] pt-4">
+              <button className="fin-button" type="button" onClick={()=>{editPolicy(selectedPolicy);setDetailSection('general')}}>Editar seguro</button>
               <button className="fin-button secondary" type="button" onClick={()=>analyzePolicyDocs.mutate(selectedPolicy.id)} disabled={analyzePolicyDocs.isPending}>Buscar datos con IA</button>
               <button className="fin-button secondary" type="button" disabled={deletePolicy.isPending} onClick={()=>{if(window.confirm('¿Eliminar este seguro? La ficha, coberturas y vínculos se borrarán. Los archivos permanecerán en Documentación sin recrear automáticamente la póliza.'))deletePolicy.mutate(selectedPolicy.id)}}>{deletePolicy.isPending?'Eliminando…':'Eliminar seguro'}</button>
             </div>
@@ -447,22 +474,6 @@ export default function InsurancePage(){
       <div className="mt-4 grid gap-2 md:grid-cols-2">{requirements.data?.length?requirements.data.map(r=><div key={r.id} className="flex justify-between rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div><strong>{r.coverage_type}</strong><div className="text-xs text-[var(--muted)]">{r.insurance_type?insuranceLabel[r.insurance_type]||r.insurance_type:'cualquier póliza'}{r.minimum_limit?' · mínimo '+new Intl.NumberFormat('es-ES',{style:'currency',currency:r.currency}).format(Number(r.minimum_limit)):''}</div></div><button className="text-xs underline" onClick={()=>delReq.mutate(r.id)}>Eliminar</button></div>):<EmptyState>Sin criterios definidos. Mientras estén vacíos, Financito puede detectar incoherencias y duplicidades, pero no afirmar que tu cobertura sea suficiente.</EmptyState>}</div>
     </Card>
 
-    <Card className="mt-4">
-      <div><h2 className="font-bold">Lectura de los documentos de las pólizas</h2><p className="mt-1 text-sm text-[var(--muted)]">Resumen corto por póliza: qué cubre, ventajas, límites y penalizaciones. Para el detalle exacto abre el documento en la página indicada.</p></div>
-      <div className="mt-4 space-y-4">{data?.policies.length?data.policies.map(policy=>{
-        const policyDocs=new Set(policy.source_document_ids||[]);
-        const rows=(insights.data||[]).filter(item=>policyDocs.has(item.document_id));
-        return <div key={policy.id} className="rounded-xl border border-[var(--border)] p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold">{insuranceLabel[policy.insurance_type]||policy.insurance_type} · {policy.contract?.provider_name||'Proveedor pendiente'}</h3><div className="mt-1 text-xs text-[var(--muted)]">{policy.source_documents?.length||0} documento(s) asociados</div></div><button className="fin-button secondary py-1.5 text-xs" type="button" onClick={()=>setDocumentPolicyId(policy.id)}>Documentación</button></div>
-          <div className="mt-3 grid gap-3 md:grid-cols-2">
-            <div className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="text-xs font-semibold">Qué cubre</div><div className="mt-2 space-y-1">{policy.coverages.length?policy.coverages.slice(0,6).map(coverage=><div key={coverage.id}>{coverage.coverage_type}{coverage.limit_amount?' · '+new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(Number(coverage.limit_amount)):''}</div>):<span className="text-[var(--muted)]">Sin coberturas verificadas todavía.</span>}</div></div>
-            <div className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="text-xs font-semibold">Ventajas / puntos favorables</div><div className="mt-2 space-y-1">{rows.flatMap(x=>x.analysis.advantages).slice(0,5).map((item,i)=><div key={i}>{item.title||item.detail}{item.pages?.length&&<a className="ml-1 text-xs underline" target="_blank" rel="noreferrer" href={'/api/v1/documents/'+rows.find(r=>r.analysis.advantages.includes(item))?.document_id+'/file#page='+item.pages[0]}>pág. {item.pages[0]}</a>}</div>)}{!rows.flatMap(x=>x.analysis.advantages).length&&<span className="text-[var(--muted)]">Sin ventajas específicas extraídas.</span>}</div></div>
-            <div className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="text-xs font-semibold">Penalizaciones</div><div className="mt-2 space-y-1">{rows.flatMap(x=>x.analysis.penalties).slice(0,5).map((item,i)=><div key={i}>{item.title||item.detail}</div>)}{!rows.flatMap(x=>x.analysis.penalties).length&&<span className="text-[var(--muted)]">No se han extraído penalizaciones explícitas.</span>}</div></div>
-            <div className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="text-xs font-semibold">Límites / exclusiones</div><div className="mt-2 space-y-1">{rows.flatMap(x=>x.analysis.exclusions_or_limits).slice(0,5).map((item,i)=><div key={i}>{item.title||item.detail}</div>)}{!rows.flatMap(x=>x.analysis.exclusions_or_limits).length&&<span className="text-[var(--muted)]">Sin límites adicionales extraídos.</span>}</div></div>
-          </div>
-        </div>;
-      }):<EmptyState>No hay pólizas consolidadas.</EmptyState>}</div>
-    </Card>
     {documentPolicyId&&<EntityDocumentsModal open={!!documentPolicyId} onClose={()=>setDocumentPolicyId(null)} entityType="insurance_policy" entityId={documentPolicyId} documentType="insurance" title={'Documentos del seguro · '+(data?.policies.find(p=>p.id===documentPolicyId)?.contract?.provider_name||insuranceLabel[data?.policies.find(p=>p.id===documentPolicyId)?.insurance_type||'unknown']||'Seguro')}/>}
   </>;
 }

@@ -982,3 +982,21 @@ En **Casa > Capital pendiente**, cuando consta el capital inicial, se muestra el
 - El coste observado de seguros se calcula a partir de pagos explícitamente vinculados. Los movimientos negativos categorizados como seguro que todavía no tienen póliza asociada se consideran pendientes accionables.
 - El antiguo bloque permanente **Conciliación con tus movimientos** deja de mostrarse. Solo aparece **Pagos de seguros por revisar** cuando quedan cargos de seguro sin vincular o, con histórico anual suficiente, una diferencia material (>15 %) entre la prima documentada de una póliza y la suma de sus pagos vinculados.
 - Al eliminar una póliza también se eliminan sus vínculos `payment_for`; los movimientos bancarios permanecen intactos.
+
+
+## Fichas unificadas de hipoteca y seguros
+
+- Las fichas de **hipoteca** y **seguro** usan el mismo patrón de navegación: **General**, **Transacciones** y **Detalles**.
+- **General** concentra identidad, importes globales y edición de los datos principales.
+- **Transacciones** muestra los movimientos bancarios vinculados al producto y permite desvincularlos.
+- **Detalles** contiene condiciones contractuales, coberturas, productos vinculados, información pendiente y documentación.
+- En **Seguros y coberturas**, las **Pólizas consolidadas** se presentan en una cuadrícula de tres columnas en escritorio. La antigua sección independiente “Lectura de los documentos de las pólizas” desaparece: la documentación y su interpretación se consultan dentro de **Detalles** de cada póliza.
+- Los pagos de seguro pendientes se pueden vincular directamente desde **Pagos de seguros por revisar** mediante un selector de póliza; ya no es necesario saltar primero a Movimientos.
+
+## Vinculación de cuotas hipotecarias
+
+- Un movimiento bancario negativo puede vincularse explícitamente a una hipoteca desde **Movimientos**. La relación se guarda en `MortgagePaymentAllocation`, una por transacción.
+- Una cuota hipotecaria no se resta íntegramente del capital. Financito estima el interés del periodo con `capital pendiente × TIN / 12` y aplica al saldo únicamente el componente estimado de principal. La ficha conserva cuota total, interés estimado, principal amortizado, saldo anterior y saldo posterior.
+- La operación es reversible: al desvincular una cuota que todavía está aplicada al saldo, se repone únicamente el principal que había reducido la deuda.
+- Si el usuario corrige manualmente el capital pendiente, ese valor pasa a ser la nueva referencia. Las cuotas ya registradas se conservan como histórico, pero dejan de volver a alterar el saldo para evitar dobles descuentos.
+- El desglose de interés es una estimación basada en el TIN vigente guardado. Si el banco proporciona un reparto exacto capital/interés o el usuario corrige el saldo, prevalece la referencia confirmada.

@@ -138,6 +138,22 @@ class MortgageProfileExtra(Base, TimestampMixin):
     notes:Mapped[str|None]=mapped_column(Text,nullable=True)
 
 
+class MortgagePaymentAllocation(Base, TimestampMixin):
+    __tablename__="mortgage_payment_allocation"
+    __table_args__=(UniqueConstraint("transaction_id",name="uq_mortgage_payment_transaction"),)
+    id:Mapped[str]=mapped_column(String(36),primary_key=True,default=uuid_str)
+    mortgage_id:Mapped[str]=mapped_column(ForeignKey("mortgage.id",ondelete="CASCADE"),index=True)
+    transaction_id:Mapped[str]=mapped_column(ForeignKey("transaction.id",ondelete="CASCADE"),index=True)
+    payment_amount:Mapped[Decimal]=mapped_column(Numeric(18,4))
+    principal_amount:Mapped[Decimal]=mapped_column(Numeric(18,4))
+    interest_amount:Mapped[Decimal]=mapped_column(Numeric(18,4))
+    currency:Mapped[str]=mapped_column(String(3),default="EUR")
+    balance_before:Mapped[Decimal]=mapped_column(Numeric(18,4))
+    balance_after:Mapped[Decimal]=mapped_column(Numeric(18,4))
+    applied_to_balance:Mapped[bool]=mapped_column(Boolean,default=True)
+    calculation_method:Mapped[str]=mapped_column(String(80),default="estimated_nominal_monthly_rate")
+
+
 class InsurancePolicy(Base, TimestampMixin):
     __tablename__="insurance_policy"
     id:Mapped[str]=mapped_column(String(36),primary_key=True,default=uuid_str)

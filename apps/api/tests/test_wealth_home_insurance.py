@@ -7,9 +7,9 @@ from sqlalchemy import delete,select
 from financito.db import SessionLocal
 from financito.models import Account,Contract,Document,ExtractedFact,Mortgage,Transaction
 from financito.models_analytics import EntityLink,EntitySnapshot,LinkedProduct
-from financito.models_extended import Asset,CoverageFact,InsurancePolicy,Liability
+from financito.models_extended import Asset,CoverageFact,InsurancePolicy,Liability,MortgagePaymentAllocation
 from financito.routes_extended import delete_insurance,delete_liability,link_mortgage_insurance,unlink_mortgage_insurance,wealth_details,wealth_home
-from financito.routes_transactions import link_transaction_insurance,transaction_page,unlink_transaction_insurance
+from financito.routes_transactions import link_transaction_insurance,link_transaction_mortgage,transaction_page,unlink_transaction_insurance,unlink_transaction_mortgage
 from financito.services.evidence import synchronize_all_document_evidence
 from financito.services.insurance_analysis import insurance_verdict
 from financito.services.snapshots import record_snapshot
@@ -257,3 +257,101 @@ def test_insurance_payment_can_be_linked_shown_and_unlinked():
         assert policy_row["linked_payment_count"]==0
 
         db.delete(tx);db.delete(policy);db.delete(contract);db.delete(account);db.commit()
+
+
+
+def test_mortgage_payment_link_reduces_only_principal_component_and_can_be_unlinked():
+    suffix=uuid4().hex[:8]
+    with SessionLocal() as db:
+        account=Account(
+            name=f"Cuenta hipoteca {suffix}",institution_name="Banco hipoteca prueba",
+            account_type="checking",currency="EUR",
+        )
+        mortgage=Mortgage(
+            lender=f"Hipoteca pagos {suffix}",remaining_principal=Decimal("100000"),
+            currency="EUR",interest_type="fixed",nominal_rate=Decimal("0.024"),
+            monthly_payment=Decimal("600"),remaining_months=240,
+        )
+        db.add_all([account,mortgage]);db.flush()
+        tx=Transaction(
+            account_id=account.id,booking_date=date.today(),amount=Decimal("-600"),
+            currency="EUR",base_amount=Decimal("-600"),base_currency="EUR",
+            description_raw=f"CUOTA HIPOTECA {suffix}",description_normalized=f"cuota hipoteca {suffix}",
+            merchant_raw=f"Hipoteca pagos {suffix}",merchant_normalized=f"hipoteca pagos {suffix}",
+            category_id=None,categorization_method="manual",categorization_confidence=Decimal("1"),
+            user_verified=True,is_internal_transfer=False,is_recurring=True,is_extraordinary=False,
+            duplicate_fingerprint=uuid4().hex,source="test",
+        )
+        db.add(tx);db.flush()
+        mortgage_id=mortgage.id;tx_id=tx.id
+
+        linked=link_transaction_mortgage(tx_id,mortgage_id,db)
+        assert linked["linked"] is True
+        assert Decimal(linked["payment_amount"])==Decimal("600.0000")
+        assert Decimal(linked["interest_amount"])==Decimal("200.0000")
+        assert Decimal(linked["principal_amount"])==Decimal("400.0000")
+        assert Decimal(linked["balance_after"])==Decimal("99600.0000")
+        assert db.get(Mortgage,mortgage_id).remaining_principal==Decimal("99600.0000")
+
+        page=transaction_page(
+            q=f"CUOTA HIPOTECA {suffix}",category_id=None,start=None,end=None,
+            page=1,page_size=50,db=db,
+        )
+        item=next(row for row in page["items"] if row["id"]==tx_id)
+        assert item["linked_mortgage_id"]==mortgage_id
+
+        home=wealth_home(mortgage_id,db)
+        payment=next(row for row in home["mortgage_payments"] if row["transaction_id"]==tx_id)
+        assert Decimal(payment["payment_amount"])==Decimal("600.00")
+        assert Decimal(payment["interest_amount"])==Decimal("200.00")
+        assert Decimal(payment["principal_amount"])==Decimal("400.00")
+        assert Decimal(payment["balance_after"])==Decimal("99600.00")
+        assert payment["applied_to_balance"] is True
+
+        unlinked=unlink_transaction_mortgage(tx_id,db)
+        assert unlinked["linked"] is False
+        assert Decimal(unlinked["restored_principal"])==Decimal("400.0000")
+        assert db.get(Mortgage,mortgage_id).remaining_principal==Decimal("100000.0000")
+        assert wealth_home(mortgage_id,db)["mortgage_payments"]==[]
+
+        db.delete(tx);db.delete(mortgage);db.delete(account);db.commit()
+
+
+def test_manual_mortgage_balance_supersedes_previous_payment_adjustments_without_losing_history():
+    suffix=uuid4().hex[:8]
+    with SessionLocal() as db:
+        account=Account(name=f"Cuenta conciliación {suffix}",institution_name="Banco",account_type="checking",currency="EUR")
+        mortgage=Mortgage(
+            lender=f"Hipoteca conciliación {suffix}",remaining_principal=Decimal("100000"),
+            currency="EUR",interest_type="fixed",nominal_rate=Decimal("0.024"),
+            monthly_payment=Decimal("600"),remaining_months=240,
+        )
+        db.add_all([account,mortgage]);db.flush()
+        tx=Transaction(
+            account_id=account.id,booking_date=date.today(),amount=Decimal("-600"),
+            currency="EUR",base_amount=Decimal("-600"),base_currency="EUR",
+            description_raw=f"CUOTA CONCILIACION {suffix}",description_normalized=f"cuota conciliacion {suffix}",
+            merchant_raw="Banco",merchant_normalized="banco",category_id=None,
+            categorization_method="manual",categorization_confidence=Decimal("1"),user_verified=True,
+            is_internal_transfer=False,is_recurring=True,is_extraordinary=False,
+            duplicate_fingerprint=uuid4().hex,source="test",
+        )
+        db.add(tx);db.flush()
+        link_transaction_mortgage(tx.id,mortgage.id,db)
+        allocation=db.scalar(select(MortgagePaymentAllocation).where(MortgagePaymentAllocation.transaction_id==tx.id))
+        assert allocation is not None and allocation.applied_to_balance is True
+
+        from financito.services.mortgage_payments import reconcile_manual_balance
+        assert reconcile_manual_balance(db,mortgage.id)==1
+        mortgage.remaining_principal=Decimal("99550")
+        db.commit()
+
+        history=wealth_home(mortgage.id,db)["mortgage_payments"]
+        assert len(history)==1
+        assert history[0]["applied_to_balance"] is False
+        assert db.get(Mortgage,mortgage.id).remaining_principal==Decimal("99550.0000")
+
+        unlink_transaction_mortgage(tx.id,db)
+        assert db.get(Mortgage,mortgage.id).remaining_principal==Decimal("99550.0000")
+
+        db.delete(tx);db.delete(mortgage);db.delete(account);db.commit()

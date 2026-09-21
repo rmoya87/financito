@@ -31,6 +31,7 @@ from .services.contractual_costs import mortgage_contract_context,resolve_prepay
 from .services.evidence import suppress_insurance_evidence
 from .services.market_research import scan_public_market
 from .services.mortgage_cost import current_remaining_apr_estimate,due_rate_review_estimate,rate_review_readiness
+from .services.mortgage_payments import payment_rows as mortgage_payment_rows,reconcile_manual_balance
 from .services.investment_tracking import remove_tracking,save_tracked_asset,simulation_history,start_simulation,tracked_assets
 from .services.broker_import import import_broker_csv
 from .services.corporate_actions import add_action,list_actions
@@ -154,6 +155,8 @@ def add_mortgage(p:MortgageProfileCreate,db:Session=Depends(dbdep)):
 def update_mortgage(mortgage_id:str,p:MortgageProfileUpdate,db:Session=Depends(dbdep)):
     r=db.get(Mortgage,mortgage_id)
     if not r:raise HTTPException(404,"Mortgage not found")
+    if p.remaining_principal!=r.remaining_principal:
+        reconcile_manual_balance(db,mortgage_id)
     for key,value in p.model_dump().items():setattr(r,key,value)
     db.flush()
     record_snapshot(db,"mortgage",r.id,{
@@ -285,6 +288,7 @@ def wealth_home(mortgage_id:str|None=None,db:Session=Depends(dbdep)):
             "owned_equity":None,
             "ltv":None,
             "principal_progress":None,
+            "mortgage_payments":[],
             "pending_review":[],
             "current_apr_estimate":None,
             "rate_review_automation":{"status":"not_available","automatic":False,"missing":["mortgage"]},
@@ -400,6 +404,7 @@ def wealth_home(mortgage_id:str|None=None,db:Session=Depends(dbdep)):
         "owned_equity":None if owned_equity is None else str(owned_equity),
         "ltv":None if ltv is None else str(ltv),
         "principal_progress":principal_progress,
+        "mortgage_payments":mortgage_payment_rows(db,mortgage.id),
         "pending_review":pending_review,
         "current_apr_estimate":current_remaining_apr_estimate(db,mortgage),
         "rate_review_automation":due_rate_review_estimate(db,mortgage),

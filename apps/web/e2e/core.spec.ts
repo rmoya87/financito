@@ -144,13 +144,16 @@ test('Patrimonio incorpora Casa y permite eliminar otras deudas',async({page})=>
   await expect(createdMortgageData).toBeVisible();
   await createdMortgageData.getByRole('button',{name:'Cerrar'}).click();
 
-  await page.getByRole('button',{name:'Datos de la hipoteca'}).click();
+  await page.getByRole('button',{name:'Detalle de la hipoteca'}).click();
   const mortgageData=page.getByRole('dialog',{name:'Datos de la hipoteca'});
   await expect(mortgageData).toBeVisible();
+  await expect(mortgageData.getByRole('tab',{name:'General'})).toHaveAttribute('aria-selected','true');
   await expect(mortgageData.getByPlaceholder('Capital pendiente (€)')).toHaveValue('150000.0000');
-  await mortgageData.getByRole('button',{name:'Cerrar'}).click();
+  await mortgageData.getByRole('tab',{name:'Detalles'}).click();
+  await expect(mortgageData.getByRole('heading',{name:'Condiciones y calendario'})).toBeVisible();
+  await expect(mortgageData.getByRole('heading',{name:'Documentación'})).toBeVisible();
 
-  await page.getByRole('button',{name:'Documentación'}).click();
+  await mortgageData.getByRole('button',{name:'Gestionar documentación'}).click();
   const mortgageDocs=page.getByRole('dialog',{name:/Documentos de la hipoteca/});
   await expect(mortgageDocs).toBeVisible();
   await expect(mortgageDocs.getByRole('button',{name:'Añadir documentos'})).toBeVisible();
@@ -162,6 +165,7 @@ test('Patrimonio incorpora Casa y permite eliminar otras deudas',async({page})=>
   await expect(mortgageDocs.getByText('hipoteca-e2e.txt',{exact:true}).first()).toBeVisible();
   await expect(mortgageDocs.getByRole('link',{name:'Visualizar documento'})).toBeVisible();
   await mortgageDocs.getByRole('button',{name:'Cerrar'}).click();
+  await mortgageData.getByRole('button',{name:'Cerrar'}).click();
 
   const debtCard=page.getByRole('heading',{name:'Otras deudas'}).locator('..');
   await debtCard.getByPlaceholder('Nombre').fill('Deuda E2E');
@@ -175,6 +179,47 @@ test('Patrimonio incorpora Casa y permite eliminar otras deudas',async({page})=>
   await expectAccessible(page);
 });
 
+test('Movimientos vincula una cuota hipotecaria y solo descuenta capital',async({page})=>{
+  await page.goto('/accounts/');
+  await page.getByLabel('Nombre').fill('Cuenta Cuota Hipoteca E2E');
+  await page.getByLabel('Saldo actual').fill('3000');
+  await page.getByRole('button',{name:'Guardar cuenta'}).click();
+  await expect(page.getByText('Cuenta Cuota Hipoteca E2E',{exact:true})).toBeVisible();
+
+  await page.goto('/transactions/');
+  await page.getByRole('combobox',{name:'Cuenta destino'}).selectOption({label:'Cuenta Cuota Hipoteca E2E'});
+  await page.locator('input[type="file"]').first().setInputFiles({
+    name:'cuota-hipoteca-e2e.csv',
+    mimeType:'text/csv',
+    buffer:Buffer.from('Fecha;Concepto;Importe;Moneda;Comercio\n21/09/2026;Cuota Hipoteca Vinculada E2E;-800,00;EUR;Hipoteca E2E\n'),
+  });
+  await page.getByRole('button',{name:'Importar extracto'}).click();
+  await expect(page.getByText('Cuota Hipoteca Vinculada E2E',{exact:true})).toBeVisible();
+
+  const mortgageSelect=page.getByRole('combobox',{name:'Hipoteca para Cuota Hipoteca Vinculada E2E'});
+  const mortgageOptionValue=await mortgageSelect.locator('option').filter({hasText:'Hipoteca E2E'}).getAttribute('value');
+  expect(mortgageOptionValue).toBeTruthy();
+  await mortgageSelect.selectOption(mortgageOptionValue!);
+  await expect(page.getByText('Cuota vinculada · capital actualizado',{exact:true})).toBeVisible();
+
+  await page.goto('/wealth/');
+  const mortgagePicker=page.getByRole('combobox',{name:'Hipoteca seleccionada'});
+  const pickerValue=await mortgagePicker.locator('option').filter({hasText:'Hipoteca E2E'}).getAttribute('value');
+  expect(pickerValue).toBeTruthy();
+  await mortgagePicker.selectOption(pickerValue!);
+  await page.getByRole('button',{name:'Detalle de la hipoteca'}).click();
+  const detail=page.getByRole('dialog',{name:'Datos de la hipoteca'});
+  await detail.getByRole('tab',{name:'Transacciones'}).click();
+  await expect(detail.getByRole('heading',{name:'Transacciones de la hipoteca'})).toBeVisible();
+  await expect(detail.getByText(/Cuota Hipoteca Vinculada E2E/)).toBeVisible();
+  await expect(detail.getByText('Capital:',{exact:true})).toBeVisible();
+  await expect(detail.getByText('Interés estimado:',{exact:true})).toBeVisible();
+  await expect(detail.getByText('Saldo después:',{exact:true})).toBeVisible();
+  await expectAccessible(page);
+  await detail.getByRole('button',{name:'Cerrar'}).click();
+});
+
+
 test('al pulsar un seguro se abre su ficha completa',async({page})=>{
   await page.goto('/insurance/');
   await page.getByRole('button',{name:'Nuevo seguro'}).click();
@@ -187,10 +232,14 @@ test('al pulsar un seguro se abre su ficha completa',async({page})=>{
   await page.getByText('Seguro E2E',{exact:true}).click();
   const dialog=page.getByRole('dialog',{name:'Detalle del seguro'});
   await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('tab',{name:'General'})).toHaveAttribute('aria-selected','true');
+  await expect(dialog.getByRole('tab',{name:'Transacciones'})).toBeVisible();
+  await expect(dialog.getByRole('tab',{name:'Detalles'})).toBeVisible();
+  await dialog.getByRole('tab',{name:'Detalles'}).click();
   await expect(dialog.getByRole('heading',{name:'Condiciones contractuales'})).toBeVisible();
-  await expect(dialog.getByRole('heading',{name:'Documentos a consultar'})).toBeVisible();
+  await expect(dialog.getByRole('heading',{name:'Documentación'})).toBeVisible();
   await expect(dialog.getByRole('heading',{name:'Coberturas, límites y exclusiones'})).toBeVisible();
-  await expect(dialog.getByRole('heading',{name:'Todo lo indicado por la documentación'})).toBeVisible();
+  await expect(dialog.getByRole('heading',{name:'Lectura de la documentación'})).toBeVisible();
   await expect(dialog.getByRole('heading',{name:'Obligaciones'})).toBeVisible();
   await expect(dialog.getByRole('heading',{name:'Riesgos'})).toBeVisible();
   await expect(dialog.getByRole('heading',{name:'Oportunidades de optimizar'})).toBeVisible();
@@ -245,14 +294,18 @@ test('Movimientos permite vincular un pago a un seguro y verlo en su detalle',as
   await page.getByRole('button',{name:'Importar extracto'}).click();
   await expect(page.getByText('Pago Seguro Vinculado E2E',{exact:true})).toBeVisible();
 
-  const policySelect=page.getByRole('combobox',{name:'Seguro para Pago Seguro Vinculado E2E'});
-  await policySelect.selectOption({label:'Aseguradora Pagos E2E · Hogar'});
-  await expect(page.getByText('Pago vinculado',{exact:true})).toBeVisible();
-
+  await page.getByRole('combobox',{name:'Categoría para Pago Seguro Vinculado E2E'}).selectOption({label:'Seguros'});
   await page.goto('/insurance/');
+  await expect(page.getByRole('heading',{name:'Lectura de los documentos de las pólizas'})).toHaveCount(0);
+  const pendingInsurance=page.getByRole('combobox',{name:'Vincular Pago Seguro Vinculado E2E a seguro'});
+  await expect(pendingInsurance).toBeVisible();
+  await pendingInsurance.selectOption({label:'Aseguradora Pagos E2E · Hogar'});
+  await expect(pendingInsurance).not.toBeVisible();
+
   await page.getByText('Aseguradora Pagos E2E',{exact:true}).click();
   const detail=page.getByRole('dialog',{name:'Detalle del seguro'});
-  await expect(detail.getByRole('heading',{name:'Pagos vinculados'})).toBeVisible();
+  await detail.getByRole('tab',{name:'Transacciones'}).click();
+  await expect(detail.getByRole('heading',{name:'Transacciones del seguro'})).toBeVisible();
   await expect(detail.getByText(/Pago Seguro Vinculado E2E/)).toBeVisible();
   await expect(detail.getByText(/Cuenta Pago Seguro E2E/)).toBeVisible();
   await expect(detail.getByText(/123,45/).first()).toBeVisible();

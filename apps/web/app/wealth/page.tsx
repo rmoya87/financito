@@ -18,6 +18,7 @@ type Account={id:string;name:string;institution_name:string;currency:string;bala
 type Asset={id:string;type:string;name:string;value:string;currency:string;valuation_date:string;valuation_source:string;ownership_type:string;ownership_percentage:string;previous_value?:string|null;previous_valuation_date?:string|null;change_amount?:string|null;change_pct?:string|null};
 type Liability={id:string;type:string;name:string;amount:string;currency:string;annual_rate:string|null;ownership_percentage:string};
 type Mortgage={id:string;lender:string;remaining_principal:string;currency:string;interest_type:string;nominal_rate:string;monthly_payment:string;remaining_months:number;early_repayment_fee?:string|null;source_document_id?:string|null;source_document_ids?:string[];document_count?:number};
+type MortgagePayment={id:string;transaction_id:string;booking_date:string;description:string;merchant:string|null;payment_amount:string;principal_amount:string;interest_amount:string;currency:string;balance_before:string;balance_after:string;applied_to_balance:boolean;calculation_method:string;account_id:string;account_name:string|null;institution_name:string|null};
 type Investment={security_id:string;name:string;identifier:string|null;asset_class:string;currency:string;quantity:string;cost_basis:string;current_value:string|null;current_price:string|null;price_provider:string|null};
 type Policy={id:string;insurance_type:string;annual_premium:string;currency:string;deductible:string|null;provider:string|null;contract_id:string|null};
 type WealthDetails={summary:WealthSummary;accounts:Account[];assets:Asset[];liabilities:Liability[];mortgages:Mortgage[];investments:Investment[];insurance:{annual_premium_total:string;policies:Policy[]}};
@@ -33,6 +34,7 @@ type HomeData={
   source_documents:{id:string;name:string}[];insurance:{id:string;insurance_type:string;annual_premium:string;provider:string|null;renewal_date:string|null;linked_to_mortgage?:boolean}[];
   equity:string|null;ltv:string|null;
   principal_progress:null|{original_principal:string;remaining_principal:string;paid_principal:string;remaining_percent:string;paid_percent:string;status:string};
+  mortgage_payments:MortgagePayment[];
   current_apr_estimate:null|{rate:string|null;status:string;monthly_payment:string;known_linked_annual_cost:string;known_linked_monthly_cost:string;basis:string};
   rate_review_automation:{status:string;automatic:boolean;missing:string[];reference_index?:string|null;differential_rate?:string|null;rate_review_months?:number|null;next_review_date?:string|null;reference_index_lag_months?:number|null;rule?:string;message?:string|null;estimate?:null|{review_date:string;reference_month:string;reference_index_value_percent:string;reference_source:string;reference_series:string;reference_period:string;estimated_nominal_rate:string;estimated_monthly_payment:string;estimated_remaining_interest:string;estimated_current_apr:string|null;known_linked_annual_cost:string;confirmation_required:boolean;notice:string}};
   pending_review:{key:string;label:string;reason:string;value:any;unit:string|null;document_id:string|null;page:number|null;source:string|null;status:string}[];
@@ -79,10 +81,13 @@ export default function WealthPage(){
   const [homeValue,setHomeValue]=useState('');
   const [showMortgageDocuments,setShowMortgageDocuments]=useState(false);
   const [showMortgageEdit,setShowMortgageEdit]=useState(false);
+  const [mortgageSection,setMortgageSection]=useState<'general'|'transactions'|'details'>('general');
 
   useEffect(()=>{
     if(!creatingMortgage&&!selectedMortgageId&&mortgages.data?.length)setSelectedMortgageId(mortgages.data[0].id);
   },[mortgages.data,selectedMortgageId,creatingMortgage]);
+
+  useEffect(()=>{if(showMortgageEdit)setMortgageSection('general')},[showMortgageEdit,selectedMortgageId]);
 
   useEffect(()=>{
     const h=home.data;
@@ -213,6 +218,10 @@ export default function WealthPage(){
     mutationFn:(id:string)=>apiMutate('/api/v1/mortgages/'+id,'DELETE'),
     onSuccess:()=>{setSelectedMortgageId('');setCreatingMortgage(false);clearMortgageForms();refresh()},
   });
+  const unlinkMortgagePayment=useMutation({
+    mutationFn:(transactionId:string)=>apiMutate('/api/v1/transactions/'+transactionId+'/mortgage','DELETE'),
+    onSuccess:()=>{refresh();qc.invalidateQueries({queryKey:['transactions']})},
+  });
   const deleteInsurance=useMutation({
     mutationFn:(id:string)=>apiMutate('/api/v1/insurance/'+id,'DELETE'),
     onSuccess:()=>{refresh();qc.invalidateQueries({queryKey:['insurance']});qc.invalidateQueries({queryKey:['insurance-verdict']});qc.invalidateQueries({queryKey:['switching-readiness']})},
@@ -247,8 +256,7 @@ export default function WealthPage(){
               {mortgages.data?.map(m=><option key={m.id} value={m.id}>{m.lender} · {Number(m.remaining_principal).toLocaleString('es-ES')} {m.currency}</option>)}
             </select>
             <button className="fin-button py-2 text-xs" type="button" onClick={()=>{setCreatingMortgage(true);setSelectedMortgageId('');clearMortgageForms();setShowMortgageEdit(true)}}>Nueva hipoteca</button>
-            {selectedMortgageId&&<button className="fin-button secondary py-2 text-xs" type="button" onClick={()=>setShowMortgageEdit(true)}>Datos de la hipoteca</button>}
-            {selectedMortgageId&&<button className="fin-button secondary py-2 text-xs" type="button" onClick={()=>setShowMortgageDocuments(true)}>Documentación</button>}
+            {selectedMortgageId&&<button className="fin-button secondary py-2 text-xs" type="button" onClick={()=>setShowMortgageEdit(true)}>Detalle de la hipoteca</button>}
             <Link className="fin-button secondary py-2 text-xs" href="/tools/">Simulaciones</Link>
           </div>
         </div>
@@ -456,9 +464,23 @@ export default function WealthPage(){
     {showMortgageEdit&&<div className="fixed inset-0 z-50 overflow-y-auto bg-black/45 p-4 md:p-8" role="dialog" aria-modal="true" aria-label={creatingMortgage?'Nueva hipoteca':'Datos de la hipoteca'}>
       <div className="mx-auto max-w-5xl"><Card>
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div><div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Casa</div><h2 className="mt-1 text-xl font-bold">{creatingMortgage?'Nueva hipoteca':'Actualizar datos de la hipoteca'}</h2><p className="mt-1 text-sm text-[var(--muted)]">Aquí mantienes los datos que usa Financito para patrimonio y simulaciones. La documentación se gestiona aparte y nunca se sustituye por datos inventados.</p></div>
+          <div><div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Casa</div><h2 className="mt-1 text-xl font-bold">{creatingMortgage?'Nueva hipoteca':home.data?.mortgage?.lender||'Hipoteca'}</h2><p className="mt-1 text-sm text-[var(--muted)]">{creatingMortgage?'Introduce los datos principales para crearla.':'Datos globales, transacciones vinculadas y condiciones/documentación en una única ficha.'}</p></div>
           <button className="fin-button secondary py-2 text-xs" type="button" onClick={()=>setShowMortgageEdit(false)}>Cerrar</button>
         </div>
+        {!creatingMortgage&&selectedMortgageId&&<div className="mt-5 flex flex-wrap gap-2 border-b border-[var(--border)] pb-3" role="tablist" aria-label="Secciones de la hipoteca">
+          {([
+            ['general','General'],
+            ['transactions','Transacciones'],
+            ['details','Detalles'],
+          ] as const).map(([key,label])=><button key={key} role="tab" aria-selected={mortgageSection===key} type="button" className={mortgageSection===key?'fin-button py-2 text-xs':'fin-button secondary py-2 text-xs'} onClick={()=>setMortgageSection(key)}>{label}</button>)}
+        </div>}
+        {(creatingMortgage||mortgageSection==='general')&&<>
+        {!creatingMortgage&&home.data?.mortgage&&<div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Capital pendiente</div><strong><Money value={home.data.mortgage.remaining_principal}/></strong>{home.data.principal_progress&&<div className="text-[11px] text-[var(--muted)]">{Number(home.data.principal_progress.remaining_percent).toLocaleString('es-ES',{maximumFractionDigits:1})}% pendiente</div>}</div>
+          <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Cuota mensual</div><strong><Money value={home.data.mortgage.monthly_payment}/></strong></div>
+          <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">TIN</div><strong>{(Number(home.data.mortgage.nominal_rate)*100).toLocaleString('es-ES',{maximumFractionDigits:3})}%</strong></div>
+          <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Vivienda / LTV</div><strong>{home.data.property?<Money value={home.data.property.value}/>:<span>—</span>}</strong><div className="text-[11px] text-[var(--muted)]">{home.data.ltv===null?'Sin LTV':Number(home.data.ltv).toLocaleString('es-ES',{maximumFractionDigits:1})+'% LTV'}</div></div>
+        </div>}
         <form className="mt-4 grid gap-2 sm:grid-cols-2" onSubmit={(e:FormEvent)=>{e.preventDefault();saveMortgage.mutate()}}>
           <input className="fin-input sm:col-span-2" placeholder="Entidad" value={mortgageForm.lender} onChange={e=>setMortgageForm({...mortgageForm,lender:e.target.value})} required/>
           <input className="fin-input" type="number" min="0.01" step=".01" placeholder="Capital pendiente (€)" value={mortgageForm.remaining_principal} onChange={e=>setMortgageForm({...mortgageForm,remaining_principal:e.target.value})} required/>
@@ -469,15 +491,24 @@ export default function WealthPage(){
           <input className="fin-input" type="number" min="0" step=".01" placeholder="Comisión amortización en €" value={mortgageForm.early_repayment_fee} onChange={e=>setMortgageForm({...mortgageForm,early_repayment_fee:e.target.value})}/>
           <button className="fin-button sm:col-span-2" disabled={saveMortgage.isPending}>{saveMortgage.isPending?'Guardando…':creatingMortgage?'Crear hipoteca':'Guardar datos principales'}</button>
         </form>
-        {!creatingMortgage&&selectedMortgageId&&<>
-          <div className="my-5 border-t border-[var(--border)]"/>
-          <div className="grid gap-4 lg:grid-cols-2">
-            <form className="grid gap-2" onSubmit={(e:FormEvent)=>{e.preventDefault();saveHomeValue.mutate()}}>
-              <h3 className="font-semibold">Valor de la vivienda</h3>
-              <input className="fin-input" type="number" min="0" step=".01" placeholder="Valor actual vivienda (€)" value={homeValue} onChange={e=>setHomeValue(e.target.value)} required/>
-              <button className="fin-button secondary" disabled={saveHomeValue.isPending}>{saveHomeValue.isPending?'Guardando…':'Guardar valoración'}</button>
-            </form>
-            <form className="grid gap-2 sm:grid-cols-2" onSubmit={(e:FormEvent)=>{e.preventDefault();saveExtra.mutate()}}>
+        {!creatingMortgage&&<form className="mt-4 grid gap-2 rounded-xl border border-[var(--border)] p-4 sm:grid-cols-[1fr_auto]" onSubmit={(e:FormEvent)=>{e.preventDefault();saveHomeValue.mutate()}}>
+          <div><h3 className="font-semibold">Valor de la vivienda</h3><p className="mt-1 text-xs text-[var(--muted)]">Se usa para patrimonio, equity y LTV.</p></div><div/>
+          <input className="fin-input" type="number" min="0" step=".01" placeholder="Valor actual vivienda (€)" value={homeValue} onChange={e=>setHomeValue(e.target.value)} required/>
+          <button className="fin-button secondary" disabled={saveHomeValue.isPending}>{saveHomeValue.isPending?'Guardando…':'Guardar valoración'}</button>
+        </form>}
+        </>}
+        {!creatingMortgage&&selectedMortgageId&&mortgageSection==='transactions'&&<div className="mt-4">
+          <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold">Transacciones de la hipoteca</h3><p className="mt-1 text-xs text-[var(--muted)]">La cuota se separa en interés estimado y capital amortizado usando el TIN vigente. Solo el capital reduce el saldo.</p></div><Link className="text-xs underline" href="/transactions/">Ir a Movimientos</Link></div>
+          <div className="mt-3 space-y-2">{home.data?.mortgage_payments?.length?home.data.mortgage_payments.map(payment=><div key={payment.id} className="rounded-xl bg-[var(--surface-2)] p-4 text-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3"><div><strong>{payment.merchant||payment.description}</strong><div className="mt-1 text-xs text-[var(--muted)]">{new Date(payment.booking_date).toLocaleDateString('es-ES')} · {payment.description}{payment.account_name?' · '+payment.account_name:''}{payment.institution_name?' · '+payment.institution_name:''}</div></div><strong><Money value={payment.payment_amount} currency={payment.currency}/></strong></div>
+            <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3"><div>Capital: <strong><Money value={payment.principal_amount} currency={payment.currency}/></strong></div><div>Interés estimado: <strong><Money value={payment.interest_amount} currency={payment.currency}/></strong></div><div>Saldo después: <strong><Money value={payment.balance_after} currency={payment.currency}/></strong></div></div>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-[var(--muted)]"><span>{payment.applied_to_balance?'Aplicada al capital pendiente':'Histórica · saldo reconciliado manualmente'}</span><button className="text-xs underline" type="button" disabled={unlinkMortgagePayment.isPending} onClick={()=>unlinkMortgagePayment.mutate(payment.transaction_id)}>Desvincular</button></div>
+          </div>):<EmptyState>No hay cuotas vinculadas. En Movimientos selecciona esta hipoteca en el cargo de la cuota.</EmptyState>}</div>
+          {unlinkMortgagePayment.error&&<div className="mt-3"><ErrorState error={unlinkMortgagePayment.error}/></div>}
+        </div>}
+        {!creatingMortgage&&selectedMortgageId&&mortgageSection==='details'&&<>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <form className="grid gap-2 rounded-xl border border-[var(--border)] p-4 sm:grid-cols-2" onSubmit={(e:FormEvent)=>{e.preventDefault();saveExtra.mutate()}}>
               <h3 className="font-semibold sm:col-span-2">Condiciones y calendario</h3>
               <input className="fin-input" type="number" min="0" step=".01" placeholder="Capital inicial (€)" value={extraForm.original_principal} onChange={e=>setExtraForm({...extraForm,original_principal:e.target.value})}/>
               <input className="fin-input" type="number" min="1" step="1" placeholder="Plazo inicial (meses)" value={extraForm.original_term_months} onChange={e=>setExtraForm({...extraForm,original_term_months:e.target.value})}/>
@@ -495,7 +526,21 @@ export default function WealthPage(){
               <textarea className="fin-input sm:col-span-2" placeholder="Notas relevantes" value={extraForm.notes} onChange={e=>setExtraForm({...extraForm,notes:e.target.value})}/>
               <button className="fin-button sm:col-span-2" disabled={saveExtra.isPending}>{saveExtra.isPending?'Guardando…':'Guardar condiciones'}</button>
             </form>
+            <div className="rounded-xl border border-[var(--border)] p-4">
+              <h3 className="font-semibold">Documentación</h3>
+              <p className="mt-1 text-xs text-[var(--muted)]">Documentos y evidencia que sustentan las condiciones de esta hipoteca.</p>
+              <div className="mt-3 space-y-2">{home.data?.source_documents?.length?home.data.source_documents.map(doc=><div key={doc.id} className="rounded-lg bg-[var(--surface-2)] p-3 text-sm">{doc.name}</div>):<EmptyState>No hay documentación vinculada.</EmptyState>}</div>
+              <button className="fin-button secondary mt-3 py-1.5 text-xs" type="button" onClick={()=>setShowMortgageDocuments(true)}>Gestionar documentación</button>
+              <div className="mt-5 grid gap-2 text-sm">
+                <div>TAE contractual: <strong>{home.data?.extra.apr_rate===null?'—':(Number(home.data?.extra.apr_rate||0)*100).toLocaleString('es-ES',{maximumFractionDigits:3})+'%'}</strong></div>
+                <div>TAE estimada actual: <strong>{home.data?.current_apr_estimate?.rate?(Number(home.data.current_apr_estimate.rate)*100).toLocaleString('es-ES',{maximumFractionDigits:3})+'%':'—'}</strong></div>
+                <div>Vencimiento: <strong>{home.data?.extra.maturity_date?new Date(home.data.extra.maturity_date).toLocaleDateString('es-ES'):'—'}</strong></div>
+                <div>Próxima revisión: <strong>{home.data?.extra.next_review_date?new Date(home.data.extra.next_review_date).toLocaleDateString('es-ES'):'—'}</strong></div>
+              </div>
+            </div>
           </div>
+          {!!home.data?.pending_review?.length&&<div className="mt-4 rounded-xl border border-[var(--border)] p-4"><h3 className="font-semibold">Datos encontrados pendientes</h3><div className="mt-3 grid gap-2 md:grid-cols-2">{home.data.pending_review.map(item=><div key={item.key} className="rounded-lg bg-[var(--brand-soft)] p-3 text-xs"><strong>{item.label}</strong><div className="mt-1">{String(item.value??'Dato localizado')}{item.unit?' '+item.unit:''}</div><div className="mt-1 text-[var(--muted)]">{item.reason}</div></div>)}</div></div>}
+          {!!home.data?.missing?.length&&<div className="mt-4 rounded-xl border border-[var(--border)] p-4"><h3 className="font-semibold">Información que falta</h3><div className="mt-3 grid gap-2 md:grid-cols-2">{home.data.missing.map(item=><div key={item.key} className="rounded-lg bg-[var(--surface-2)] p-3 text-xs"><strong>{item.label}</strong><div className="mt-1 text-[var(--muted)]">{item.reason}</div></div>)}</div></div>}
           <div className="mt-4 flex justify-end"><button type="button" className="text-xs underline" onClick={()=>{if(window.confirm('¿Eliminar esta hipoteca? La documentación permanecerá en la biblioteca.')){deleteMortgage.mutate(selectedMortgageId);setShowMortgageEdit(false)}}}>Eliminar hipoteca</button></div>
         </>}
         {(saveMortgage.error||saveExtra.error||saveHomeValue.error)&&<div className="mt-3"><ErrorState error={(saveMortgage.error||saveExtra.error||saveHomeValue.error)!}/></div>}

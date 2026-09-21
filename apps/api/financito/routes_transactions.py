@@ -11,9 +11,10 @@ from .services.transaction_ops import apply_category_semantics,apply_rules_to_un
 from .services.forecast_accuracy import evaluate as forecast_evaluate
 from .services.financial_analytics import overview as analytics_overview
 from .services.ai_categorization import improve_categorization
-from .models import CategorizationAudit,Category,Transaction
-from .models_extended import InsurancePolicy
+from .models import CategorizationAudit,Category,Mortgage,Transaction
+from .models_extended import InsurancePolicy,MortgagePaymentAllocation
 from .services.categorization import normalize_text,propagate_verified_merchant
+from .services.mortgage_payments import link_payment as link_mortgage_payment,unlink_payment as unlink_mortgage_payment
 router=APIRouter(prefix="/api/v1")
 def dbdep():
     s=SessionLocal()
@@ -105,6 +106,38 @@ def unlink_transaction_insurance(transaction_id:str,db:Session=Depends(dbdep)):
     db.commit()
     return {"transaction_id":transaction_id,"insurance_policy_id":None,"linked":False,"deleted":deleted}
 
+@router.put("/transactions/{transaction_id}/mortgage/{mortgage_id}")
+def link_transaction_mortgage(transaction_id:str,mortgage_id:str,db:Session=Depends(dbdep)):
+    if not db.get(Transaction,transaction_id):raise HTTPException(404,"Transaction not found")
+    if not db.get(Mortgage,mortgage_id):raise HTTPException(404,"Mortgage not found")
+    try:
+        row=link_mortgage_payment(db,transaction_id,mortgage_id)
+    except ValueError as exc:
+        db.rollback();raise HTTPException(400,str(exc))
+    db.commit()
+    return {
+        "transaction_id":transaction_id,
+        "mortgage_id":mortgage_id,
+        "linked":True,
+        "payment_amount":str(row.payment_amount),
+        "principal_amount":str(row.principal_amount),
+        "interest_amount":str(row.interest_amount),
+        "balance_after":str(row.balance_after),
+        "applied_to_balance":row.applied_to_balance,
+    }
+
+@router.delete("/transactions/{transaction_id}/mortgage")
+def unlink_transaction_mortgage(transaction_id:str,db:Session=Depends(dbdep)):
+    if not db.get(Transaction,transaction_id):raise HTTPException(404,"Transaction not found")
+    row=unlink_mortgage_payment(db,transaction_id)
+    db.commit()
+    return {
+        "transaction_id":transaction_id,
+        "mortgage_id":None if row is None else row.mortgage_id,
+        "linked":False,
+        "restored_principal":None if row is None or not row.applied_to_balance else str(row.principal_amount),
+    }
+
 @router.post("/transactions/detect-transfers")
 def transfers(db:Session=Depends(dbdep)):n=detect_internal_transfers(db);db.commit();return {"matched_pairs":n}
 @router.get("/transactions/{transaction_id}/splits")
@@ -127,7 +160,7 @@ def refunds(db:Session=Depends(dbdep)):
 def ai_categorize(p:AICategorizeIn,db:Session=Depends(dbdep)):
     result=improve_categorization(db,p.limit,p.llm_limit);db.commit();return result
 
-def _transaction_payload(row:Transaction,insurance_policy_id:str|None=None)->dict:
+def _transaction_payload(row:Transaction,insurance_policy_id:str|None=None,mortgage_id:str|None=None)->dict:
     return {
         "id":row.id,
         "account_id":row.account_id,
@@ -142,6 +175,7 @@ def _transaction_payload(row:Transaction,insurance_policy_id:str|None=None)->dic
         "user_verified":row.user_verified,
         "is_internal_transfer":row.is_internal_transfer,
         "linked_insurance_policy_id":insurance_policy_id,
+        "linked_mortgage_id":mortgage_id,
     }
 
 @router.get("/transactions/page")
@@ -201,8 +235,12 @@ def transaction_page(
         EntityLink.to_type=="insurance_policy",
     )).all()
     insurance_by_transaction={link.from_id:link.to_id for link in payment_links}
+    mortgage_allocations=[] if not row_ids else db.scalars(select(MortgagePaymentAllocation).where(
+        MortgagePaymentAllocation.transaction_id.in_(row_ids)
+    )).all()
+    mortgage_by_transaction={row.transaction_id:row.mortgage_id for row in mortgage_allocations}
     return {
-        "items":[_transaction_payload(row,insurance_by_transaction.get(row.id)) for row in rows],
+        "items":[_transaction_payload(row,insurance_by_transaction.get(row.id),mortgage_by_transaction.get(row.id)) for row in rows],
         "total":total,
         "page":effective_page,
         "page_size":page_size,
