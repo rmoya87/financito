@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from ..models import Mortgage
 from ..domain.engines import MortgageEngine
-from .contractual_costs import resolve_subrogation_penalty
+from .contractual_costs import resolve_subrogation_penalty, switching_readiness
 
 
 OFFICIAL_SOURCES = (
@@ -184,8 +184,88 @@ def _scan_source(source: dict, client: httpx.Client) -> dict:
         }
 
 
-def scan_public_market(session: Session) -> dict:
-    mortgage = session.scalar(select(Mortgage).order_by(Mortgage.updated_at.desc()))
+def _market_conclusion(mortgage: Mortgage | None, leads: list[dict], readiness: dict) -> dict:
+    if mortgage is None:
+        return {
+            "status": "needs_more_data",
+            "headline": "Primero vincula una hipoteca real",
+            "action": "Vincula la FEIN, escritura o condiciones vigentes a una hipoteca en Documentos antes de comparar el mercado.",
+            "provider": None,
+            "source_id": None,
+            "missing": ["mortgage"],
+            "assumptions": [],
+        }
+
+    if not readiness.get("ready"):
+        return {
+            "status": "needs_more_data",
+            "headline": "Faltan costes contractuales para decidir",
+            "action": "Confirma los datos pendientes de la documentación antes de elegir una alternativa. Financito no trata una penalización o vinculación desconocida como 0 €.",
+            "provider": None,
+            "source_id": None,
+            "missing": readiness.get("missing", []),
+            "assumptions": ["Las referencias públicas no sustituyen una FEIN/oferta personalizada."],
+        }
+
+    candidates = []
+    for lead in leads:
+        scenario = lead.get("scenario")
+        if not scenario or lead.get("kind") not in {"mortgage_subrogation", "mortgage_public_benchmark"}:
+            continue
+        try:
+            monthly_saving = Decimal(scenario["monthly_payment_difference"])
+            interest_saving = Decimal(scenario["remaining_interest_difference"])
+            penalty = Decimal(scenario["known_exit_penalty"])
+            break_even = Decimal(scenario["break_even_months_known_penalty_only"])
+        except (TypeError, ValueError, ArithmeticError):
+            continue
+        net_known = (interest_saving - penalty).quantize(Decimal("0.01"))
+        if monthly_saving > 0 and net_known > 0 and break_even < Decimal(mortgage.remaining_months):
+            candidates.append((net_known, monthly_saving, lead))
+
+    if not candidates:
+        return {
+            "status": "keep_or_negotiate",
+            "headline": "No hay una referencia pública que justifique cambiar con los datos actuales",
+            "action": "Mantén la hipoteca como escenario base y usa las mejores referencias públicas solo para negociar una novación. Repite la comparación cuando exista una oferta personalizada con TAE, vinculaciones y gastos completos.",
+            "provider": mortgage.lender,
+            "source_id": None,
+            "missing": [],
+            "assumptions": ["Se compara el mismo capital pendiente y el mismo plazo restante."],
+        }
+
+    candidates.sort(key=lambda row: (row[0], row[1]), reverse=True)
+    net_known, monthly_saving, lead = candidates[0]
+    scenario = lead["scenario"]
+    return {
+        "status": "request_personalized_offer",
+        "headline": f"La referencia más favorable para contrastar es {lead['provider']}",
+        "action": (
+            f"Solicita a {lead['provider']} una FEIN u oferta personalizada y pide primero a {mortgage.lender} "
+            "que iguale o mejore esas condiciones. Cambia solo si la oferta final mantiene un ahorro neto positivo "
+            "después de penalización, seguros vinculados, tasación y cualquier otro coste confirmado."
+        ),
+        "provider": lead["provider"],
+        "source_id": lead["source_id"],
+        "public_tin_percent": lead.get("public_tin_min"),
+        "estimated_monthly_saving": str(monthly_saving),
+        "estimated_remaining_interest_saving": scenario["remaining_interest_difference"],
+        "known_exit_penalty": scenario["known_exit_penalty"],
+        "estimated_net_interest_saving_known_costs": str(net_known),
+        "break_even_months_known_penalty_only": scenario["break_even_months_known_penalty_only"],
+        "missing": [],
+        "assumptions": [
+            "Mismo capital pendiente y plazo restante que la hipoteca seleccionada.",
+            "El TIN público es una referencia y puede no ser el TIN finalmente ofrecido.",
+            "El ahorro neto mostrado descuenta solo costes contractuales conocidos; la oferta final debe completar el resto.",
+        ],
+    }
+
+
+def scan_public_market(session: Session, mortgage_id: str | None = None) -> dict:
+    mortgage = session.get(Mortgage, mortgage_id) if mortgage_id else session.scalar(
+        select(Mortgage).order_by(Mortgage.updated_at.desc())
+    )
     with httpx.Client(
         timeout=10,
         follow_redirects=True,
@@ -249,12 +329,15 @@ def scan_public_market(session: Session) -> dict:
             "scenario": scenario,
         })
 
+    readiness = switching_readiness(session, mortgage.id if mortgage is not None else None)
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "mortgage_id": None if mortgage is None else mortgage.id,
         "current_mortgage_rate_percent": None if current_rate is None else str(current_rate),
         "current_monthly_payment": None if mortgage is None else str(mortgage.monthly_payment),
         "official_sources": list(OFFICIAL_SOURCES),
         "leads": leads,
+        "conclusion": _market_conclusion(mortgage, leads, readiness),
         "disclaimer": (
             "Los tipos publicados son referencias comerciales/estadísticas y no una oferta personalizada. "
             "Las simulaciones mantienen capital pendiente y plazo actuales para hacer comparable la cuota. "
