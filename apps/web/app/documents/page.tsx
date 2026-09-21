@@ -18,6 +18,7 @@ type Fact={id:string;fact_type:string;key:string;value:{value:string;unit?:strin
 type EvidenceGroup={entity_type:'insurance_policy'|'contract'|'mortgage';entity_id:string;kind:string;label:string;provider:string;document_count:number;documents:{id:string;file_name:string}[]};
 type ActionItem={id:string;title:string;action_type:string;status:string;notes:string|null;related_entity_type:string|null;related_entity_id:string|null};
 type BulkConfirmResult={documents:number;confirmed:number;conflicts:number};
+type AnalyzeAllResult={scheduled?:number;documents?:number;analyzed?:number;failed?:number};
 type MortgageCreated={id:string;lender:string;remaining_principal:string;currency:string;interest_type:string;nominal_rate:string;monthly_payment:string;remaining_months:number;early_repayment_fee:string|null};
 
 const MATERIAL_FACT_TYPES=new Set(['contract_term','mortgage_term','linked_product','coverage_fact','investment_term']);
@@ -119,10 +120,10 @@ export default function DocumentsPage(){
       qc.invalidateQueries({queryKey:['actions']});
     },
   });
-  const analyzeAll=useMutation({
+  const analyzeAll=useMutation<AnalyzeAllResult>({
     mutationFn:()=>contextEntity
-      ?apiMutate<{documents:number;analyzed:number;failed:number}>('/api/v1/evidence-groups/'+contextEntity.type+'/'+contextEntity.id+'/analyze','POST')
-      :apiMutate<{scheduled:number}>('/api/v1/documents/analyze-all','POST'),
+      ?apiMutate<AnalyzeAllResult>('/api/v1/evidence-groups/'+contextEntity.type+'/'+contextEntity.id+'/analyze','POST')
+      :apiMutate<AnalyzeAllResult>('/api/v1/documents/analyze-all','POST'),
     onSuccess:()=>{
       qc.invalidateQueries({queryKey:['documents']});
       qc.invalidateQueries({queryKey:['document-analysis',selected]});
@@ -339,7 +340,7 @@ export default function DocumentsPage(){
           <div><h2 className="font-bold">{contextEntity?'Documentos asociados':'Biblioteca'}</h2><p className="mt-1 text-sm text-[var(--muted)]">{contextEntity?'Solo se listan archivos de '+contextEntity.label+'.':'Los documentos aparecen aquí al copiarlos al Vault; no necesitas indexarlos manualmente.'}</p></div>
           <button className="fin-button secondary py-1.5 text-xs" onClick={()=>analyzeAll.mutate()} disabled={analyzeAll.isPending||!docs.data?.length}>{analyzeAll.isPending?'Analizando…':contextEntity?'Buscar datos con IA local':'Analizar todos con IA'}</button>
         </div>
-        {analyzeAll.data&&<div className="mt-2 text-xs text-[var(--muted)]">{contextEntity?'Análisis local actualizado para los documentos asociados.':'scheduled' in analyzeAll.data?analyzeAll.data.scheduled+' documento(s) programados para análisis local.':''}</div>}
+        {analyzeAll.data&&<div className="mt-2 text-xs text-[var(--muted)]">{contextEntity?'Análisis local actualizado para los documentos asociados.':(analyzeAll.data.scheduled??0)+' documento(s) programados para análisis local.'}</div>}
         <div className="mt-4 space-y-2">
           {docs.isLoading?<Loading/>:docs.error?<ErrorState error={docs.error}/>:docs.data?.length?
             docs.data.map(d=><button
