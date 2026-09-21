@@ -177,7 +177,7 @@ def test_available_to_spend_includes_expected_salary_not_yet_received():
     suffix=uuid4().hex[:8]
     with SessionLocal() as db:
         cats=ensure_categories(db)
-        salary_category=next(iter(cats.values()))
+        salary_category=next(category for key,category in cats.items() if key not in {"refunds","internal_transfer"})
         account=Account(
             name="Salary health "+suffix,current_balance=Decimal("1000"),
             available_balance=Decimal("1000"),source="manual",
