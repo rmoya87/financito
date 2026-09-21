@@ -67,6 +67,26 @@ test('cuenta e importación de extracto funcionan de extremo a extremo',async({p
   await page.getByRole('button',{name:'Cerrar'}).click();
 });
 
+test('Movimientos y Análisis comparten el selector temporal de Inicio',async({page})=>{
+  await page.goto('/transactions/');
+  const movementPeriod=page.getByRole('combobox',{name:'Periodo de Movimientos'});
+  await expect(movementPeriod).toBeVisible();
+  await movementPeriod.selectOption('custom');
+  await page.getByLabel('Desde').fill('2026-09-21');
+  await page.getByLabel('Hasta').fill('2026-09-21');
+  await expect(page.getByText('Compra E2E',{exact:true})).not.toBeVisible();
+  await movementPeriod.selectOption('month');
+  await expect(page.getByText('Compra E2E',{exact:true})).toBeVisible();
+
+  await page.goto('/analytics/');
+  const analyticsPeriod=page.getByRole('combobox',{name:'Periodo de Análisis'});
+  await expect(analyticsPeriod).toBeVisible();
+  await analyticsPeriod.selectOption('90d');
+  await expect(page.getByRole('heading',{name:'Análisis y resiliencia'})).toBeVisible();
+  await expect(page.getByText('Ingresos, gasto y ahorro')).toBeVisible();
+  await expectAccessible(page);
+});
+
 test('Documentos permite subir y procesar un archivo desde la aplicación',async({page})=>{
   await page.goto('/documents/');
   await page.locator('input[type="file"]').first().setInputFiles({
