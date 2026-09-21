@@ -248,3 +248,17 @@ Las conclusiones de IA de varios documentos vinculados al mismo producto compart
 - Casa muestra cuota actual, penalización confirmada y coste anual de seguros actualmente vinculados junto al comparador.
 - “Para ti” abre seguros en una modal reutilizable y permite navegar entre pólizas sin salir de Inicio.
 - El detalle de Hogar/Vida/etc. consulta todos los documentos vinculados a la póliza, incluidos PDFs hipotecarios mixtos, y muestra todas las categorías interpretativas de “Detalle del documento”.
+
+
+## Próximamente, evidencia hipotecaria y revisión de tipo (2026-09-21)
+
+- Inicio > Próximamente incluye compromisos, renovaciones y ocurrencias de \`RecurringSeries\` activas durante los próximos 45 días.
+- Los patrones estadísticos agregados por categoría no se presentan como pagos concretos en Inicio.
+- El análisis documental pasa a schema v3 para reanalizar documentos existentes cuando la IA local esté disponible.
+- Si el análisis utiliza un dato hipotecario material explícito, debe proponer también el hecho estructurado correspondiente para revisión.
+- La IA recibe reglas específicas para no confundir responsabilidad hipotecaria registral por demora/costas con penalizaciones de salida o gastos efectivamente pagados.
+- Se proyectan \`start_date\` y \`maturity_date\` confirmadas a \`MortgageProfileExtra\`.
+- Se admite como evidencia \`reference_index_lag_months\`, necesaria para saber qué publicación mensual del índice usa realmente el contrato.
+- Casa separa TAE contractual de TAE estimada actual.
+- La TAE estimada actual incluye TIN vigente y primas futuras conocidas de seguros vinculados.
+- Cuando una revisión variable ya vence y la regla está completa, se consulta Euríbor 12 meses en la serie oficial del BCE y se calcula automáticamente un escenario de nuevo TIN/cuota/TAE. El cálculo no modifica la hipoteca real hasta confirmación.
