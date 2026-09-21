@@ -6,9 +6,13 @@ test.describe.configure({mode:'serial'});
 const mockFinancialHealth={
   generated_at:'2026-09-21T12:00:00Z',
   safe_to_spend:{
-    amount:'300',liquidity:'1000',reserved_goals:'100',obligations_until_next_income:'500',
-    minimum_buffer:'100',buffer_gap:'100',horizon_date:'2026-09-30',next_income:null,
-    explanation:'Cálculo E2E',
+    mode:'current',amount:'300',liquidity:'1000',reserved_goals:'100',obligations_until_next_income:'500',
+    expected_income_before_horizon:'0',expected_incomes:[],projected_resources_after_goals:'900',
+    minimum_buffer:'100',buffer_gap:'100',horizon_date:'2026-09-30',next_income:null,historical_outcome:null,
+    selected_period_start:'2026-09-01',selected_period_end:'2026-09-21',
+    selected_monthly_spending:'500',selected_spending_floor:'150',recent_spending_floor:'180',
+    seasonal_spending_floor:'160',historical_pattern_floor:'120',known_future_outflows:'150',
+    projection_basis:'known_future',projection_method:'Cálculo E2E',explanation:'Cálculo E2E',
   },
   emergency_fund:{essential_monthly:'500',allocated:'1000',coverage_months:'2.0',minimum_buffer:'500'},
   indicators:[
@@ -59,6 +63,8 @@ test('navegación principal simplificada y configuración mantienen estructura a
   await expect(navigation.getByRole('link',{name:'Movimientos'})).toBeVisible();
   await expect(navigation.getByRole('link',{name:'Patrimonio'})).toBeVisible();
   await expect(navigation.getByRole('link',{name:'Decisiones'})).toBeVisible();
+  await expect(page.getByLabel('Ir a Inicio').locator('img')).toHaveAttribute('src',/financito-logo\.svg/);
+  await expect(page.getByText('Privado · local')).toHaveCount(0);
 
   const configuration=page.getByRole('navigation',{name:'Configuración'});
   await configuration.getByRole('link',{name:'Configuración'}).click();
