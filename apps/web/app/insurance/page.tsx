@@ -39,7 +39,7 @@ const statusText:Record<Verdict['status'],{title:string;detail:string}>={
   partial:{title:'Análisis parcial',detail:'Los datos disponibles son útiles, pero faltan campos o criterios para cerrar la comparación.'},
   insufficient_data:{title:'Falta información',detail:'Aún no hay evidencia documental suficiente para analizar tus seguros.'},
 };
-const insuranceLabel:Record<string,string>={home:'Hogar',car:'Coche',life:'Vida',health:'Salud',pet:'Mascota',unknown:'Seguro'};
+const insuranceLabel:Record<string,string>={home:'Hogar',car:'Coche',life:'Vida',health:'Salud',pet:'Mascota',travel:'Viaje',other:'Otro',unknown:'Seguro'};
 
 export default function InsurancePage(){
   const qc=useQueryClient();
@@ -92,18 +92,19 @@ export default function InsurancePage(){
     mutationFn:({missing,value}:{missing:Missing;value:string})=>{
       if(!missing.policy_id)throw new Error('Este dato aún no está asociado a una póliza. Asocia primero el documento al seguro correcto.');
       const policy=data?.policies.find(p=>p.id===missing.policy_id);
+      const profile=profiles.data?.find(p=>p.id===missing.policy_id);
       if(!policy)throw new Error('No se ha encontrado la póliza');
       const body:any={
-        provider_name:policy.contract?.provider_name||null,
+        provider_name:policy.contract?.provider_name||profile?.provider_name||null,
         insurance_type:policy.insurance_type,
         annual_premium:policy.annual_premium,
         deductible:policy.deductible,
         currency:'EUR',
-        policy_number_masked:null,
-        renewal_date:policy.contract?.renewal_date||null,
-        cancellation_notice_days:policy.contract?.cancellation_notice_days??null,
-        early_exit_penalty:policy.contract?.early_exit_penalty||null,
-        contract_id:null,
+        policy_number_masked:profile?.policy_number_masked||null,
+        renewal_date:policy.contract?.renewal_date||profile?.renewal_date||null,
+        cancellation_notice_days:policy.contract?.cancellation_notice_days??profile?.cancellation_notice_days??null,
+        early_exit_penalty:policy.contract?.early_exit_penalty||profile?.early_exit_penalty||null,
+        contract_id:profile?.contract_id||null,
       };
       if(missing.field==='deductible')body.deductible=value||null;
       else if(missing.field==='renewal_date')body.renewal_date=value||null;
@@ -179,7 +180,7 @@ export default function InsurancePage(){
       </Card>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Card><div className="text-xs uppercase text-[var(--muted)]">Primas documentadas</div><div className="mt-2 text-2xl font-bold"><Money value={data.finances.documented_annual_premiums}/>/año</div><div className="mt-1 text-xs text-[var(--muted)]">{data.policies.length} póliza(s) proyectadas desde documentos</div></Card>
+        <Card><div className="text-xs uppercase text-[var(--muted)]">Primas documentadas</div><div className="mt-2 text-2xl font-bold"><Money value={data.finances.documented_annual_premiums}/>/año</div><div className="mt-1 text-xs text-[var(--muted)]">{data.policies.length} póliza(s) registradas</div></Card>
         <Card><div className="text-xs uppercase text-[var(--muted)]">Pagos clasificados como seguros</div><div className="mt-2 text-2xl font-bold"><Money value={data.finances.spend_reconciliation.observed_insurance_spend}/></div><div className="mt-1 text-xs text-[var(--muted)]">Últimos {data.finances.spend_reconciliation.data_coverage_days} días disponibles</div></Card>
         <Card><div className="text-xs uppercase text-[var(--muted)]">Peso sobre ingresos</div><div className="mt-2 text-2xl font-bold">{data.finances.premium_share_of_income===null?'—':(Number(data.finances.premium_share_of_income)*100).toLocaleString('es-ES',{maximumFractionDigits:1})+'%'}</div><div className="mt-1 text-xs text-[var(--muted)]">Primas documentadas / ingresos observados en 365 días</div></Card>
         <Card><div className="text-xs uppercase text-[var(--muted)]">Coberturas verificadas</div><div className="mt-2 text-2xl font-bold">{data.coverage.verified}</div><div className="mt-1 text-xs text-[var(--muted)]">{data.coverage.gaps.length} hueco(s) · {data.coverage.overlaps.length} posible(s) duplicidad(es)</div></Card>
@@ -203,7 +204,7 @@ export default function InsurancePage(){
               <button className="fin-button secondary py-1.5 text-xs" type="button" onClick={()=>analyzePolicyDocs.mutate(p.id)} disabled={analyzePolicyDocs.isPending}>Buscar datos con IA</button>
               <span className="text-xs text-[var(--muted)]">{p.source_documents?.length??(p.source_document_id?1:0)} documento(s) asociados</span>
             </div>
-          </div>):<EmptyState>Añade tus pólizas en Documentos y confirma los datos extraídos.</EmptyState>}</div>
+          </div>):<EmptyState>Crea tu primer seguro y después asocia su documentación desde la propia póliza.</EmptyState>}</div>
         </Card>
 
         <Card>
@@ -225,7 +226,7 @@ export default function InsurancePage(){
       </Card>
 
       {data.pending_review?.length>0&&<Card className="mt-4">
-        <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Datos encontrados pendientes de validar</h2><p className="mt-1 text-sm text-[var(--muted)]">La IA local o el extractor ya han localizado estos datos. No hace falta volver a introducirlos: revisa la página indicada y confírmalos para que alimenten Seguros, contratos y decisiones.</p></div><Link className="text-xs underline" href="/documents/">Abrir Documentos</Link></div>
+        <div><h2 className="font-bold">Datos encontrados pendientes de validar</h2><p className="mt-1 text-sm text-[var(--muted)]">La IA local o el extractor ya han localizado estos datos. No hace falta volver a introducirlos: entra en la documentación de la póliza indicada y confirma la evidencia.</p></div>
         <div className="mt-4 grid gap-3 md:grid-cols-2">{data.pending_review.map((m,i)=><div key={(m.document_id||m.policy_id||'x')+m.field+i} className="rounded-xl bg-[var(--brand-soft)] p-3 text-sm"><strong>{m.label}</strong><div className="mt-1 text-xs">{String(m.value??'Dato localizado')}{m.unit?' '+m.unit:''}</div><div className="mt-1 text-xs text-[var(--muted)]">{m.why}</div>{m.policy_id?<Link className="mt-2 inline-block text-xs underline" href={'/documents/?entity_type=insurance_policy&entity_id='+encodeURIComponent(m.policy_id)+'&label='+encodeURIComponent('Seguro')+(m.document_id?'&document='+encodeURIComponent(m.document_id):'')}>Revisar documentación{m.page?' · pág. '+m.page:''}</Link>:m.document_id&&<Link className="mt-2 inline-block text-xs underline" href={'/documents/?document='+encodeURIComponent(m.document_id)}>Revisar evidencia{m.page?' · pág. '+m.page:''}</Link>}</div>)}</div>
       </Card>}
 
@@ -263,7 +264,7 @@ export default function InsurancePage(){
 
     <Card className="mt-4">
       <div><h2 className="font-bold">Lectura de los documentos de las pólizas</h2><p className="mt-1 text-sm text-[var(--muted)]">Cada archivo conserva su análisis para trazabilidad. Para añadir o asociar documentos usa el botón “Documentación” de la póliza correspondiente.</p></div>
-      <div className="mt-4 grid gap-3 md:grid-cols-2">{insights.data?.length?insights.data.map(x=><div key={x.document_id} className="rounded-xl border border-[var(--border)] p-4"><div className="flex items-start justify-between gap-3"><div><strong>{x.file_name}</strong><div className="mt-1 text-xs text-[var(--muted)]">Confianza interpretativa {Math.round(Number(x.analysis.confidence)*100)}%</div></div><Link className="text-xs underline" href={'/documents/?document='+encodeURIComponent(x.document_id)}>Evidencia</Link></div><p className="mt-3 text-sm">{x.analysis.summary}</p>{x.analysis.exclusions_or_limits.length>0&&<div className="mt-3 text-xs"><strong>Límites:</strong> {x.analysis.exclusions_or_limits.slice(0,3).map(i=>i.title||i.detail).join(' · ')}</div>}{x.analysis.optimization_opportunities.length>0&&<div className="mt-3 rounded-xl bg-[var(--brand-soft)] p-3 text-xs"><strong>A revisar:</strong> {x.analysis.optimization_opportunities.slice(0,3).map(i=>i.title||i.detail).join(' · ')}</div>}{x.analysis.cross_area_impacts.length>0&&<div className="mt-3 text-xs text-[var(--muted)]"><strong>Impactos en otras áreas:</strong> {x.analysis.cross_area_impacts.slice(0,3).map(i=>i.title||i.detail).join(' · ')}</div>}</div>):<EmptyState>Añade tus pólizas en Documentos para obtener conclusiones locales.</EmptyState>}</div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">{insights.data?.length?insights.data.map(x=><div key={x.document_id} className="rounded-xl border border-[var(--border)] p-4"><div className="flex items-start justify-between gap-3"><div><strong>{x.file_name}</strong><div className="mt-1 text-xs text-[var(--muted)]">Confianza interpretativa {Math.round(Number(x.analysis.confidence)*100)}%</div></div><Link className="text-xs underline" href={'/documents/?document='+encodeURIComponent(x.document_id)}>Evidencia</Link></div><p className="mt-3 text-sm">{x.analysis.summary}</p>{x.analysis.exclusions_or_limits.length>0&&<div className="mt-3 text-xs"><strong>Límites:</strong> {x.analysis.exclusions_or_limits.slice(0,3).map(i=>i.title||i.detail).join(' · ')}</div>}{x.analysis.optimization_opportunities.length>0&&<div className="mt-3 rounded-xl bg-[var(--brand-soft)] p-3 text-xs"><strong>A revisar:</strong> {x.analysis.optimization_opportunities.slice(0,3).map(i=>i.title||i.detail).join(' · ')}</div>}{x.analysis.cross_area_impacts.length>0&&<div className="mt-3 text-xs text-[var(--muted)]"><strong>Impactos en otras áreas:</strong> {x.analysis.cross_area_impacts.slice(0,3).map(i=>i.title||i.detail).join(' · ')}</div>}</div>):<EmptyState>Crea una póliza y asocia documentación para obtener conclusiones locales.</EmptyState>}</div>
     </Card>
   </>;
 }
