@@ -58,8 +58,8 @@ export default function DashboardPage(){
   });
   const wealth=useQuery({queryKey:['wealth'],queryFn:()=>apiGet<Wealth>('/api/v1/wealth'),retry:false});
 
-  if(dashboard.isLoading)return <><PageHeader title="Inicio"/><Loading/></>;
-  if(dashboard.error)return <><PageHeader title="Inicio"/><ErrorState error={dashboard.error}/></>;
+  if(dashboard.isLoading)return <><PageHeader title="Inicio" action={<GlobalFinancialFilters compact/>}/><Loading/></>;
+  if(dashboard.error)return <><PageHeader title="Inicio" action={<GlobalFinancialFilters compact/>}/><ErrorState error={dashboard.error}/></>;
 
   const d=dashboard.data!;
   const savingsRate=d.savings_rate===null?undefined:`${(Number(d.savings_rate)*100).toFixed(1)}% de los ingresos`;

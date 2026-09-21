@@ -10,17 +10,23 @@ from .local_ai import ask, status
 from .rag import search
 
 
-def _deterministic_fallback(structured:dict,reason:str)->str:
+def _deterministic_fallback(structured:dict,reason:str,evidence:list[dict]|None=None)->str:
     flow=structured["cash_flow_current_period"]
-    return (
+    base=(
         reason+" "
         f"En el periodo seleccionado constan ingresos por {flow['income']} €, "
         f"gastos por {flow['expenses']} € y ahorro por {flow['savings']} €. "
         f"El patrimonio neto calculado para el ámbito actual es {structured['wealth']['net_worth']} €. "
         f"Hay {len(structured['decision_alerts'])} alerta(s) determinista(s) y "
-        f"{len(structured['actions'])} acción(es) pendiente(s). "
-        "La respuesta se ha devuelto sin esperar indefinidamente al modelo local."
+        f"{len(structured['actions'])} acción(es) pendiente(s)."
     )
+    if evidence:
+        excerpts=" ".join(
+            f"{item['document_name']}: {item['text'][:260].strip()}"
+            for item in evidence[:2]
+        )
+        base+=" Evidencia documental relacionada: "+excerpts
+    return base+" La respuesta se ha devuelto sin esperar indefinidamente al modelo local."
 
 
 def answer(
@@ -64,8 +70,8 @@ def answer(
         session,
         question,
         limit=6,
-        use_vector=bool(ai.get("embedding_ready")),
-        vector_timeout=6,
+        use_vector=False,
+        vector_timeout=3,
     )
     fragments="\n\n".join(
         f"[{index+1}] {item['document_name']}: {item['text'][:1200]}"
@@ -79,7 +85,7 @@ def answer(
 
     if ai_meta["available"] and ai_meta["ready"] and ai_meta["model"]:
         try:
-            result=ask(question,context,timeout=30)
+            result=ask(question,context,timeout=20)
             ai_meta["used"]=True
             ai_meta["error"]=None
         except Exception as exc:
@@ -87,21 +93,25 @@ def answer(
             result=_deterministic_fallback(
                 structured,
                 "La IA local no respondió a tiempo o no pudo completar esta pregunta.",
+                evidence,
             )
     elif not ai_meta["available"]:
         result=_deterministic_fallback(
             structured,
             "Ollama no está disponible, así que esta respuesta usa solo cálculos y datos estructurados.",
+            evidence,
         )
     elif not ai_meta["model"]:
         result=_deterministic_fallback(
             structured,
             "No hay un modelo local de chat configurado, así que esta respuesta usa solo cálculos y datos estructurados.",
+            evidence,
         )
     else:
         result=_deterministic_fallback(
             structured,
             f"El modelo local {ai_meta['model']} está configurado pero no aparece disponible en Ollama; no se ha usado IA generativa.",
+            evidence,
         )
 
     return {
