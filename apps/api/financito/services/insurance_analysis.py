@@ -25,6 +25,31 @@ def _payload(fact:ExtractedFact)->dict:
     except Exception:
         return {"value":fact.value_json}
 
+def _pending_for_documents(session:Session,document_ids:list[str])->dict[str,dict]:
+    if not document_ids:
+        return {}
+    rows=session.scalars(select(ExtractedFact).where(
+        ExtractedFact.document_id.in_(document_ids),
+        ExtractedFact.user_verified.is_(False),
+        ExtractedFact.status.in_(["inferred","ambiguous","conflicting"]),
+    ).order_by(ExtractedFact.updated_at.desc())).all()
+    out={}
+    for fact in rows:
+        if fact.key in out:
+            continue
+        payload=_payload(fact)
+        out[fact.key]={
+            "key":fact.key,
+            "value":payload.get("value"),
+            "unit":payload.get("unit"),
+            "document_id":fact.document_id,
+            "page":fact.source_page,
+            "confidence":str(fact.confidence),
+            "status":fact.status,
+            "source":payload.get("source") or "deterministic_extractor",
+        }
+    return out
+
 def _coverage_gaps(session:Session,policies:dict[str,InsurancePolicy])->tuple[list[dict],list[dict]]:
     today=date.today()
     requirements=session.scalars(select(CoverageRequirement).where(CoverageRequirement.enabled.is_(True))).all()
@@ -95,22 +120,36 @@ def insurance_verdict(session:Session,use_ai:bool=True)->dict:
         merchant=tx.merchant_raw or tx.description_raw or "Sin comercio"
         by_merchant[merchant]=by_merchant.get(merchant,Decimal("0"))+(-tx.amount)
 
-    policy_rows=[];missing=[]
+    policy_rows=[];missing=[];pending_review=[]
     for policy in policies_list:
         contract=contracts.get(policy.contract_id or "")
         document_ids=source_by_policy.get(policy.id,[])
         document_id=document_ids[0] if document_ids else None
         document=documents.get(document_id or "")
         row_coverage=[f for f in coverage if f.insurance_policy_id==policy.id]
+        pending_by_key=_pending_for_documents(session,document_ids)
+        def require(field,label,why,current_value):
+            if current_value is not None:
+                return
+            candidate=pending_by_key.get(field)
+            if candidate:
+                pending_review.append({
+                    "field":field,"label":label,"policy_id":policy.id,
+                    "document_id":candidate.get("document_id") or document_id,
+                    "why":"Financito ya ha localizado este dato en la documentación; revísalo y confírmalo para usarlo en cálculos.",
+                    "value":candidate.get("value"),"unit":candidate.get("unit"),
+                    "page":candidate.get("page"),"source":candidate.get("source"),
+                    "status":candidate.get("status"),
+                })
+            else:
+                missing.append({"field":field,"label":label,"policy_id":policy.id,"document_id":document_id,"why":why})
         if document_id is None:
             missing.append({"field":"source_document","label":"Documento origen","policy_id":policy.id,"document_id":None,"why":"La póliza no está vinculada a un documento fuente; no debe tratarse como fuente canónica."})
-        if policy.deductible is None:
-            missing.append({"field":"deductible","label":"Franquicia","policy_id":policy.id,"document_id":document_id,"why":"No consta una franquicia confirmada. Si la póliza no tiene franquicia, confírmalo explícitamente en su documento."})
+        require("deductible","Franquicia","La IA local no ha encontrado una franquicia explícita. Si la póliza no tiene franquicia, debe constar como valor confirmado.",policy.deductible)
         if contract is not None:
-            if contract.renewal_date is None:
-                missing.append({"field":"renewal_date","label":"Fecha de renovación","policy_id":policy.id,"document_id":document_id,"why":"Hace falta para anticipar renovación y comparar alternativas a tiempo."})
-            if contract.cancellation_notice_days is None:
-                missing.append({"field":"cancellation_notice_days","label":"Preaviso de cancelación","policy_id":policy.id,"document_id":document_id,"why":"Hace falta para saber hasta cuándo puedes cancelar o negociar."})
+            require("renewal_date","Fecha de renovación","La IA local no ha encontrado una fecha de renovación explícita.",contract.renewal_date)
+            require("cancellation_notice_days","Preaviso de cancelación","La IA local no ha encontrado un preaviso de cancelación explícito.",contract.cancellation_notice_days)
+            require("early_exit_penalty","Penalización/coste de salida","La IA local no ha encontrado un coste de salida explícito. No se asumirá que sea 0 €.",contract.early_exit_penalty)
         elif document_id is not None:
             missing.append({"field":"contract_projection","label":"Datos contractuales","policy_id":policy.id,"document_id":document_id,"why":"El documento todavía no contiene suficientes hechos confirmados para construir el contrato asociado."})
         policy_rows.append({
@@ -161,17 +200,36 @@ def insurance_verdict(session:Session,use_ai:bool=True)->dict:
         if not doc_ids:
             continue
         grouped_incomplete.update(doc_ids)
-        missing.append({
-            "field":"annual_cost",
-            "label":"Prima/coste de la póliza",
-            "policy_id":None,
-            "document_id":doc_ids[0],
-            "why":f"Esta ficha de seguro reúne {len(doc_ids)} documento(s), pero todavía no consta una prima/coste confirmado. Complétalo una sola vez en la evidencia del producto.",
-        })
+        candidate=_pending_for_documents(session,doc_ids).get("annual_cost") or _pending_for_documents(session,doc_ids).get("monthly_cost")
+        if candidate:
+            pending_review.append({
+                "field":"annual_cost","label":"Prima/coste de la póliza","policy_id":None,
+                "document_id":candidate.get("document_id") or doc_ids[0],
+                "why":"Financito ya ha localizado una prima/coste en la documentación; revísala y confírmala una sola vez para todo el producto.",
+                "value":candidate.get("value"),"unit":candidate.get("unit"),"page":candidate.get("page"),
+                "source":candidate.get("source"),"status":candidate.get("status"),
+            })
+        else:
+            missing.append({
+                "field":"annual_cost",
+                "label":"Prima/coste de la póliza",
+                "policy_id":None,
+                "document_id":doc_ids[0],
+                "why":f"Esta ficha de seguro reúne {len(doc_ids)} documento(s), pero la IA local no ha encontrado todavía una prima/coste explícito y verificable.",
+            })
 
     for document in insurance_docs:
         if document.id not in projected_doc_ids and document.id not in grouped_incomplete:
-            missing.append({"field":"annual_cost","label":"Prima/coste de la póliza","policy_id":None,"document_id":document.id,"why":"Este documento aún no está vinculado a una ficha de seguro con coste confirmado. Vincúlalo en Documentos o completa la prima."})
+            candidate=_pending_for_documents(session,[document.id]).get("annual_cost") or _pending_for_documents(session,[document.id]).get("monthly_cost")
+            if candidate:
+                pending_review.append({
+                    "field":"annual_cost","label":"Prima/coste de la póliza","policy_id":None,"document_id":document.id,
+                    "why":"Financito ya ha localizado una prima/coste; revísala y confírmala para crear/completar la ficha del seguro.",
+                    "value":candidate.get("value"),"unit":candidate.get("unit"),"page":candidate.get("page"),
+                    "source":candidate.get("source"),"status":candidate.get("status"),
+                })
+            else:
+                missing.append({"field":"annual_cost","label":"Prima/coste de la póliza","policy_id":None,"document_id":document.id,"why":"La IA local no ha encontrado todavía una prima/coste explícito suficiente. Revisa que el documento correcto esté cargado."})
 
     linked=[]
     facts=session.scalars(select(ExtractedFact).where(
@@ -239,6 +297,7 @@ def insurance_verdict(session:Session,use_ai:bool=True)->dict:
             "spend_reconciliation":spend_reconciliation,
         },
         "linked_products":linked,
+        "pending_review":pending_review,
         "missing_information":missing,
         "issues":issues,
         "ai":None,
