@@ -1,10 +1,10 @@
 'use client';
 
-import Image from 'next/image';
 import Link from 'next/link';
 import {useEffect,useState} from 'react';
 import {usePathname} from 'next/navigation';
 import {FinancialFiltersProvider,GlobalFinancialFilters} from '@/components/financial-filters';
+import {FINANCITO_LOGO_DATA_URI} from '@/lib/brand';
 import {
   ArrowLeftRight,
   Bot,
@@ -120,7 +120,7 @@ export function Shell({children}:{children:React.ReactNode}){
   return <FinancialFiltersProvider><div className="min-h-screen lg:grid lg:grid-cols-[224px_1fr]">
     <aside className="border-b border-[var(--border)] bg-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:border-b-0 lg:border-r">
       <Link href="/" aria-label="Ir a Inicio" className="flex items-center gap-3 px-5 py-5">
-        <Image src="/financito-logo.png" alt="" width={40} height={40} priority className="size-10 rounded-xl"/>
+        <img src={FINANCITO_LOGO_DATA_URI} alt="" width={40} height={40} className="size-10 rounded-xl"/>
         <div className="font-bold">Financito</div>
       </Link>
 
