@@ -29,7 +29,7 @@ from .services.snapshots import record_snapshot
 from .services.decision_context import live_decision_context,mortgage_row
 from .services.contractual_costs import mortgage_contract_context,resolve_prepayment_penalty,switching_readiness
 from .services.market_research import scan_public_market
-from .services.mortgage_cost import current_remaining_apr_estimate,rate_review_readiness
+from .services.mortgage_cost import current_remaining_apr_estimate,due_rate_review_estimate,rate_review_readiness
 from .services.investment_tracking import remove_tracking,save_tracked_asset,simulation_history,start_simulation,tracked_assets
 from .services.broker_import import import_broker_csv
 from .services.corporate_actions import add_action,list_actions
@@ -335,7 +335,7 @@ def wealth_home(mortgage_id:str|None=None,db:Session=Depends(dbdep)):
         "ltv":None if ltv is None else str(ltv),
         "pending_review":pending_review,
         "current_apr_estimate":current_remaining_apr_estimate(db,mortgage),
-        "rate_review_automation":rate_review_readiness(db,mortgage),
+        "rate_review_automation":due_rate_review_estimate(db,mortgage),
         "missing":missing,
     }
 
