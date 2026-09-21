@@ -251,7 +251,8 @@ def insurance_verdict(session:Session,use_ai:bool=True)->dict:
     issues=[]
     if gaps:issues.append({"code":"coverage_gaps","severity":"high","title":"Hay coberturas requeridas sin acreditar","detail":f"{len(gaps)} requisito(s) no están cubiertos por hechos verificados."})
     if overlaps:issues.append({"code":"coverage_overlap","severity":"medium","title":"Hay coberturas potencialmente duplicadas","detail":f"{len(overlaps)} coincidencia(s) entre pólizas distintas requieren revisión antes de concluir que sobra una cobertura."})
-    if missing:issues.append({"code":"missing_evidence","severity":"medium","title":"Faltan datos contractuales para cerrar el análisis","detail":f"{len(missing)} campo(s) pueden completarse en los documentos originales sin crear una fuente paralela."})
+    if pending_review:issues.append({"code":"pending_evidence_review","severity":"medium","title":"La IA/extractor ya ha localizado datos pendientes de validar","detail":f"{len(pending_review)} campo(s) no están ausentes: requieren confirmar la evidencia antes de entrar en cálculos."})
+    if missing:issues.append({"code":"missing_evidence","severity":"medium","title":"Faltan datos contractuales para cerrar el análisis","detail":f"{len(missing)} campo(s) todavía no se han localizado con evidencia suficiente."})
     if linked:issues.append({"code":"linked_products","severity":"info","title":"Hay productos vinculados que afectan a otras decisiones","detail":"No conviene cancelar una póliza vinculada sin comprobar el efecto sobre hipoteca u otros contratos."})
 
     coverage_days=365
@@ -277,8 +278,8 @@ def insurance_verdict(session:Session,use_ai:bool=True)->dict:
         status="review_required";summary="Hay al menos una cobertura requerida sin acreditar; conviene resolver esos huecos antes de valorar cambios de póliza."
     elif overlaps or any(x["code"]=="spend_mismatch" for x in issues):
         status="review_required";summary="Las pólizas están estructuradas, pero hay duplicidades o diferencias de coste que conviene conciliar antes de decidir."
-    elif missing or requirements_count==0:
-        status="partial";summary="Los datos disponibles son coherentes, pero faltan campos o criterios de cobertura para cerrar un veredicto completo."
+    elif pending_review or missing or requirements_count==0:
+        status="partial";summary="Los datos disponibles son útiles, pero quedan hechos por validar, campos realmente ausentes o criterios de cobertura antes de cerrar un veredicto completo."
     else:
         status="consistent";summary="Con los requisitos definidos y la evidencia confirmada, no se detectan huecos ni duplicidades materiales pendientes."
 
