@@ -246,7 +246,7 @@ test('Movimientos permite vincular un pago a un seguro y verlo en su detalle',as
   await expect(page.getByText('Pago Seguro Vinculado E2E',{exact:true})).toBeVisible();
 
   const policySelect=page.getByRole('combobox',{name:'Seguro para Pago Seguro Vinculado E2E'});
-  await policySelect.selectOption({label:/Aseguradora Pagos E2E/});
+  await policySelect.selectOption({label:'Aseguradora Pagos E2E · Hogar'});
   await expect(page.getByText('Pago vinculado',{exact:true})).toBeVisible();
 
   await page.goto('/insurance/');
