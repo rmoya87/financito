@@ -15,6 +15,7 @@ from financito.routes_analytics import anomalies as route_anomalies,recurring as
 from financito.schemas import AccountUpdate
 from financito.services.calendar import events
 from financito.services.financial_analytics import overview as analytics_overview
+from financito.services.snapshots import record_snapshot
 from financito.services.categorization import ensure_categories
 
 
@@ -164,6 +165,7 @@ def test_account_delete_removes_only_selected_account_and_transactions():
         db.add_all([doomed,survivor]);db.flush()
         _tx(db,doomed.id,date(2026,9,1),"-10","Delete tx","delete merchant")
         _tx(db,survivor.id,date(2026,9,1),"-20","Keep tx","keep merchant")
+        record_snapshot(db,"account",doomed.id,{"balance":"100","currency":"EUR"},date(2026,9,1),"test")
         db.commit()
 
         doomed_id=doomed.id
@@ -175,6 +177,8 @@ def test_account_delete_removes_only_selected_account_and_transactions():
         assert db.scalar(select(Account.id).where(Account.id==survivor_id))==survivor_id
         assert db.scalar(select(Transaction.id).where(Transaction.account_id==doomed_id)) is None
         assert db.scalar(select(Transaction.id).where(Transaction.account_id==survivor_id)) is not None
+        from financito.models_analytics import EntitySnapshot
+        assert db.scalar(select(EntitySnapshot.id).where(EntitySnapshot.entity_type=="account",EntitySnapshot.entity_id==doomed_id)) is None
 
         db.execute(delete(Transaction).where(Transaction.account_id==survivor.id))
         db.delete(survivor);db.commit()
