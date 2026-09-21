@@ -39,9 +39,11 @@ const areas:Area[]=[
     href:'/wealth/',
     label:'Patrimonio',
     Icon:WalletCards,
-    paths:['/wealth/','/investments/','/markets/','/history/','/tax/'],
+    paths:['/wealth/','/insurance/','/investments/','/markets/','/history/','/tax/'],
     secondary:[
       {href:'/wealth/',label:'Resumen'},
+      {href:'/wealth/#casa',label:'Casa'},
+      {href:'/insurance/',label:'Seguros y protección'},
       {href:'/investments/',label:'Inversiones'},
       {href:'/markets/',label:'Mercado'},
       {href:'/tax/',label:'Fiscalidad'},
@@ -52,7 +54,7 @@ const areas:Area[]=[
     href:'/actions/',
     label:'Decisiones',
     Icon:Sparkles,
-    paths:['/actions/','/decisions/','/goals/','/tools/','/forecast/','/contracts/','/insurance/'],
+    paths:['/actions/','/decisions/','/goals/','/tools/','/forecast/','/contracts/'],
     secondary:[
       {href:'/actions/',label:'Para ti'},
       {href:'/goals/',label:'Objetivos'},
