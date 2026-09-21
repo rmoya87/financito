@@ -64,6 +64,7 @@ test('navegación principal simplificada y configuración mantienen estructura a
   await expect(navigation.getByRole('link',{name:'Patrimonio'})).toBeVisible();
   await expect(navigation.getByRole('link',{name:'Decisiones'})).toBeVisible();
   await expect(page.getByLabel('Financito').locator('img')).toHaveAttribute('src',/financito-logo\.png/);
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href',/financito-logo\.png/);
   await expect(page.getByText('Privado · local')).toHaveCount(0);
 
   const configuration=page.getByRole('navigation',{name:'Configuración'});
