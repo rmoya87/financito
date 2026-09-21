@@ -13,6 +13,7 @@ from .schemas_extended import AssetCreate,AssetSimulationStart,BackupCreate,Back
 from .domain.portfolio import apply_trade,portfolio_summary
 from .domain.engines import MortgageEngine,MortgagePrepaymentEngine,MortgageRatePathEngine
 from .domain.stress import run_stress
+from .domain.analytics import detect_recurring
 from .services.backup import create_backup,stage_restore
 from .services.chat import answer
 from .services.contracts import compare_coverages,refresh_contract_actions,scan_coverage_overlaps
@@ -909,8 +910,9 @@ async def statement(account_id:str,file:UploadFile=File(...),db:Session=Depends(
     except ValueError as e:raise HTTPException(400,str(e))
     transfer_pairs=detect_internal_transfers(db)
     refunds=detect_refunds(db)
+    recurring_count=len(detect_recurring(db,use_ai=True))
     db.commit()
-    return {**r.__dict__,"transfer_pairs":transfer_pairs,"refunds":refunds}
+    return {**r.__dict__,"transfer_pairs":transfer_pairs,"refunds":refunds,"recurring_series":recurring_count}
 
 @router.get("/coverage")
 def coverage_list(db:Session=Depends(dbdep)):
