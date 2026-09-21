@@ -228,7 +228,60 @@ def _linked_mortgage_conditions(session:Session,mortgage:Mortgage|None)->dict:
     }
 
 
-def _market_conclusion(mortgage: Mortgage | None, better_offers: list[dict], rejected: list[dict], readiness: dict) -> dict:
+def _market_conclusion(
+    mortgage: Mortgage | None,
+    better_offers: list[dict],
+    rejected_or_readiness: list[dict] | dict | None = None,
+    readiness: dict | None = None,
+) -> dict:
+    # Backwards-compatible direct-call shape used by existing callers/tests:
+    # _market_conclusion(mortgage, leads, readiness).
+    compatibility_mode = readiness is None and isinstance(rejected_or_readiness, dict)
+    if compatibility_mode:
+        readiness = rejected_or_readiness
+        raw_leads = better_offers
+        better_offers = []
+        rejected = []
+        if mortgage is not None and readiness.get("ready"):
+            for lead in raw_leads:
+                scenario = lead.get("scenario") or {}
+                try:
+                    monthly_saving = Decimal(str(
+                        scenario.get("actual_monthly_saving")
+                        or scenario.get("monthly_payment_difference")
+                    ))
+                    interest_saving = Decimal(str(scenario["remaining_interest_difference"]))
+                    penalty = Decimal(str(scenario["known_exit_penalty"]))
+                    break_even = Decimal(str(
+                        scenario.get("break_even_months")
+                        or scenario.get("break_even_months_known_penalty_only")
+                    ))
+                except (KeyError,TypeError,ValueError,ArithmeticError):
+                    continue
+                net_known=(interest_saving-penalty).quantize(Decimal("0.01"))
+                if monthly_saving>0 and net_known>0 and break_even<Decimal(mortgage.remaining_months):
+                    normalized={**lead,"scenario":{
+                        **scenario,
+                        "actual_monthly_saving":str(monthly_saving),
+                        "estimated_net_interest_saving_known_costs":str(net_known),
+                        "break_even_months":str(break_even),
+                        "compensates":True,
+                    }}
+                    better_offers.append(normalized)
+        elif mortgage is not None:
+            return {
+                "status":"needs_more_data",
+                "headline":"Faltan costes contractuales para decidir",
+                "action":"Confirma los datos pendientes antes de valorar un cambio. Financito no trata costes desconocidos como 0 €.",
+                "provider":None,
+                "source_id":None,
+                "missing":readiness.get("missing",[]),
+                "assumptions":["Las referencias públicas no sustituyen una FEIN/oferta personalizada."],
+            }
+    else:
+        rejected = rejected_or_readiness if isinstance(rejected_or_readiness,list) else []
+        readiness = readiness or {"ready":True,"missing":[]}
+
     if mortgage is None:
         return {
             "status": "needs_more_data",
@@ -263,6 +316,8 @@ def _market_conclusion(mortgage: Mortgage | None, better_offers: list[dict], rej
             "known_exit_penalty":scenario["known_exit_penalty"],
             "estimated_net_interest_saving_known_costs":scenario["estimated_net_interest_saving_known_costs"],
             "break_even_months":scenario["break_even_months"],
+            # Compatibility alias for clients created before the stricter market filter.
+            "break_even_months_known_penalty_only":scenario["break_even_months"],
             "missing":[],
             "assumptions":[
                 "Se usa el mismo capital pendiente y plazo restante.",
@@ -292,7 +347,6 @@ def _market_conclusion(mortgage: Mortgage | None, better_offers: list[dict], rej
         "missing":missing,
         "assumptions":["Las referencias públicas no sustituyen una FEIN/oferta personalizada."],
     }
-
 
 def scan_public_market(session: Session, mortgage_id: str | None = None) -> dict:
     mortgage = session.get(Mortgage, mortgage_id) if mortgage_id else session.scalar(
@@ -362,10 +416,12 @@ def scan_public_market(session: Session, mortgage_id: str | None = None) -> dict
                 "estimated_payment":str(candidate.monthly_payment),
                 "theoretical_monthly_saving":str(theoretical_saving),
                 "actual_monthly_saving":str(actual_saving),
+                "monthly_payment_difference":str(actual_saving),
                 "remaining_interest_difference":str(interest_delta),
                 "known_exit_penalty":None if known_penalty is None else str(known_penalty),
                 "estimated_net_interest_saving_known_costs":None if net_known is None else str(net_known),
                 "break_even_months":None if break_even is None else str(break_even),
+                "break_even_months_known_penalty_only":None if break_even is None else str(break_even),
                 "compensates":compensates,
                 "comparison_complete":known_penalty is not None and not priced_link_unknown,
                 "rejection_reason":reason,
