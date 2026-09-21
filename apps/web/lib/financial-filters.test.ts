@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {financialRangeLabel,resolveGlobalDateRange} from './financial-filters';
+import {financialRangeLabel,readFinancialFilters,resolveGlobalDateRange} from './financial-filters';
 
 describe('financial date ranges',()=>{
   const reference=new Date(2026,8,21,12,0,0);
@@ -19,5 +19,13 @@ describe('financial date ranges',()=>{
 
   it('muestra un rango personalizado en un único texto',()=>{
     expect(financialRangeLabel('custom','2026-08-23','2026-09-21')).toMatch(/23.*ago.*21.*sept.*2026/i);
+  });
+
+  it('descarta filtros antiguos por tipo de cuenta que ya no existen en la cabecera',()=>{
+    window.localStorage.setItem('financito.financialFilters.v1',JSON.stringify({
+      range:'30d',customStart:'2026-08-23',customEnd:'2026-09-21',accountScope:'type:checking',
+    }));
+    expect(readFinancialFilters().accountScope).toBe('all');
+    window.localStorage.removeItem('financito.financialFilters.v1');
   });
 });

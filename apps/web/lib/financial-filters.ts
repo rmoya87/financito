@@ -85,7 +85,7 @@ export function readFinancialFilters():FinancialFilters{
       range,
       customStart:typeof parsed.customStart==='string'?parsed.customStart:fallback.customStart,
       customEnd:typeof parsed.customEnd==='string'?parsed.customEnd:fallback.customEnd,
-      accountScope:typeof parsed.accountScope==='string'&&parsed.accountScope?parsed.accountScope:'all',
+      accountScope:typeof parsed.accountScope==='string'&&parsed.accountScope&&!parsed.accountScope.startsWith('type:')?parsed.accountScope:'all',
     };
   }catch{return fallback}
 }
