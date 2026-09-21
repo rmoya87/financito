@@ -1,9 +1,13 @@
 'use client';
 
-import {createContext,useContext,useEffect,useMemo,useState} from 'react';
+import {createContext,useContext,useEffect,useMemo,useRef,useState} from 'react';
 import {useQuery,useQueryClient} from '@tanstack/react-query';
+import {CalendarDays,ChevronDown,Landmark} from 'lucide-react';
 import {apiGet} from '@/lib/api';
-import {FinancialFilters,GlobalDateRange,defaultFinancialFilters,readFinancialFilters,resolveGlobalDateRange,writeFinancialFilters} from '@/lib/financial-filters';
+import {
+  FinancialFilters,GlobalDateRange,defaultFinancialFilters,financialRangeLabel,
+  globalDateRangeLabels,isoFinancialDate,readFinancialFilters,resolveGlobalDateRange,writeFinancialFilters,
+} from '@/lib/financial-filters';
 
 type Account={
   id:string;name:string;institution_name:string;account_type:string;currency:string;
@@ -14,8 +18,7 @@ type ContextValue=FinancialFilters&{
   start:string;
   end:string;
   setRange:(value:GlobalDateRange)=>void;
-  setCustomStart:(value:string)=>void;
-  setCustomEnd:(value:string)=>void;
+  setCustomRange:(start:string,end:string)=>void;
   setAccountScope:(value:string)=>void;
 };
 
@@ -25,6 +28,8 @@ const typeLabels:Record<string,string>={
   checking:'Cuenta corriente',savings:'Ahorro',brokerage:'Inversión / broker',
   investment:'Inversión',credit:'Crédito',cash:'Efectivo',card:'Tarjeta',CACC:'Cuenta corriente',other:'Otra',
 };
+
+const visibleRanges:GlobalDateRange[]=['month','previous_month','30d','90d','180d','12m','all'];
 
 export function FinancialFiltersProvider({children}:{children:React.ReactNode}){
   const qc=useQueryClient();
@@ -49,8 +54,7 @@ export function FinancialFiltersProvider({children}:{children:React.ReactNode}){
   const value:ContextValue={
     ...filters,start:dates.start,end:dates.end,
     setRange:range=>setFilters(current=>({...current,range})),
-    setCustomStart:customStart=>setFilters(current=>({...current,customStart})),
-    setCustomEnd:customEnd=>setFilters(current=>({...current,customEnd})),
+    setCustomRange:(customStart,customEnd)=>setFilters(current=>({...current,range:'custom',customStart,customEnd})),
     setAccountScope:accountScope=>setFilters(current=>({...current,accountScope})),
   };
   return <Context.Provider value={value}>{children}</Context.Provider>;
@@ -62,47 +66,152 @@ export function useFinancialFilters(){
   return value;
 }
 
+function PeriodRangePicker({compact}:{compact:boolean}){
+  const filters=useFinancialFilters();
+  const root=useRef<HTMLDivElement>(null);
+  const startInput=useRef<HTMLInputElement>(null);
+  const [open,setOpen]=useState(false);
+  const [draftStart,setDraftStart]=useState(filters.start);
+  const [draftEnd,setDraftEnd]=useState(filters.end);
+  const label=financialRangeLabel(filters.range,filters.start,filters.end);
+  const validCustom=!!draftStart&&!!draftEnd&&draftStart<=draftEnd;
+
+  useEffect(()=>{
+    if(!open)return;
+    setDraftStart(filters.start);
+    setDraftEnd(filters.end);
+    const close=(event:PointerEvent)=>{
+      if(root.current&&!root.current.contains(event.target as Node))setOpen(false);
+    };
+    const escape=(event:KeyboardEvent)=>{if(event.key==='Escape')setOpen(false)};
+    document.addEventListener('pointerdown',close);
+    document.addEventListener('keydown',escape);
+    return ()=>{
+      document.removeEventListener('pointerdown',close);
+      document.removeEventListener('keydown',escape);
+    };
+  },[open,filters.start,filters.end]);
+
+  function chooseRange(value:GlobalDateRange){
+    filters.setRange(value);
+    setOpen(false);
+  }
+
+  function applyCustom(){
+    if(!validCustom)return;
+    filters.setCustomRange(draftStart,draftEnd);
+    setOpen(false);
+  }
+
+  function chooseToday(){
+    const today=isoFinancialDate(new Date());
+    setDraftStart(today);
+    setDraftEnd(today);
+  }
+
+  return <div className="relative" ref={root}>
+    {!compact&&<div className="mb-1 text-xs font-medium text-[var(--muted)]">Periodo</div>}
+    <button
+      type="button"
+      className={compact
+        ?"flex min-h-10 min-w-[178px] items-center justify-between gap-2 rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm font-semibold shadow-sm hover:bg-[var(--surface-2)]"
+        :"flex min-h-11 min-w-[200px] items-center justify-between gap-2 rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm font-semibold shadow-sm hover:bg-[var(--surface-2)]"
+      }
+      aria-label={'Periodo global: '+label}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      onClick={()=>setOpen(value=>!value)}
+    >
+      <span className="flex min-w-0 items-center gap-2"><CalendarDays size={17} className="shrink-0 text-[var(--brand)]"/><span className="truncate">{label}</span></span>
+      <ChevronDown size={15} className={'shrink-0 transition-transform '+(open?'rotate-180':'')}/>
+    </button>
+
+    {open&&<div
+      role="dialog"
+      aria-label="Seleccionar periodo"
+      className="absolute right-0 z-[80] mt-2 w-[min(700px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-[var(--border)] bg-white shadow-2xl"
+    >
+      <div className="grid md:grid-cols-[minmax(320px,1fr)_220px]">
+        <div className="p-4 md:p-5">
+          <div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Rango personalizado</div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="text-xs font-medium text-[var(--muted)]">Inicio
+              <input ref={startInput} className="fin-input mt-1 w-full" aria-label="Inicio del periodo" type="date" value={draftStart} max={draftEnd||undefined} onChange={e=>setDraftStart(e.target.value)}/>
+            </label>
+            <label className="text-xs font-medium text-[var(--muted)]">Fin
+              <input className="fin-input mt-1 w-full" aria-label="Fin del periodo" type="date" value={draftEnd} min={draftStart||undefined} onChange={e=>setDraftEnd(e.target.value)}/>
+            </label>
+          </div>
+          <div className="mt-4 rounded-xl bg-[var(--surface-2)] p-3 text-sm">
+            <div className="text-xs text-[var(--muted)]">Periodo seleccionado</div>
+            <div className="mt-1 font-semibold">{financialRangeLabel('custom',draftStart,draftEnd)}</div>
+          </div>
+          <div className="mt-4 flex items-center justify-between gap-2 border-t border-[var(--border)] pt-4">
+            <button className="text-sm font-medium underline" type="button" onClick={chooseToday}>Hoy</button>
+            <div className="flex gap-2">
+              <button className="fin-button secondary py-2 text-xs" type="button" onClick={()=>setOpen(false)}>Cancelar</button>
+              <button className="fin-button py-2 text-xs" type="button" disabled={!validCustom} onClick={applyCustom}>Aplicar</button>
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-[var(--border)] bg-[var(--surface-2)] p-3 md:border-l md:border-t-0">
+          <div className="px-2 pb-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Periodos rápidos</div>
+          <div className="space-y-1">
+            {visibleRanges.map(value=><button
+              key={value}
+              type="button"
+              className={'block w-full rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors '+(filters.range===value?'bg-white text-[var(--text)] shadow-sm':'text-[var(--text)] hover:bg-white/80')}
+              onClick={()=>chooseRange(value)}
+            >{globalDateRangeLabels[value]}</button>)}
+            <div className="my-2 border-t border-[var(--border)]"/>
+            <button
+              type="button"
+              className={'block w-full rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors '+(filters.range==='custom'?'bg-white text-[var(--text)] shadow-sm':'hover:bg-white/80')}
+              onClick={()=>startInput.current?.focus()}
+            >Personalizado</button>
+          </div>
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
 export function GlobalFinancialFilters({compact=false}:{compact?:boolean}={}){
   const filters=useFinancialFilters();
   const accounts=useQuery({queryKey:['accounts','global-filter'],queryFn:()=>apiGet<Account[]>('/api/v1/accounts')});
   const accountTypes=Array.from(new Set((accounts.data||[]).map(a=>a.account_type).filter(Boolean))).sort();
 
-  return <div className={compact
-    ?"flex min-w-0 flex-wrap items-end justify-end gap-2"
-    :"mb-5 flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-[var(--border)] bg-white p-3"
-  } aria-label="Filtros financieros globales">
-    <label className={compact?"block min-w-[190px] text-xs font-medium text-[var(--muted)]":"block min-w-0 flex-1 text-xs font-medium text-[var(--muted)] sm:max-w-sm"}>Cuenta
-      <select className={compact?"fin-input mt-1 w-full py-1.5 text-xs":"fin-input mt-1 w-full"} aria-label="Cuenta o tipo de cuenta global" value={filters.accountScope} onChange={e=>filters.setAccountScope(e.target.value)}>
-        <option value="all">Todas las cuentas</option>
-        {accountTypes.length>0&&<optgroup label="Por tipo de cuenta">
-          {accountTypes.map(type=><option key={type} value={'type:'+type}>{typeLabels[type]||type}</option>)}
-        </optgroup>}
-        {(accounts.data?.length||0)>0&&<optgroup label="Cuenta concreta">
-          {accounts.data?.map(account=><option key={account.id} value={'account:'+account.id}>{account.institution_name} · {account.name}</option>)}
-        </optgroup>}
-      </select>
-    </label>
+  const accountSelect=<div className={compact?"relative min-w-[190px]":"relative w-full"}>
+    <Landmark size={16} className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[var(--brand)]"/>
+    <select
+      className={compact?"fin-input min-h-10 w-full appearance-none py-2 pl-9 pr-8 text-sm font-semibold":"fin-input w-full appearance-none pl-9 pr-8"}
+      aria-label="Cuenta o tipo de cuenta global"
+      value={filters.accountScope}
+      onChange={e=>filters.setAccountScope(e.target.value)}
+    >
+      <option value="all">Todas las cuentas</option>
+      {accountTypes.length>0&&<optgroup label="Por tipo de cuenta">
+        {accountTypes.map(type=><option key={type} value={'type:'+type}>{typeLabels[type]||type}</option>)}
+      </optgroup>}
+      {(accounts.data?.length||0)>0&&<optgroup label="Cuenta concreta">
+        {accounts.data?.map(account=><option key={account.id} value={'account:'+account.id}>{account.institution_name} · {account.name}</option>)}
+      </optgroup>}
+    </select>
+    <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"/>
+  </div>;
 
-    <div className="flex flex-wrap items-end justify-end gap-2">
-      <label className="block text-xs font-medium text-[var(--muted)]">Periodo
-        <select className={compact?"fin-input mt-1 min-w-[150px] py-1.5 text-xs":"fin-input mt-1 min-w-[170px]"} aria-label="Periodo global" value={filters.range} onChange={e=>filters.setRange(e.target.value as GlobalDateRange)}>
-          <option value="month">Este mes</option>
-          <option value="30d">Últimos 30 días</option>
-          <option value="90d">Últimos 90 días</option>
-          <option value="year">Este año</option>
-          <option value="12m">Últimos 12 meses</option>
-          <option value="all">Todo el histórico</option>
-          <option value="custom">Personalizado</option>
-        </select>
-      </label>
-      {filters.range==='custom'&&<>
-        <label className="block text-xs font-medium text-[var(--muted)]">Desde
-          <input className={compact?"fin-input mt-1 w-auto py-1.5 text-xs":"fin-input mt-1 w-auto"} type="date" value={filters.customStart} max={filters.customEnd||undefined} onChange={e=>filters.setCustomStart(e.target.value)}/>
-        </label>
-        <label className="block text-xs font-medium text-[var(--muted)]">Hasta
-          <input className={compact?"fin-input mt-1 w-auto py-1.5 text-xs":"fin-input mt-1 w-auto"} type="date" value={filters.customEnd} min={filters.customStart||undefined} onChange={e=>filters.setCustomEnd(e.target.value)}/>
-        </label>
-      </>}
-    </div>
+  if(compact){
+    return <div className="flex min-w-0 flex-wrap items-center justify-end gap-2" aria-label="Filtros financieros globales">
+      {accountSelect}
+      <PeriodRangePicker compact/>
+    </div>;
+  }
+
+  return <div className="mb-5 flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-[var(--border)] bg-white p-3" aria-label="Filtros financieros globales">
+    <label className="block min-w-0 flex-1 text-xs font-medium text-[var(--muted)] sm:max-w-sm">Cuenta
+      <div className="mt-1">{accountSelect}</div>
+    </label>
+    <PeriodRangePicker compact={false}/>
   </div>;
 }

@@ -1,4 +1,4 @@
-export type GlobalDateRange='month'|'30d'|'90d'|'year'|'12m'|'all'|'custom';
+export type GlobalDateRange='month'|'previous_month'|'30d'|'90d'|'180d'|'year'|'12m'|'all'|'custom';
 
 export type FinancialFilters={
   range:GlobalDateRange;
@@ -9,6 +9,18 @@ export type FinancialFilters={
 
 const STORAGE_KEY='financito.financialFilters.v1';
 
+export const globalDateRangeLabels:Record<GlobalDateRange,string>={
+  month:'Este mes',
+  previous_month:'Mes anterior',
+  '30d':'Últimos 30 días',
+  '90d':'Últimos 3 meses',
+  '180d':'Últimos 6 meses',
+  year:'Este año',
+  '12m':'Último año',
+  all:'Todo el histórico',
+  custom:'Personalizado',
+};
+
 export function isoFinancialDate(value:Date){
   const y=value.getFullYear();
   const m=String(value.getMonth()+1).padStart(2,'0');
@@ -16,15 +28,42 @@ export function isoFinancialDate(value:Date){
   return `${y}-${m}-${d}`;
 }
 
+function localDate(value:string){
+  const [year,month,day]=value.split('-').map(Number);
+  if(!year||!month||!day)return null;
+  return new Date(year,month-1,day);
+}
+
+export function financialRangeLabel(range:GlobalDateRange,start='',end=''){
+  if(range!=='custom')return globalDateRangeLabels[range];
+  const startDate=localDate(start);
+  const endDate=localDate(end);
+  if(!startDate||!endDate)return globalDateRangeLabels.custom;
+  const short=new Intl.DateTimeFormat('es-ES',{day:'numeric',month:'short'});
+  const full=new Intl.DateTimeFormat('es-ES',{day:'numeric',month:'short',year:'numeric'});
+  if(startDate.getFullYear()===endDate.getFullYear()){
+    return `${short.format(startDate)} – ${full.format(endDate)}`;
+  }
+  return `${full.format(startDate)} – ${full.format(endDate)}`;
+}
+
 export function resolveGlobalDateRange(range:GlobalDateRange,customStart='',customEnd='',reference?:Date){
   if(range==='custom')return {start:customStart,end:customEnd};
   const end=reference?new Date(reference):new Date();
+
+  if(range==='previous_month'){
+    const previousEnd=new Date(end.getFullYear(),end.getMonth(),0);
+    const previousStart=new Date(previousEnd.getFullYear(),previousEnd.getMonth(),1);
+    return {start:isoFinancialDate(previousStart),end:isoFinancialDate(previousEnd)};
+  }
+
   const start=new Date(end);
   if(range==='month')start.setDate(1);
   if(range==='30d')start.setDate(start.getDate()-29);
   if(range==='90d')start.setDate(start.getDate()-89);
+  if(range==='180d')start.setDate(start.getDate()-179);
   if(range==='year'){start.setMonth(0);start.setDate(1)}
-  if(range==='12m')start.setFullYear(start.getFullYear()-1);
+  if(range==='12m'){start.setFullYear(start.getFullYear()-1);start.setDate(start.getDate()+1)}
   if(range==='all')return {start:'1900-01-01',end:isoFinancialDate(end)};
   return {start:isoFinancialDate(start),end:isoFinancialDate(end)};
 }
@@ -39,9 +78,11 @@ export function readFinancialFilters():FinancialFilters{
   if(typeof window==='undefined')return fallback;
   try{
     const parsed=JSON.parse(window.localStorage.getItem(STORAGE_KEY)||'{}') as Partial<FinancialFilters>;
-    const allowed:GlobalDateRange[]=['month','30d','90d','year','12m','all','custom'];
+    const allowed:GlobalDateRange[]=['month','previous_month','30d','90d','180d','year','12m','all','custom'];
+    const stored=allowed.includes(parsed.range as GlobalDateRange)?parsed.range as GlobalDateRange:fallback.range;
+    const range:GlobalDateRange=stored==='year'?'12m':stored;
     return {
-      range:allowed.includes(parsed.range as GlobalDateRange)?parsed.range as GlobalDateRange:fallback.range,
+      range,
       customStart:typeof parsed.customStart==='string'?parsed.customStart:fallback.customStart,
       customEnd:typeof parsed.customEnd==='string'?parsed.customEnd:fallback.customEnd,
       accountScope:typeof parsed.accountScope==='string'&&parsed.accountScope?parsed.accountScope:'all',

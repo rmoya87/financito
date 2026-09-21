@@ -72,16 +72,24 @@ test('cuenta e importación de extracto funcionan de extremo a extremo',async({p
 
 test('el selector global de periodo se conserva entre Movimientos y Análisis',async({page})=>{
   await page.goto('/transactions/');
-  const period=page.getByRole('combobox',{name:'Periodo global'});
+  const period=page.getByRole('button',{name:/Periodo global:/});
   await expect(period).toBeVisible();
-  await period.selectOption('custom');
-  await page.getByLabel('Desde').fill('2026-09-21');
-  await page.getByLabel('Hasta').fill('2026-09-21');
+
+  await period.click();
+  let dialog=page.getByRole('dialog',{name:'Seleccionar periodo'});
+  await dialog.getByRole('button',{name:'Personalizado'}).click();
+  await dialog.getByLabel('Inicio del periodo').fill('2026-09-21');
+  await dialog.getByLabel('Fin del periodo').fill('2026-09-21');
+  await dialog.getByRole('button',{name:'Aplicar'}).click();
   await expect(page.getByText('Compra E2E',{exact:true})).not.toBeVisible();
-  await period.selectOption('90d');
+
+  await period.click();
+  dialog=page.getByRole('dialog',{name:'Seleccionar periodo'});
+  await dialog.getByRole('button',{name:'Últimos 3 meses'}).click();
+  await expect(period).toContainText('Últimos 3 meses');
 
   await page.goto('/analytics/');
-  await expect(page.getByRole('combobox',{name:'Periodo global'})).toHaveValue('90d');
+  await expect(page.getByRole('button',{name:/Periodo global:/})).toContainText('Últimos 3 meses');
   await expect(page.getByRole('heading',{name:'Análisis y resiliencia'})).toBeVisible();
   await expect(page.getByText('Ingresos, gasto y ahorro')).toBeVisible();
   await expectAccessible(page);
