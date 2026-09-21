@@ -812,8 +812,20 @@ def _ensure_contract_projection(
     if document.document_type=="mortgage" and _entity_link(session,document.id,"mortgage") is None:
         return None
 
-    link = _entity_link(session, document.id, "contract")
-    contract = session.get(Contract, link.to_id) if link else None
+    contract = None
+    contract_links = session.scalars(
+        select(EntityLink).where(
+            EntityLink.from_type == "document",
+            EntityLink.from_id == document.id,
+            EntityLink.relation_type == "evidence_for",
+            EntityLink.to_type == "contract",
+        )
+    ).all()
+    for candidate_link in contract_links:
+        candidate = session.get(Contract, candidate_link.to_id)
+        if candidate is not None and candidate.contract_type == document.document_type:
+            contract = candidate
+            break
     if contract is None and document.document_type=="insurance":
         policy_link=_entity_link(session,document.id,"insurance_policy")
         policy=session.get(InsurancePolicy,policy_link.to_id) if policy_link else None
@@ -862,6 +874,8 @@ def _ensure_contract_projection(
         contract.start_date = _date(values["start_date"].get("value"))
     if "renewal_date" in values:
         contract.renewal_date = _date(values["renewal_date"].get("value"))
+    elif document.document_type=="insurance" and "next_review_date" in values:
+        contract.renewal_date = _date(values["next_review_date"].get("value"))
     if "permanence_end_date" in values:
         contract.permanence_end_date = _date(values["permanence_end_date"].get("value"))
 
@@ -1101,6 +1115,190 @@ def _ensure_insurance_projection(
     return policy
 
 
+def _insurance_contract_for_document(session: Session, document_id: str) -> Contract | None:
+    links = session.scalars(
+        select(EntityLink).where(
+            EntityLink.from_type == "document",
+            EntityLink.from_id == document_id,
+            EntityLink.relation_type == "evidence_for",
+            EntityLink.to_type == "contract",
+        )
+    ).all()
+    for link in links:
+        contract = session.get(Contract, link.to_id)
+        if contract is not None and contract.contract_type == "insurance":
+            return contract
+    return None
+
+
+def _policy_by_confirmed_number(
+    session: Session,
+    policy_number: object,
+) -> InsurancePolicy | None:
+    normalized = _normalize_identity(policy_number)
+    if not normalized:
+        return None
+    for policy in session.scalars(select(InsurancePolicy)).all():
+        if _normalize_identity(policy.policy_number_masked) == normalized:
+            return policy
+    return None
+
+
+def _ensure_mortgage_insurance_link(
+    session: Session,
+    mortgage: Mortgage | None,
+    policy: InsurancePolicy | None,
+    document: Document,
+) -> None:
+    if mortgage is None or policy is None:
+        return
+    existing = session.scalar(
+        select(LinkedProduct).where(
+            LinkedProduct.parent_product_type == "mortgage",
+            LinkedProduct.parent_product_id == mortgage.id,
+            LinkedProduct.linked_product_type == "insurance_policy",
+            LinkedProduct.linked_product_id == policy.id,
+        )
+    )
+    if existing is None:
+        session.add(LinkedProduct(
+            parent_product_type="mortgage",
+            parent_product_id=mortgage.id,
+            linked_product_type="insurance_policy",
+            linked_product_id=policy.id,
+            discount_value=Decimal("0"),
+            discount_unit="currency",
+            conditions=f"Vinculado por evidencia confirmada del documento {document.file_name}",
+        ))
+        session.flush()
+
+
+def _ensure_embedded_insurance_projection(
+    session: Session,
+    document: Document,
+    mortgage: Mortgage | None,
+    values: dict[str, dict],
+    summary: dict,
+) -> tuple[Contract | None, InsurancePolicy | None]:
+    """Project a confirmed insurance section embedded in another product PDF.
+
+    The source document keeps its original classification (for example,
+    mortgage), while the insurance facts become a real insurance policy with
+    its own contract and evidence link.
+    """
+    if not values:
+        return None, None
+
+    policy_link = _entity_link(session, document.id, "insurance_policy")
+    policy = session.get(InsurancePolicy, policy_link.to_id) if policy_link else None
+    policy_number = (
+        values.get("policy_number",{}).get("value")
+        or values.get("contract_number",{}).get("value")
+    )
+    if policy is None and policy_number:
+        policy = _policy_by_confirmed_number(session, policy_number)
+
+    contract = (
+        session.get(Contract, policy.contract_id)
+        if policy is not None and policy.contract_id
+        else _insurance_contract_for_document(session, document.id)
+    )
+    if contract is None:
+        provider = str(values.get("provider_name",{}).get("value") or "").strip()
+        contract = Contract(
+            provider_name=(provider or f"{_label(document)} · seguro")[:180],
+            contract_type="insurance",
+            currency="EUR",
+            evidence_status="needs_more_data",
+        )
+        session.add(contract)
+        session.flush()
+        _add_evidence_link(
+            session, document.id, "contract", contract.id,
+            confidence=Decimal("1"), source_type="embedded_insurance_projection",
+        )
+
+    provider = str(values.get("provider_name",{}).get("value") or "").strip()
+    if provider:
+        contract.provider_name = provider[:180]
+    if "annual_cost" in values:
+        contract.annual_cost = _decimal(values["annual_cost"].get("value"))
+    elif "monthly_cost" in values:
+        monthly = _decimal(values["monthly_cost"].get("value"))
+        if monthly is not None:
+            contract.annual_cost = monthly * Decimal("12")
+    if "renewal_date" in values:
+        contract.renewal_date = _date(values["renewal_date"].get("value"))
+    elif "next_review_date" in values:
+        contract.renewal_date = _date(values["next_review_date"].get("value"))
+    if "start_date" in values:
+        contract.start_date = _date(values["start_date"].get("value"))
+    if "cancellation_notice_days" in values:
+        contract.cancellation_notice_days = _integer(values["cancellation_notice_days"].get("value"))
+    if "early_exit_penalty" in values:
+        contract.early_exit_penalty = _decimal(values["early_exit_penalty"].get("value"))
+    if "permanence_end_date" in values:
+        contract.permanence_end_date = _date(values["permanence_end_date"].get("value"))
+    contract.evidence_status = (
+        "confirmed"
+        if summary["confirmed"] > 0 and summary["pending"] == 0 and summary["ambiguous"] == 0
+        else "needs_more_data"
+    )
+
+    premium = contract.annual_cost
+    if policy is None and premium is None:
+        # InsurancePolicy requires a real premium. Keep the insurance contract
+        # as evidence, but never invent a 0 € policy.
+        session.flush()
+        return contract, None
+
+    if policy is None:
+        policy = InsurancePolicy(
+            contract_id=contract.id,
+            insurance_type=_canonical_insurance_type(
+                values.get("insurance_type",{}).get("value"),
+                document.file_name,
+            ),
+            annual_premium=premium,
+            deductible=_decimal(values.get("deductible",{}).get("value")),
+            currency="EUR",
+            insured_object_json="{}",
+        )
+        session.add(policy)
+        session.flush()
+    else:
+        policy.contract_id = contract.id
+        if premium is not None:
+            policy.annual_premium = premium
+
+    if policy_number:
+        policy.policy_number_masked = str(policy_number)[:80]
+    if values.get("insurance_type",{}).get("value"):
+        policy.insurance_type = _canonical_insurance_type(
+            values["insurance_type"]["value"],
+            document.file_name,
+        )
+    if "deductible" in values:
+        policy.deductible = _decimal(values["deductible"].get("value"))
+    if values.get("insured_object",{}).get("value"):
+        policy.insured_object_json = json.dumps(
+            {"description": str(values["insured_object"]["value"])},
+            ensure_ascii=False,
+        )
+
+    _add_evidence_link(
+        session, document.id, "insurance_policy", policy.id,
+        confidence=Decimal("1"), source_type="embedded_insurance_projection",
+    )
+    _add_evidence_link(
+        session, document.id, "contract", contract.id,
+        confidence=Decimal("1"), source_type="embedded_insurance_projection",
+    )
+    _ensure_mortgage_insurance_link(session, mortgage, policy, document)
+    session.flush()
+    return contract, policy
+
+
 def _ensure_coverage_projection(
     session: Session,
     document: Document,
@@ -1182,12 +1380,34 @@ def synchronize_document_evidence(
 ) -> dict:
     auto_link_document_entity(session, document)
     summary = sync_review_action(session, document)
-    values = _confirmed_values(session, document.id)
-    contract = _ensure_contract_projection(session, document, values, summary)
-    mortgage = _ensure_mortgage_projection(session, document, values)
-    policy = _ensure_insurance_projection(session, document, contract, values)
-    coverage_count = _ensure_coverage_projection(session, document, contract, policy)
+    confirmed_rows = _confirmed_fact_rows(session, document.id)
+    all_values = _rows_to_values(confirmed_rows)
+    mortgage_values, insurance_values, has_embedded_insurance = _partition_confirmed_values(
+        document, confirmed_rows
+    )
+
+    primary_values = mortgage_values if document.document_type == "mortgage" else all_values
+    contract = _ensure_contract_projection(session, document, primary_values, summary)
+    mortgage = _ensure_mortgage_projection(session, document, mortgage_values if document.document_type == "mortgage" else all_values)
+
+    insurance_contract = contract if document.document_type == "insurance" else None
+    policy = _ensure_insurance_projection(session, document, insurance_contract, all_values)
+    if document.document_type != "insurance" and has_embedded_insurance:
+        insurance_contract, policy = _ensure_embedded_insurance_projection(
+            session,
+            document,
+            mortgage,
+            insurance_values,
+            summary,
+        )
+
+    coverage_count = _ensure_coverage_projection(
+        session, document, insurance_contract, policy
+    )
     if contract is not None:
+        from .contracts import refresh_contract_actions
+        refresh_contract_actions(session)
+    if insurance_contract is not None and insurance_contract is not contract:
         from .contracts import refresh_contract_actions
         refresh_contract_actions(session)
     if coverage_count:
@@ -1201,6 +1421,7 @@ def synchronize_document_evidence(
         **summary,
         "contract_id": None if contract is None else contract.id,
         "mortgage_id": None if mortgage is None else mortgage.id,
+        "insurance_contract_id": None if insurance_contract is None else insurance_contract.id,
         "insurance_policy_id": None if policy is None else policy.id,
         "coverage_count": coverage_count,
         "grouped_documents": grouped_documents,
