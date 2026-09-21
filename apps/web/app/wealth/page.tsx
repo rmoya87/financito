@@ -30,7 +30,7 @@ type MortgageExtra={
 type HomeData={
   property:null|{id:string;name:string;value:string;currency:string;valuation_date:string;valuation_source:string;ownership_percentage:string};
   mortgage:Mortgage|null;extra:MortgageExtra;document_facts:Record<string,{value:string;document_id?:string;page?:number}>;
-  source_documents:{id:string;name:string}[];insurance:{id:string;insurance_type:string;annual_premium:string;provider:string|null;renewal_date:string|null}[];
+  source_documents:{id:string;name:string}[];insurance:{id:string;insurance_type:string;annual_premium:string;provider:string|null;renewal_date:string|null;linked_to_mortgage?:boolean}[];
   equity:string|null;ltv:string|null;
   pending_review:{key:string;label:string;reason:string;value:any;unit:string|null;document_id:string|null;page:number|null;source:string|null;status:string}[];
   missing:{key:string;label:string;reason:string}[];
@@ -291,7 +291,7 @@ export default function WealthPage(){
           <div className="mt-4 grid gap-4 xl:grid-cols-2">
             <div className="rounded-xl border border-[var(--border)] p-4">
               <div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold">Seguros relacionados con la vivienda</h3><p className="mt-1 text-xs text-[var(--muted)]">Hogar y vida aparecen aquí porque pueden afectar al coste efectivo de la hipoteca o a sus bonificaciones.</p></div><Link className="text-xs underline" href="/insurance/">Seguros</Link></div>
-              <div className="mt-3 space-y-2">{home.data.insurance.length?home.data.insurance.map(x=><Link href={'/insurance/?policy='+encodeURIComponent(x.id)} key={x.id} className="flex justify-between gap-3 rounded-lg bg-[var(--surface-2)] p-3 text-sm hover:ring-1 hover:ring-[var(--brand)]"><div><strong>{x.insurance_type}</strong><div className="text-xs text-[var(--muted)]">{x.provider||'Proveedor pendiente'}{x.renewal_date?' · renueva '+new Date(x.renewal_date).toLocaleDateString('es-ES'):''}</div><div className="mt-1 text-[11px] underline">Ver ficha completa</div></div><strong><Money value={x.annual_premium}/>/año</strong></Link>):<EmptyState>No hay seguros de hogar/vida estructurados todavía.</EmptyState>}</div>
+              <div className="mt-3 space-y-2">{home.data.insurance.length?home.data.insurance.map(x=><Link href={'/insurance/?policy='+encodeURIComponent(x.id)} key={x.id} className="flex justify-between gap-3 rounded-lg bg-[var(--surface-2)] p-3 text-sm hover:ring-1 hover:ring-[var(--brand)]"><div><div className="flex flex-wrap items-center gap-2"><strong>{x.insurance_type}</strong>{x.linked_to_mortgage&&<span className="rounded-full bg-[var(--brand-soft)] px-2 py-0.5 text-[10px] font-semibold">Vinculado a esta hipoteca</span>}</div><div className="text-xs text-[var(--muted)]">{x.provider||'Proveedor pendiente'}{x.renewal_date?' · renueva '+new Date(x.renewal_date).toLocaleDateString('es-ES'):''}</div><div className="mt-1 text-[11px] underline">Ver ficha completa</div></div><strong><Money value={x.annual_premium}/>/año</strong></Link>):<EmptyState>No hay seguros de hogar o seguros vinculados a esta hipoteca estructurados todavía.</EmptyState>}</div>
               {home.data.source_documents.length>0&&<div className="mt-3 text-xs text-[var(--muted)]"><strong>Documentación hipotecaria vinculada:</strong> {home.data.source_documents.map(x=>x.name).join(' · ')}</div>}
             </div>
 
