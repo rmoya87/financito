@@ -2,7 +2,8 @@ from decimal import Decimal
 
 from financito.db import SessionLocal
 from financito.domain.engines import MortgageEngine
-from financito.models import Mortgage
+from financito.models import Contract,Mortgage
+from financito.models_extended import InsurancePolicy
 from financito.services import market_research
 
 
@@ -38,7 +39,7 @@ def test_market_scan_only_marks_offers_that_recover_confirmed_penalty(monkeypatc
 
         def fake_scan(source,client):
             if source["id"]=="santander_subrogation":
-                return _source_result(source,"2.0",["subrogation"])
+                return _source_result(source,"2.0",["subrogation","no_opening_fee"])
             if source["id"]=="bbva_subrogation":
                 return _source_result(source,"1.8",["subrogation","linked_life_insurance"])
             if source["id"]=="ing_subrogation":
@@ -83,7 +84,7 @@ def test_lower_rate_is_not_better_when_penalty_never_recovers(monkeypatch):
         monkeypatch.setattr(
             market_research,
             "_scan_source",
-            lambda source,client:_source_result(source,"2.0",["subrogation"]) if source["id"]=="santander_subrogation" else _source_result(source),
+            lambda source,client:_source_result(source,"2.0",["subrogation","no_opening_fee"]) if source["id"]=="santander_subrogation" else _source_result(source),
         )
         result=market_research.scan_public_market(db,mortgage.id)
 
@@ -95,3 +96,41 @@ def test_lower_rate_is_not_better_when_penalty_never_recovers(monkeypatch):
         assert "no se ha demostrado que te compense" in result["conclusion"]["headline"].lower()
 
         db.delete(mortgage);db.commit()
+
+
+def test_insurance_market_references_never_claim_superiority_without_personalized_quote(monkeypatch):
+    with SessionLocal() as db:
+        contract=Contract(
+            provider_name="Aseguradora actual",
+            contract_type="insurance",
+            annual_cost=Decimal("420"),
+            currency="EUR",
+            evidence_status="confirmed",
+            cancellation_notice_days=30,
+            early_exit_penalty=Decimal("0"),
+        )
+        db.add(contract);db.flush()
+        policy=InsurancePolicy(
+            contract_id=contract.id,
+            insurance_type="home",
+            annual_premium=Decimal("420"),
+            deductible=Decimal("150"),
+            currency="EUR",
+            insured_object_json="{}",
+        )
+        db.add(policy);db.commit()
+
+        monkeypatch.setattr(
+            market_research,
+            "_scan_source",
+            lambda source,client:_source_result(source,None,["personalized_quote"]),
+        )
+        result=market_research.scan_public_market(db)
+        lead=next(row for row in result["insurance_leads"] if row["kind"]=="home_insurance")
+        assert lead["comparison_status"]=="needs_personalized_quote"
+        assert lead["can_decide"] is False
+        assert "candidate_annual_premium" in lead["missing_candidate_data"]
+        assert "equivalent_verified_coverages_and_limits" in lead["missing_candidate_data"]
+        assert result["insurance_market_summary"]["decision_ready"]==0
+
+        db.delete(policy);db.delete(contract);db.commit()

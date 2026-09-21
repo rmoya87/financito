@@ -27,7 +27,8 @@ from .services.wealth import summary as wealth_summary
 from .services.financial_analytics import cash_flow
 from .services.snapshots import record_snapshot
 from .services.decision_context import live_decision_context,mortgage_row
-from .services.contractual_costs import mortgage_contract_context,resolve_prepayment_penalty,switching_readiness
+from .services.decision_support import decision_overview
+from .services.contractual_costs import mortgage_contract_context,prepayment_restrictions,resolve_prepayment_penalty,switching_readiness
 from .services.evidence import suppress_insurance_evidence
 from .services.market_research import scan_public_market
 from .services.mortgage_cost import current_remaining_apr_estimate,due_rate_review_estimate,rate_review_readiness
@@ -75,6 +76,13 @@ def decision_lab_switching_readiness(mortgage_id:str|None=None,db:Session=Depend
 @router.get("/decision-lab/context")
 def decision_lab_context(db:Session=Depends(dbdep)):
     return live_decision_context(db)
+
+@router.get("/decision-lab/overview")
+def decision_lab_overview(mortgage_id:str|None=None,db:Session=Depends(dbdep)):
+    try:
+        return decision_overview(db,mortgage_id)
+    except ValueError as exc:
+        raise HTTPException(404,str(exc))
 
 def _policy_linked_mortgage_ids(db:Session,policy_id:str)->list[str]:
     return list(db.scalars(select(LinkedProduct.parent_product_id).where(
@@ -297,6 +305,7 @@ def wealth_home(mortgage_id:str|None=None,db:Session=Depends(dbdep)):
             "pending_review":[],
             "current_apr_estimate":None,
             "rate_review_automation":{"status":"not_available","automatic":False,"missing":["mortgage"]},
+            "prepayment_restrictions":None,
             "missing":[
                 {"key":"mortgage","label":"Datos de la hipoteca","reason":"Necesarios para calcular cuota, intereses y escenarios de mejora."}
             ],
@@ -306,6 +315,7 @@ def wealth_home(mortgage_id:str|None=None,db:Session=Depends(dbdep)):
     context=mortgage_contract_context(db,mortgage.id)
     by_key=context["by_key"]
     pending_by_key=context.get("pending_by_key",{})
+    prepayment_rules=prepayment_restrictions(db,mortgage)
     extra_payload=_mortgage_extra_payload(extra)
 
     # Confirmed document evidence fills informational gaps without silently
@@ -394,6 +404,46 @@ def wealth_home(mortgage_id:str|None=None,db:Session=Depends(dbdep)):
     if extra_payload.get("subrogation_fee_percent") is None and extra_payload.get("cancellation_fee_percent") is None:
         need("subrogation_fee_percent","Coste/comisión de subrogación o salida","No consta todavía un coste o fórmula verificable de salida/subrogación.",None,["subrogation_fee_percent","cancellation_fee_percent","early_exit_penalty"])
 
+    need(
+        "partial_prepayment_allowed",
+        "¿Puedes amortizar una parte antes de tiempo?",
+        "Necesitamos confirmarlo para no simular una operación que tu contrato no permita.",
+        (by_key.get("partial_prepayment_allowed") or {}).get("value"),
+    )
+    need(
+        "prepayment_reduction_options",
+        "¿La amortización reduce cuota, plazo o puedes elegir?",
+        "Necesitamos saber cómo aplica el banco la amortización para mostrar solo resultados que realmente puedas ejecutar.",
+        (by_key.get("prepayment_reduction_options") or {}).get("value"),
+    )
+    prepayment_labels={
+        "prepayment_min_amount":"Importe mínimo de amortización",
+        "prepayment_max_amount":"Importe máximo de amortización",
+        "prepayment_min_percent_current_balance":"Porcentaje mínimo sobre el capital pendiente",
+        "prepayment_max_percent_current_balance":"Porcentaje máximo sobre el capital pendiente",
+        "prepayment_notice_days":"Preaviso para amortizar",
+        "prepayment_frequency_limit_per_year":"Límite de amortizaciones por año",
+        "prepayment_window":"Cuándo se puede amortizar",
+        "prepayment_condition":"Condición para amortizar",
+    }
+    existing_pending={row["key"] for row in pending_review}
+    for candidate in prepayment_rules.get("pending_review",[]):
+        key=candidate.get("key")
+        if key in existing_pending:
+            continue
+        pending_review.append({
+            "key":key,
+            "label":prepayment_labels.get(key,key.replace("_"," ")),
+            "reason":"Financito ha localizado esta condición en tu contrato. Confírmala para que pueda limitar los cálculos de forma fiable.",
+            "value":candidate.get("value"),
+            "unit":candidate.get("unit"),
+            "document_id":candidate.get("document_id"),
+            "page":candidate.get("page"),
+            "source":candidate.get("source"),
+            "status":candidate.get("status"),
+        })
+        existing_pending.add(key)
+
     return {
         "property":None if home is None else {
             "id":home.id,"name":home.name,"value":str(home.current_value),"currency":home.currency,
@@ -413,6 +463,7 @@ def wealth_home(mortgage_id:str|None=None,db:Session=Depends(dbdep)):
         "pending_review":pending_review,
         "current_apr_estimate":current_remaining_apr_estimate(db,mortgage),
         "rate_review_automation":due_rate_review_estimate(db,mortgage),
+        "prepayment_restrictions":prepayment_rules,
         "missing":missing,
     }
 
@@ -436,16 +487,42 @@ def mortgage_current(p:StoredMortgageScenarioRequest,db:Session=Depends(dbdep)):
 def mortgage_prepayment_real(p:StoredMortgagePrepaymentRequest,db:Session=Depends(dbdep)):
     r=db.get(Mortgage,p.mortgage_id)
     if not r:raise HTTPException(404,"Mortgage not found")
+    restrictions=prepayment_restrictions(db,r,p.extra_payment)
+    if not restrictions["calculation_ready"]:
+        if restrictions["partial_prepayment_allowed"] is False:
+            raise HTTPException(409,"La documentación confirmada indica que esta amortización parcial no está permitida.")
+        if restrictions["pending_review"]:
+            raise HTTPException(409,"Hay condiciones de amortización encontradas en tus documentos pendientes de confirmar. Revísalas antes de calcular.")
+        if restrictions["missing"]:
+            labels={
+                "partial_prepayment_allowed":"si tu contrato permite amortización parcial",
+                "prepayment_reduction_options":"si la amortización reduce cuota, plazo o ambas",
+            }
+            missing=", ".join(labels.get(key,key.replace("_"," ")) for key in restrictions["missing"])
+            raise HTTPException(409,f"Falta confirmar {missing}. Financito no lo supondrá.")
+        blocker=(restrictions["blockers"] or [{"message":"El importe no cumple las condiciones contractuales confirmadas."}])[0]
+        raise HTTPException(409,blocker["message"])
     penalty=resolve_prepayment_penalty(db,r,p.extra_payment)
     if penalty["amount"] is None:
-        raise HTTPException(409,"Falta confirmar en la documentación la comisión/fórmula de amortización anticipada")
+        raise HTTPException(409,"Falta confirmar en la documentación la comisión/fórmula de amortización anticipada.")
     result=MortgagePrepaymentEngine.compare(
         r.remaining_principal,r.nominal_rate,r.remaining_months,p.extra_payment,penalty["amount"]
     )
+    payload={k:(str(v) if not isinstance(v,int) else v) for k,v in result.__dict__.items()}
+    options=restrictions["allowed_reduction_options"]
+    if "payment" not in options:
+        payload["reduced_payment"]=None
+        payload["reduced_payment_total_interest"]=None
+        payload["interest_saved_reduce_payment"]=None
+    if "term" not in options:
+        payload["reduced_term_months"]=None
+        payload["reduced_term_total_interest"]=None
+        payload["interest_saved_reduce_term"]=None
     return {
         "mortgage":mortgage_row(r),
-        **{k:(str(v) if not isinstance(v,int) else v) for k,v in result.__dict__.items()},
+        **payload,
         "source":"saved_mortgage+confirmed_contract_evidence",
+        "prepayment_restrictions":restrictions,
         "penalty_trace":{
             "status":penalty["status"],
             "amount":str(penalty["amount"]),

@@ -1,8 +1,13 @@
 from uuid import uuid4
+import json
+from decimal import Decimal
 
 from fastapi.testclient import TestClient
 
 from financito.main import app
+from financito.db import SessionLocal
+from financito.models import Document,ExtractedFact
+from financito.models_analytics import EntityLink
 
 
 def _session(client: TestClient):
@@ -245,8 +250,47 @@ def test_decision_lab_uses_saved_mortgage_and_live_context():
             headers=headers,
             json={"mortgage_id": mortgage_id, "extra_payment": "10000"},
         )
+        assert prepay.status_code == 409
+        assert "Falta confirmar" in prepay.json()["detail"]
+
+        with SessionLocal() as db:
+            document=Document(
+                file_path=f"/tmp/prepayment-{suffix}.pdf",
+                file_name=f"prepayment-{suffix}.pdf",
+                mime_type="application/pdf",
+                sha256=(suffix*8)[:64],
+                document_type="mortgage",
+                status="indexed",
+                page_count=1,
+                extracted_text="Amortización parcial permitida; puede reducir cuota o plazo.",
+            )
+            db.add(document);db.flush()
+            db.add(EntityLink(
+                from_type="document",from_id=document.id,relation_type="evidence_for",
+                to_type="mortgage",to_id=mortgage_id,confidence=Decimal("1"),
+                source_type="test",source_ref=document.id,
+            ))
+            for key,value,unit in (
+                ("partial_prepayment_allowed","true","boolean"),
+                ("prepayment_reduction_options","both","enum"),
+                ("prepayment_notice_days","0","days"),
+            ):
+                db.add(ExtractedFact(
+                    document_id=document.id,fact_type="mortgage_term",key=key,
+                    value_json=json.dumps({"value":value,"unit":unit}),
+                    confidence=Decimal("0.99"),status="confirmed",source_page=1,
+                    source_section="test",user_verified=True,
+                ))
+            db.commit()
+
+        prepay = client.post(
+            "/api/v1/decision-lab/mortgage/prepayment",
+            headers=headers,
+            json={"mortgage_id": mortgage_id, "extra_payment": "10000"},
+        )
         assert prepay.status_code == 200
         assert prepay.json()["assumption"]["extra_payment"] == "10000"
+        assert prepay.json()["prepayment_restrictions"]["calculation_ready"] is True
 
         path = client.post(
             "/api/v1/decision-lab/mortgage/rate-path",

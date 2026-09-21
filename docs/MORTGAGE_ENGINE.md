@@ -147,3 +147,49 @@ La relación entre una hipoteca concreta y sus pólizas se persiste mediante `Li
 Si el contrato hipotecario confirma `linked_home_insurance_rate_penalty_pp` o `linked_life_insurance_rate_penalty_pp`, el motor calcula el efecto de perder la bonificación sobre cuota e intereses. La relación manual identifica la póliza concreta; nunca sustituye la evidencia del porcentaje contractual.
 
 Cuando `MortgageProfileExtra.original_principal` está disponible, `/wealth/home` expone `principal_progress` con capital inicial, pendiente, amortizado y porcentajes pendiente/pagado. El cálculo se realiza con `Decimal`; la UI representa en verde la parte pendiente y en gris la amortizada.
+
+## Comparación de mercado y costes cruzados
+
+La comparación de una hipoteca actual con referencias públicas reutiliza el mismo switching_readiness que el Centro de decisión.
+
+Además de la penalización de salida actual, una alternativa pública solo puede entrar en el conjunto de escenarios que compensan cuando:
+- mejora el coste del escenario comparable;
+- recupera los costes conocidos antes del vencimiento;
+- no tiene seguros vinculados de coste desconocido;
+- el coste de entrada de la nueva hipoteca está confirmado o la fuente declara explícitamente que no existe la comisión relevante.
+
+La salida expone por separado:
+- coste de salida hipotecario;
+- coste anual de seguros actualmente vinculados;
+- penalizaciones de salida conocidas de esos seguros y cuáles siguen desconocidas;
+- impactos de tipo por pérdida de bonificaciones;
+- costes de entrada de la alternativa que siguen sin precio.
+
+El escenario «solo hipoteca» no presupone que los seguros actuales se cancelan. Un escenario de cambio de paquete completo debe sumar esas salidas de forma explícita.
+
+## Restricciones de amortización anticipada
+
+El motor separa la matemática de la ejecutabilidad contractual.
+
+Hechos estructurables:
+- partial_prepayment_allowed;
+- prepayment_min_amount / prepayment_max_amount;
+- prepayment_min_percent_current_balance / prepayment_max_percent_current_balance;
+- prepayment_notice_days;
+- prepayment_frequency_limit_per_year;
+- prepayment_window;
+- prepayment_condition;
+- prepayment_reduction_options.
+
+Reglas:
+1. Un permiso desconocido nunca se interpreta como permiso.
+2. Un límite desconocido nunca se interpreta como 0.
+3. Un hecho inferido o ambiguo no puede limitar ni habilitar un cálculo hasta que el usuario lo confirme.
+4. Los mínimos/máximos confirmados se aplican al importe simulado.
+5. El resultado de reducir cuota solo se muestra si esa modalidad está confirmada como posible; lo mismo para reducir plazo.
+6. Si la entidad decide la modalidad, el impacto matemático puede estudiarse como referencia, pero no se presenta una opción concreta como ejecutable.
+7. La comisión de amortización se calcula después de superar las restricciones contractuales.
+8. Preavisos, frecuencia y ventanas se conservan como pasos operativos visibles.
+
+El extractor determinista intenta localizar condiciones explícitas frecuentes. La IA local puede proponer condiciones más complejas, pero sus propuestas permanecen sin confirmar hasta revisión humana.
+

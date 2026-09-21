@@ -8,6 +8,7 @@ from financito.models_analytics import EntityLink,LinkedProduct
 from financito.models_extended import InsurancePolicy
 from financito.services.contractual_costs import (
     linked_product_rate_impacts,
+    prepayment_restrictions,
     resolve_prepayment_penalty,
     resolve_subrogation_penalty,
     switching_readiness,
@@ -168,3 +169,76 @@ def test_switching_readiness_requires_mapping_when_contract_says_life_insurance_
         assert "linked_insurance_mapping:life" not in after["missing"]
         linked=next(x for x in after["insurance"] if x["policy_id"]==policy.id)
         assert linked["linked_to_mortgage"] is True
+
+
+def test_prepayment_restrictions_enforce_confirmed_permission_and_amount_limits():
+    with SessionLocal() as db:
+        mortgage=_mortgage(db)
+        _mortgage_doc(db,mortgage,{
+            "partial_prepayment_allowed":"true",
+            "prepayment_reduction_options":"both",
+            "prepayment_min_amount":"1000",
+            "prepayment_max_amount":"10000",
+            "prepayment_notice_days":"15",
+        })
+        ready=prepayment_restrictions(db,mortgage,Decimal("5000"))
+        assert ready["calculation_ready"] is True
+        assert ready["partial_prepayment_allowed"] is True
+        assert ready["effective_min_amount"]=="1000.00"
+        assert ready["effective_max_amount"]=="10000.00"
+        assert ready["allowed_reduction_options"]==["payment","term"]
+        assert ready["notice_days"]==15
+
+        below=prepayment_restrictions(db,mortgage,Decimal("500"))
+        assert below["calculation_ready"] is False
+        assert any(row["code"]=="below_contract_minimum" for row in below["blockers"])
+
+        above=prepayment_restrictions(db,mortgage,Decimal("12000"))
+        assert above["calculation_ready"] is False
+        assert any(row["code"]=="above_contract_maximum" for row in above["blockers"])
+
+
+def test_prepayment_restrictions_do_not_assume_permission_or_ignore_pending_terms():
+    with SessionLocal() as db:
+        mortgage=_mortgage(db)
+        unknown=prepayment_restrictions(db,mortgage,Decimal("5000"))
+        assert unknown["calculation_ready"] is False
+        assert "partial_prepayment_allowed" in unknown["missing"]
+
+        doc=_mortgage_doc(db,mortgage,{
+            "partial_prepayment_allowed":"true",
+            "prepayment_reduction_options":"both",
+        })
+        db.add(ExtractedFact(
+            document_id=doc.id,
+            fact_type="mortgage_term",
+            key="prepayment_max_amount",
+            value_json=json.dumps({"value":"6000","unit":"EUR","source":"local_ai_proposal"}),
+            confidence=Decimal("0.80"),
+            status="inferred",
+            source_page=8,
+            source_section="IA local: pendiente",
+            user_verified=False,
+        ))
+        db.flush()
+        pending=prepayment_restrictions(db,mortgage,Decimal("5000"))
+        assert pending["calculation_ready"] is False
+        assert [row["key"] for row in pending["pending_review"]]==["prepayment_max_amount"]
+
+
+def test_deterministic_extractor_finds_explicit_prepayment_operational_terms():
+    from financito.services.documents import extract_contract_facts
+
+    text=(
+        "El prestatario podrá realizar amortización anticipada parcial. "
+        "El importe mínimo será de 1.000 euros y el importe máximo de 20.000 euros. "
+        "La amortización anticipada deberá comunicarse con un preaviso de 15 días. "
+        "La amortización anticipada se aplicará a reducir cuota o plazo."
+    )
+    facts=extract_contract_facts(text,3)
+    by_key={row["key"]:row for row in facts}
+    assert by_key["partial_prepayment_allowed"]["value"]=="true"
+    assert by_key["prepayment_min_amount"]["value"]=="1000"
+    assert by_key["prepayment_max_amount"]["value"]=="20000"
+    assert by_key["prepayment_notice_days"]["value"]=="15"
+    assert by_key["prepayment_reduction_options"]["value"]=="both"

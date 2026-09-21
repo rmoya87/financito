@@ -262,3 +262,25 @@ La disponibilidad de Ollama no se deduce solo de `/api/tags`. Configuración ofr
 - usa `think=false` cuando el modelo lo soporta y reintenta sin ese parámetro si la versión de Ollama lo rechaza.
 
 El frontend estático acepta HEAD en sus rutas para que el prefetch/health check de Next.js no genere falsos 405.
+
+## Contexto financiero unificado para decisiones
+
+Las decisiones materiales no deben reconstruir datos por pantalla. DecisionContext es la proyección de lectura común que reutilizan Laboratorio de decisiones, casos guardados y chat local.
+
+Incluye:
+- liquidez y cash-flow real, con transferencias internas y reembolsos tratados por la semántica contable común;
+- patrimonio;
+- hipotecas con coste efectivo restante, preparación de revisión de tipo, penalizaciones y vinculaciones;
+- pólizas, coberturas, pagos vinculados, preavisos y costes de salida;
+- contratos y evidencia documental;
+- presupuestos y alertas de desviación;
+- anomalías abiertas de movimientos;
+- compromisos próximos y Action Center;
+- inversiones y activos seguidos.
+
+Reglas:
+- una sección no recalcula por su cuenta un dato ya resuelto por un motor común;
+- el chat consume el mismo contexto y añade RAG, pero no crea cifras nuevas;
+- los campos críticos desconocidos conservan estado needs_more_data;
+- los datos externos de mercado son una capa de contraste y nunca sustituyen la evidencia contractual particular.
+

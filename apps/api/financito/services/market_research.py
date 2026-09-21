@@ -11,9 +11,9 @@ from sqlalchemy.orm import Session
 
 from ..models import Contract,Mortgage
 from ..models_analytics import LinkedProduct
-from ..models_extended import InsurancePolicy
+from ..models_extended import CoverageFact,InsurancePolicy
 from ..domain.engines import MortgageEngine
-from .contractual_costs import resolve_subrogation_penalty,switching_readiness
+from .contractual_costs import insurance_switching_context,resolve_subrogation_penalty,switching_readiness
 
 
 OFFICIAL_SOURCES = (
@@ -114,6 +114,12 @@ SOURCES = (
     },
 )
 
+INSURANCE_KIND_TO_TYPE = {
+    "home_insurance": "home",
+    "mortgage_life_insurance": "life",
+    "life_insurance": "life",
+}
+
 
 def _plain_text(raw: str) -> str:
     text = re.sub(r"(?is)<script.*?</script>|<style.*?</style>", " ", raw)
@@ -196,9 +202,81 @@ def _scan_source(source: dict, client: httpx.Client) -> dict:
         }
 
 
+def _insurance_market_leads(session:Session,sources:list[dict])->list[dict]:
+    current=insurance_switching_context(session)
+    coverage_counts={
+        policy_id:len(session.scalars(select(CoverageFact).where(
+            CoverageFact.insurance_policy_id==policy_id,
+            CoverageFact.user_verified.is_(True),
+        )).all())
+        for policy_id in [row["policy_id"] for row in current]
+    }
+    leads=[]
+    for source in sources:
+        insurance_type=INSURANCE_KIND_TO_TYPE.get(source["kind"])
+        if not insurance_type:
+            continue
+        current_rows=[]
+        for policy in current:
+            normalized=str(policy.get("insurance_type") or "").lower()
+            equivalent_type=normalized in (
+                {"home","house","hogar","mortgage","hipoteca"}
+                if insurance_type=="home"
+                else {"life","vida"}
+            )
+            if not equivalent_type:
+                continue
+            current_rows.append({
+                "policy_id":policy["policy_id"],
+                "insurance_type":policy["insurance_type"],
+                "provider":policy.get("provider"),
+                "annual_premium":policy["annual_premium"],
+                "deductible":policy.get("deductible"),
+                "renewal_date":policy.get("renewal_date"),
+                "cancellation_notice_days":policy.get("cancellation_notice_days"),
+                "exit_penalty":policy.get("exit_penalty"),
+                "evidence_status":policy.get("evidence_status"),
+                "verified_coverage_count":coverage_counts.get(policy["policy_id"],0),
+                "linked_mortgage_ids":policy.get("linked_mortgage_ids",[]),
+            })
+        leads.append({
+            "source_id":source["id"],
+            "provider":source["provider"],
+            "kind":source["kind"],
+            "insurance_type":insurance_type,
+            "status":source["status"],
+            "url":source["url"],
+            "retrieved_at":source["retrieved_at"],
+            "claims":source["claims"],
+            "current_policies":current_rows,
+            "comparison_status":"needs_personalized_quote",
+            "can_decide":False,
+            "missing_candidate_data":[
+                "candidate_annual_premium",
+                "candidate_deductible",
+                "equivalent_verified_coverages_and_limits",
+                "candidate_exclusions",
+                "candidate_cancellation_terms",
+                "candidate_entry_or_switching_costs",
+            ],
+            "rule":(
+                "La página pública sirve para descubrir una alternativa, no para declarar que es mejor. "
+                "Hace falta una oferta personalizada y demostrar equivalencia de cobertura."
+            ),
+        })
+    return leads
+
+
 def _linked_mortgage_conditions(session:Session,mortgage:Mortgage|None)->dict:
     if mortgage is None:
-        return {"policies":[],"annual_premium_total":"0","rate_impacts":[]}
+        return {
+            "policies":[],
+            "annual_premium_total":"0",
+            "known_exit_penalty_total":"0",
+            "unknown_exit_penalty_policy_ids":[],
+            "rate_impacts":[],
+            "linked_product_signals":[],
+        }
     links=session.scalars(select(LinkedProduct).where(
         LinkedProduct.parent_product_type=="mortgage",
         LinkedProduct.parent_product_id==mortgage.id,
@@ -220,9 +298,18 @@ def _linked_mortgage_conditions(session:Session,mortgage:Mortgage|None)->dict:
             "conditions":link.conditions,
         })
     readiness=switching_readiness(session,mortgage.id)
+    known_exit_penalty_total=sum(
+        (Decimal(row["exit_penalty"]) for row in policies if row["exit_penalty"] is not None),
+        Decimal("0"),
+    )
+    unknown_exit_penalty_policy_ids=[
+        row["policy_id"] for row in policies if row["exit_penalty"] is None
+    ]
     return {
         "policies":policies,
         "annual_premium_total":str(annual.quantize(Decimal("0.01"))),
+        "known_exit_penalty_total":str(known_exit_penalty_total.quantize(Decimal("0.01"))),
+        "unknown_exit_penalty_policy_ids":unknown_exit_penalty_policy_ids,
         "rate_impacts":((readiness.get("mortgage") or {}).get("linked_product_rate_impacts") or []),
         "linked_product_signals":((readiness.get("mortgage") or {}).get("linked_product_signals") or []),
     }
@@ -390,6 +477,12 @@ def scan_public_market(session: Session, mortgage_id: str | None = None) -> dict
             priced_link_unknown=any(
                 claim in source["claims"] for claim in ("linked_home_insurance","linked_life_insurance")
             )
+            unpriced_entry_costs=[] if "no_opening_fee" in source["claims"] else ["opening_or_arrangement_cost"]
+            comparison_complete=(
+                known_penalty is not None
+                and not priced_link_unknown
+                and not unpriced_entry_costs
+            )
             net_known=None if known_penalty is None else (interest_delta-known_penalty).quantize(Decimal("0.01"))
             compensates=bool(
                 source["kind"] in {"mortgage_subrogation","mortgage_public_benchmark"}
@@ -397,7 +490,7 @@ def scan_public_market(session: Session, mortgage_id: str | None = None) -> dict
                 and actual_saving>0
                 and net_known is not None and net_known>0
                 and break_even is not None and break_even<Decimal(mortgage.remaining_months)
-                and not priced_link_unknown
+                and comparison_complete
             )
             reason=None
             if not rate_better:
@@ -412,6 +505,8 @@ def scan_public_market(session: Session, mortgage_id: str | None = None) -> dict
                 reason="El ahorro de intereses conocido no supera la penalización de salida."
             elif priced_link_unknown:
                 reason="La oferta exige seguro vinculado y no publica un coste suficiente para demostrar el ahorro neto."
+            elif unpriced_entry_costs:
+                reason="Faltan costes de entrada de la nueva hipoteca; no se presuponen 0 € aunque el TIN sea inferior."
             scenario={
                 "estimated_payment":str(candidate.monthly_payment),
                 "theoretical_monthly_saving":str(theoretical_saving),
@@ -423,7 +518,8 @@ def scan_public_market(session: Session, mortgage_id: str | None = None) -> dict
                 "break_even_months":None if break_even is None else str(break_even),
                 "break_even_months_known_penalty_only":None if break_even is None else str(break_even),
                 "compensates":compensates,
-                "comparison_complete":known_penalty is not None and not priced_link_unknown,
+                "comparison_complete":comparison_complete,
+                "unpriced_entry_costs":unpriced_entry_costs,
                 "rejection_reason":reason,
                 "comparison_scope":"same_remaining_principal_and_term_vs_saved_current_payment",
             }
@@ -450,6 +546,7 @@ def scan_public_market(session: Session, mortgage_id: str | None = None) -> dict
             rejected.append(lead)
 
     readiness=switching_readiness(session,mortgage.id if mortgage is not None else None)
+    insurance_leads=_insurance_market_leads(session,sources)
     better_offers.sort(
         key=lambda item:Decimal((item.get("scenario") or {}).get("estimated_net_interest_saving_known_costs") or "0"),
         reverse=True,
@@ -464,19 +561,32 @@ def scan_public_market(session: Session, mortgage_id: str | None = None) -> dict
             "known_exit_penalty":None if not exit_penalty or exit_penalty["amount"] is None else str(exit_penalty["amount"]),
             "exit_penalty_status":None if not exit_penalty else exit_penalty["status"],
             "linked_insurance_annual_cost":linked_conditions["annual_premium_total"],
+            "linked_insurance_known_exit_penalty_total":linked_conditions["known_exit_penalty_total"],
+            "linked_insurance_unknown_exit_penalty_policy_ids":linked_conditions["unknown_exit_penalty_policy_ids"],
             "linked_policies":linked_conditions["policies"],
             "linked_product_rate_impacts":linked_conditions["rate_impacts"],
             "linked_product_signals":linked_conditions["linked_product_signals"],
         },
         "official_sources":list(OFFICIAL_SOURCES),
         "leads":leads,
+        "insurance_leads":insurance_leads,
+        "insurance_market_summary":{
+            "references":len(insurance_leads),
+            "decision_ready":0,
+            "message":(
+                "Las referencias públicas de seguros sirven para localizar proveedores. "
+                "Financito no declara ninguna mejor sin prima personalizada y cobertura equivalente verificada."
+            ),
+        },
         "better_offers":better_offers,
         "lower_rate_but_not_better":rejected,
         "conclusion":_market_conclusion(mortgage,better_offers,rejected,readiness),
         "disclaimer":(
             "Solo se muestran como mejores las referencias que, con la cuota, capital, plazo y penalización confirmada actuales, "
             "mantienen ahorro conocido positivo y recuperan el coste de salida antes del fin de la hipoteca. "
-            "Si la nueva referencia exige seguros vinculados cuyo coste no está publicado, no se afirma que sea mejor aunque su TIN sea inferior. "
+            "Si la nueva referencia exige seguros vinculados cuyo coste no está publicado o no confirma los costes de entrada, "
+            "no se afirma que sea mejor aunque su TIN sea inferior. Los costes de cancelar seguros actuales solo se aplican "
+            "cuando se compara un cambio de paquete completo, no al escenario de cambiar únicamente la hipoteca. "
             "Una FEIN/oferta personalizada sigue siendo necesaria para cerrar la decisión."
         ),
     }
