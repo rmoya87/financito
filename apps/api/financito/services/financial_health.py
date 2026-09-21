@@ -13,6 +13,7 @@ from ..models_extended import Liability
 from ..models_analytics import RecurringPreference
 from .calendar import events as calendar_events
 from .financial_analytics import cash_flow,category_spending,essential_monthly_average,spending_structure
+from .forecast import forecast
 
 
 CENT=Decimal("0.01")
@@ -41,10 +42,16 @@ def _goal_allocations(session:Session,account_ids:set[str]|None=None)->tuple[Dec
     return reserved,emergency
 
 
-def _predict_next_income(
-    session:Session,as_of:date,account_ids:set[str]|None=None
-)->dict|None:
-    start=as_of-timedelta(days=210)
+def _predict_expected_incomes(
+    session:Session,as_of:date,account_ids:set[str]|None=None,horizon_days:int=45,
+)->list[dict]:
+    """Detect monthly recurring positive cash flows such as salary or pension.
+
+    Refunds and transfers are excluded. Each recurring source is projected once
+    to its next expected occurrence so money already received is never added a
+    second time to current liquidity.
+    """
+    start=as_of-timedelta(days=240)
     stmt=select(Transaction).where(
         Transaction.booking_date>=start,
         Transaction.booking_date<=as_of,
@@ -57,7 +64,7 @@ def _predict_next_income(
     groups=defaultdict(list)
     for tx in session.scalars(stmt).all():
         category=categories.get(tx.category_id or "")
-        if category and category.system_key=="refunds":
+        if category and category.system_key in {"refunds","internal_transfer"}:
             continue
         key=(tx.merchant_normalized or tx.description_normalized or tx.description_raw or "").strip().lower()
         if not key:
@@ -82,17 +89,28 @@ def _predict_next_income(
         guard=0
         while next_date<=as_of and guard<12:
             next_date+=timedelta(days=gap);guard+=1
-        if next_date>as_of+timedelta(days=45):
+        if next_date>as_of+timedelta(days=horizon_days):
             continue
-        candidates.append((expected,next_date,key,len(unique_dates)))
+        count=len(unique_dates)
+        confidence=Decimal("0.90") if count>=5 else Decimal("0.85") if count>=4 else Decimal("0.75") if count>=3 else Decimal("0.70")
+        candidates.append({
+            "date":str(next_date),"amount":str(expected),"label":key,
+            "confidence":str(confidence),
+            "basis":f"Patrón de ingreso mensual detectado en {count} movimientos",
+            "occurrences":count,
+        })
+    return sorted(candidates,key=lambda x:(x["date"],-Decimal(x["amount"])))
+
+
+def _predict_next_income(
+    session:Session,as_of:date,account_ids:set[str]|None=None
+)->dict|None:
+    candidates=_predict_expected_incomes(session,as_of,account_ids)
     if not candidates:
         return None
-    expected,next_date,key,count=max(candidates,key=lambda x:(x[0],x[3]))
-    return {
-        "date":str(next_date),"amount":str(expected),"label":key,
-        "confidence":"0.85" if count>=4 else "0.70",
-        "basis":"Patrón de ingreso mensual detectado en movimientos",
-    }
+    # Prefer the strongest cash-flow source (normally salary/pension) instead of
+    # a tiny earlier monthly credit that would shorten the planning horizon.
+    return max(candidates,key=lambda x:(Decimal(x["amount"]),int(x["occurrences"])))
 
 
 def _budget_rows(
@@ -387,9 +405,15 @@ def financial_health_summary(
     liquidity=sum((_account_balance(a) for a in accounts),Decimal("0"))
     reserved,emergency_allocated=_goal_allocations(session,ids if (account_id or account_type) else None)
     essential_monthly=essential_monthly_average(session,as_of,account_id,account_type)
+    income_candidates=_predict_expected_incomes(session,as_of,ids if (account_id or account_type) else None)
     next_income=_predict_next_income(session,as_of,ids if (account_id or account_type) else None)
     horizon_date=date.fromisoformat(next_income["date"]) if next_income else as_of+timedelta(days=30)
     horizon_date=min(horizon_date,as_of+timedelta(days=30))
+    expected_incomes=[
+        row for row in income_candidates
+        if as_of<date.fromisoformat(row["date"])<=horizon_date
+    ]
+    expected_income=sum((Decimal(row["amount"]) for row in expected_incomes),Decimal("0")).quantize(CENT)
     spend_projection=_future_spending_projection(
         session,as_of,horizon_date,start,end,account_id,account_type,
     )
@@ -400,10 +424,34 @@ def financial_health_summary(
     minimum_buffer=essential_monthly
     buffer_gap=max(Decimal("0"),minimum_buffer-emergency_allocated)
     free_after_goals=max(Decimal("0"),liquidity-reserved)
-    safe=max(Decimal("0"),free_after_goals-obligations-buffer_gap).quantize(CENT)
+    projected_resources=free_after_goals+expected_income
+    safe=max(Decimal("0"),projected_resources-obligations-buffer_gap).quantize(CENT)
     coverage=None if essential_monthly<=0 else (emergency_allocated/essential_monthly)
     liquidity_coverage=None if essential_monthly<=0 else (liquidity/essential_monthly)
     selected=cash_flow(session,start,end,account_id,account_type)
+    historical_outcome=None
+    if end<as_of:
+        historical_forecast=forecast(session,start,end,account_id,account_type)
+        income_variance=(selected["income"]-historical_forecast.predicted_income).quantize(CENT)
+        expense_variance=(selected["expenses"]-historical_forecast.predicted_expenses).quantize(CENT)
+        savings_variance=(selected["savings"]-historical_forecast.predicted_savings).quantize(CENT)
+        historical_outcome={
+            "actual_income":str(selected["income"]),
+            "actual_expenses":str(selected["expenses"]),
+            "actual_savings":str(selected["savings"]),
+            "forecast_income":str(historical_forecast.predicted_income),
+            "forecast_expenses":str(historical_forecast.predicted_expenses),
+            "forecast_savings":str(historical_forecast.predicted_savings),
+            "income_variance":str(income_variance),
+            "expense_variance":str(expense_variance),
+            "savings_variance":str(savings_variance),
+            "status":"above" if savings_variance>Decimal("1") else "below" if savings_variance<Decimal("-1") else "on_track",
+            "forecast_kind":"reconstructed",
+            "model_version":historical_forecast.model_version,
+            "baseline_start":str(historical_forecast.baseline_start),
+            "baseline_end":str(historical_forecast.baseline_end),
+            "note":"Previsión reconstruida con el histórico disponible anterior al periodo; no es una captura de forecast guardada en aquel momento.",
+        }
     trailing=cash_flow(session,as_of-timedelta(days=89),as_of,account_id,account_type)
     avg_income=trailing["income"]/Decimal("3")
     mortgages=session.scalars(select(Mortgage).where(*( [Mortgage.account_id.in_(ids)] if (account_id or account_type) else [] ))).all()
@@ -429,10 +477,15 @@ def financial_health_summary(
     return {
         "generated_at":datetime.now(timezone.utc).isoformat(),
         "safe_to_spend":{
+            "mode":"historical" if end<as_of else "current",
             "amount":str(safe),"liquidity":str(liquidity.quantize(CENT)),
             "reserved_goals":str(reserved.quantize(CENT)),"obligations_until_next_income":str(obligations.quantize(CENT)),
+            "expected_income_before_horizon":str(expected_income),
+            "expected_incomes":expected_incomes,
+            "projected_resources_after_goals":str(projected_resources.quantize(CENT)),
             "minimum_buffer":str(minimum_buffer.quantize(CENT)),"buffer_gap":str(buffer_gap.quantize(CENT)),
             "horizon_date":str(horizon_date),"next_income":next_income,
+            "historical_outcome":historical_outcome,
             "selected_period_start":str(start),"selected_period_end":str(end),
             "selected_monthly_spending":str(selected_monthly_spending),
             "selected_spending_floor":str(selected_spending_floor),
@@ -442,7 +495,7 @@ def financial_health_summary(
             "known_future_outflows":str(known.quantize(CENT)),
             "projection_basis":str(spend_projection["basis"]),
             "projection_method":"Estimación prudente: se protege la mayor señal creíble entre periodo seleccionado, últimos 90 días, mismo tramo del año anterior, cargos futuros conocidos y patrones por categoría. Los extraordinarios marcados no se extrapolan.",
-            "explanation":"Liquidez actual menos objetivos reservados, una estimación prudente de gasto hasta el siguiente ingreso y el colchón mínimo aún no cubierto.",
+            "explanation":"Liquidez actual más ingresos recurrentes previstos antes del horizonte, menos objetivos reservados, una estimación prudente de gasto y el colchón mínimo aún no cubierto.",
         },
         "emergency_fund":{
             "essential_monthly":str(essential_monthly.quantize(CENT)),
