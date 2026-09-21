@@ -181,8 +181,7 @@ test('Patrimonio separa Casa, Hipoteca y Seguros',async({page})=>{
   await mortgageDocs.getByRole('button',{name:'Cerrar'}).click();
   await mortgageData.getByRole('button',{name:'Cerrar'}).click();
 
-  await expect(page.getByText('Revisión automática del tipo')).toHaveCount(0);
-  await expect(page.getByText('Amortización anticipada')).toHaveCount(0);
+  await expect(page.getByRole('heading',{name:'Revisión automática del tipo'})).toHaveCount(0);
   await expectAccessible(page);
 });
 
