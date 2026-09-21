@@ -30,6 +30,7 @@ export default function AccountsPage(){
   const [accountType,setAccountType]=useState('savings');
   const [balance,setBalance]=useState('');
   const [editing,setEditing]=useState<Account|null>(null);
+  const [deleting,setDeleting]=useState<Account|null>(null);
   const [editName,setEditName]=useState('');
   const [editInstitution,setEditInstitution]=useState('');
   const [editType,setEditType]=useState('savings');
@@ -53,6 +54,13 @@ export default function AccountsPage(){
       });
     },
     onSuccess:()=>{setEditing(null);invalidate()},
+  });
+  const remove=useMutation({
+    mutationFn:()=>{
+      if(!deleting)throw new Error('No hay cuenta seleccionada');
+      return apiMutate<{deleted:string;transactions_deleted:number}>('/api/v1/accounts/'+deleting.id,'DELETE');
+    },
+    onSuccess:()=>{setDeleting(null);invalidate();qc.invalidateQueries({queryKey:['transactions']});qc.invalidateQueries({queryKey:['banking-connections']})},
   });
   const syncAll=useMutation({
     mutationFn:()=>apiMutate<SyncAll>('/api/v1/banking/sync-all','POST'),
@@ -114,9 +122,12 @@ export default function AccountsPage(){
                 </div>
                 <div className="text-right">
                   <div className="font-bold">{a.sync_status==='pending_sync'?<span className="text-sm text-[var(--muted)]">Saldo pendiente</span>:<Money value={a.current_balance} currency={a.currency}/>}</div>
-                  {connected
-                    ? <Link className="mt-1 inline-block text-xs underline" href="/banking/">Gestionar conexión</Link>
-                    : <button className="mt-1 text-xs underline" onClick={()=>startEdit(a)}>Editar saldo y datos</button>}
+                  <div className="mt-1 flex flex-wrap justify-end gap-3">
+                    {connected
+                      ? <Link className="text-xs underline" href="/banking/">Gestionar conexión</Link>
+                      : <button className="text-xs underline" onClick={()=>startEdit(a)}>Editar saldo y datos</button>}
+                    <button className="text-xs underline" onClick={()=>setDeleting(a)}>Eliminar cuenta</button>
+                  </div>
                 </div>
               </div>
             </div>;
@@ -141,6 +152,21 @@ export default function AccountsPage(){
         </form>
       </Card>
     </div>
+
+    {deleting&&<div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Eliminar cuenta">
+      <Card className="w-full max-w-lg">
+        <h2 className="font-bold">Eliminar cuenta</h2>
+        <p className="mt-2 text-sm">Vas a eliminar <strong>{deleting.name}</strong> y todos sus movimientos almacenados en Financito.</p>
+        <p className="mt-2 text-sm text-[var(--muted)]">{deleting.source==='manual'
+          ?'La eliminación solo afecta a los datos locales de esta cuenta.'
+          :'La autorización bancaria general no se cierra automáticamente. Esta cuenta dejará de sincronizarse y, si quieres recuperarla, tendrás que volver a vincularla desde Banca.'}</p>
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <button className="fin-button secondary" onClick={()=>setDeleting(null)} disabled={remove.isPending}>Cancelar</button>
+          <button className="fin-button" onClick={()=>remove.mutate()} disabled={remove.isPending}>{remove.isPending?'Eliminando…':'Eliminar definitivamente'}</button>
+        </div>
+        {remove.error&&<div className="mt-3"><ErrorState error={remove.error}/></div>}
+      </Card>
+    </div>}
 
     {editing&&<div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Editar cuenta manual">
       <Card className="w-full max-w-lg">
