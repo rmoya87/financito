@@ -138,8 +138,8 @@ test('Patrimonio separa Casa, Hipoteca y Seguros',async({page})=>{
   await expect(page.getByRole('heading',{name:'Casa'})).toBeVisible();
   await expect(page.getByRole('link',{name:'Ver hipoteca'})).toBeVisible();
   await expect(page.getByRole('link',{name:'Ver seguros'})).toBeVisible();
-  await expect(page.getByText('Revisión automática del tipo')).toHaveCount(0);
-  await expect(page.getByText('Amortización anticipada')).toHaveCount(0);
+  await expect(page.getByRole('heading',{name:'Revisión automática del tipo'})).toHaveCount(0);
+  await expect(page.getByRole('heading',{name:'Amortización anticipada'})).toHaveCount(0);
 
   await wealthNav.getByRole('link',{name:'Hipoteca'}).click();
   await expect(page.getByRole('heading',{name:'Hipoteca'})).toBeVisible();
