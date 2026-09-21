@@ -48,7 +48,7 @@ test('onboarding crea demo y el dashboard sigue navegable',async({page})=>{
   await page.getByRole('button',{name:'Crear datos demo'}).click();
   await expect(page.getByText(/movimientos ficticios creados/)).toBeVisible();
 
-  await page.getByRole('link',{name:'Inicio'}).click();
+  await page.getByRole('navigation',{name:'Navegación principal'}).getByRole('link',{name:'Inicio',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Inicio'})).toBeVisible();
   await expect(page.getByText('Disponible para gastar',{exact:true})).toBeVisible();
   await expect(page.getByText('En qué se está yendo tu dinero')).toBeVisible();
