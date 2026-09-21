@@ -7,6 +7,7 @@ import {Card} from '@/components/ui/card';
 import {Money} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
 import {DataStatus} from '@/components/data-status';
+import {MetricTile,SectionIntro,VisualPanel} from '@/components/finance-ui';
 
 type Account={id:string;name:string;institution_name:string;current_balance:string;available_balance:string|null};
 type Health={emergency_fund:{essential_monthly:string;allocated:string;coverage_months:string|null;minimum_buffer:string}};
@@ -24,6 +25,15 @@ export default function GoalsPage(){
   const health=useQuery({queryKey:['financial-health','goals'],queryFn:()=>apiGet<Health>('/api/v1/financial-health')});
   const [f,setF]=useState({name:'',goal_type:'emergency_fund',target_amount:'',allocated_amount:'0',account_id:'',target_date:'',planned_monthly_contribution:'0',priority:'medium',emergency_months_target:'6'});
   const emergencyTarget=useMemo(()=>Number(health.data?.emergency_fund.essential_monthly||0)*Number(f.emergency_months_target||6),[health.data,f.emergency_months_target]);
+  const goalSummary=useMemo(()=>{
+    const rows=q.data||[];
+    return {
+      count:rows.length,
+      reserved:rows.reduce((sum,row)=>sum+Number(row.current_amount||0),0),
+      target:rows.reduce((sum,row)=>sum+Number(row.target_amount||0),0),
+      offTrack:rows.filter(row=>row.monthly_required!==null&&Number(row.planned_monthly_contribution)<Number(row.monthly_required)).length,
+    };
+  },[q.data]);
   const add=useMutation({
     mutationFn:()=>apiMutate<G>('/api/v1/goals','POST',{
       ...f,target_amount:f.goal_type==='emergency_fund'?String(emergencyTarget):f.target_amount,
@@ -41,13 +51,21 @@ export default function GoalsPage(){
 
   return <>
     <PageHeader title="Objetivos" description="Reserva dinero de forma explícita. Dos objetivos nunca pueden apropiarse del mismo saldo: la suma de bolsas de una cuenta no puede superar su liquidez real."/>
-    {health.data&&<Card className="mb-4">
-      <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Fondo de emergencia</div><h2 className="mt-1 text-xl font-bold">{health.data.emergency_fund.coverage_months||'0'} meses de cobertura</h2></div><DataStatus label="Calculado" detail="gasto esencial de los últimos 90 días" tone="calculated"/></div>
+    {q.data&&<>
+      <SectionIntro eyebrow="Lectura rápida" title="Tus metas de ahorro" description="Cuánto has reservado de verdad, cuánto falta y qué objetivos necesitan ajustar el ritmo."/>
+      <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricTile label="Objetivos activos" value={goalSummary.count} detail="Bolsas con dinero reservado o meta pendiente"/>
+        <MetricTile label="Reservado" value={<Money value={goalSummary.reserved}/>} detail="Dinero que ya no se considera libre para gastar" status="Protegido" statusTone="confirmed"/>
+        <MetricTile label="Meta total" value={<Money value={goalSummary.target}/>} detail="Suma de los importes objetivo" status="Definido por ti" statusTone="confirmed"/>
+        <MetricTile label="Fuera de ritmo" value={goalSummary.offTrack} detail="Necesitarían una aportación mensual mayor" status={goalSummary.offTrack?'Revisar':'En ritmo'} statusTone={goalSummary.offTrack?'pending':'confirmed'} emphasis={goalSummary.offTrack>0}/>
+      </div>
+    </>}
+    {health.data&&<VisualPanel title="Fondo de emergencia" description="El colchón se calcula a partir de tu gasto esencial reciente y del dinero realmente reservado." status="Calculado" statusTone="calculated" className="mb-4">
+      <div className="text-2xl font-bold">{health.data.emergency_fund.coverage_months||'0'} meses de cobertura</div>
       <div className="mt-3 grid gap-3 sm:grid-cols-3 text-sm"><div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Gasto esencial mensual</div><strong><Money value={health.data.emergency_fund.essential_monthly}/></strong></div><div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Reservado como colchón</div><strong><Money value={health.data.emergency_fund.allocated}/></strong></div><div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Colchón mínimo operativo</div><strong><Money value={health.data.emergency_fund.minimum_buffer}/></strong></div></div>
-    </Card>}
+    </VisualPanel>}
 
-    <Card>
-      <h2 className="font-bold">Nuevo objetivo</h2>
+    <VisualPanel title="Nuevo objetivo" description="Crea una bolsa y decide cuánto dinero de una cuenta queda reservado exclusivamente para ella.">
       <form className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4" onSubmit={(e:FormEvent)=>{e.preventDefault();add.mutate()}}>
         <select className="fin-input" aria-label="Tipo de objetivo" value={f.goal_type} onChange={e=>setF({...f,goal_type:e.target.value})}>
           <option value="emergency_fund">Fondo de emergencia</option><option value="home">Vivienda</option><option value="debt">Amortizar deuda</option><option value="travel">Viaje</option><option value="car">Coche</option><option value="investment">Inversión</option><option value="saving">Ahorro</option><option value="other">Otro</option>
@@ -61,8 +79,9 @@ export default function GoalsPage(){
         <button className="fin-button self-end" disabled={add.isPending||!f.account_id}>{add.isPending?'Reservando…':'Crear objetivo'}</button>
       </form>
       {add.error&&<div className="mt-3"><ErrorState error={add.error}/></div>}
-    </Card>
+    </VisualPanel>
 
+    <div className="mt-6"><SectionIntro eyebrow="Detalle" title="Objetivos y reservas" description="Cada tarjeta separa dinero reservado, saldo todavía asignable y ritmo necesario para llegar a la fecha."/></div>
     {q.isLoading?<div className="mt-4"><Loading/></div>:<div className="mt-4 grid gap-4 md:grid-cols-2">{q.data?.length?q.data.map(g=>{
       const pct=Math.min(100,Number(g.current_amount)/Math.max(1,Number(g.target_amount))*100);
       const onTrack=g.monthly_required===null||Number(g.planned_monthly_contribution)>=Number(g.monthly_required);
