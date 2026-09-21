@@ -538,7 +538,6 @@ export default function DocumentsPage(){
               </div>
             </div>)}</div>
           </div>:null}
-        </div>
       </Card>
     </div>
   </>;
