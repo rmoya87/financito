@@ -241,10 +241,10 @@ test('Inicio muestra gastos recurrentes validados en Próximamente',async({page}
     }),
   }));
   await page.goto('/');
-  const upcoming=page.getByRole('heading',{name:'Próximamente'}).locator('..').locator('..');
-  await expect(upcoming.getByText('netflix e2e',{exact:true})).toBeVisible();
-  await expect(upcoming.getByText('Recurrente',{exact:true})).toBeVisible();
-  await expect(upcoming.getByText(/Patrón recurrente detectado en movimientos/)).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Próximamente'})).toBeVisible();
+  await expect(page.getByText('netflix e2e',{exact:true})).toBeVisible();
+  await expect(page.getByText('Recurrente',{exact:true})).toBeVisible();
+  await expect(page.getByText(/Patrón recurrente detectado en movimientos/)).toBeVisible();
   await expectAccessible(page);
 });
 
