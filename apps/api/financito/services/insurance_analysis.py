@@ -25,6 +25,14 @@ def _payload(fact:ExtractedFact)->dict:
     except Exception:
         return {"value":fact.value_json}
 
+def _payload_like_json(raw:str|None):
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except Exception:
+        return {"value":raw}
+
 def _pending_for_documents(session:Session,document_ids:list[str])->dict[str,dict]:
     if not document_ids:
         return {}
@@ -163,16 +171,27 @@ def insurance_verdict(session:Session,use_ai:bool=True)->dict:
             "source_document_ids":document_ids,
             "source_documents":[{"id":doc_id,"file_name":documents[doc_id].file_name} for doc_id in document_ids if doc_id in documents],
             "document_count":len(document_ids),
+            "policy_number_masked":policy.policy_number_masked,
+            "insured_object":_payload_like_json(policy.insured_object_json),
             "contract":None if contract is None else {
                 "provider_name":contract.provider_name,
+                "start_date":None if contract.start_date is None else str(contract.start_date),
                 "renewal_date":None if contract.renewal_date is None else str(contract.renewal_date),
                 "cancellation_notice_days":contract.cancellation_notice_days,
+                "permanence_end_date":None if contract.permanence_end_date is None else str(contract.permanence_end_date),
                 "early_exit_penalty":_d(contract.early_exit_penalty),
+                "annual_cost":_d(contract.annual_cost),
+                "currency":contract.currency,
                 "evidence_status":contract.evidence_status,
             },
             "coverages":[{
                 "id":f.id,"coverage_type":f.coverage_type,"limit_amount":_d(f.limit_amount),
                 "deductible":_d(f.deductible),"confidence":str(f.confidence),"user_verified":f.user_verified,
+                "effective_from":None if f.effective_from is None else str(f.effective_from),
+                "effective_to":None if f.effective_to is None else str(f.effective_to),
+                "conditions":_payload_like_json(f.conditions_json),
+                "exclusions":_payload_like_json(f.exclusions_json),
+                "source_document_id":f.source_document_id,
                 "source_page":f.source_page,
             } for f in row_coverage],
         })
