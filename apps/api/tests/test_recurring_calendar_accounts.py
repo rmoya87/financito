@@ -166,13 +166,15 @@ def test_account_delete_removes_only_selected_account_and_transactions():
         _tx(db,survivor.id,date(2026,9,1),"-20","Keep tx","keep merchant")
         db.commit()
 
-        result=delete_account(doomed.id,db)
-        assert result["deleted"]==doomed.id
+        doomed_id=doomed.id
+        survivor_id=survivor.id
+        result=delete_account(doomed_id,db)
+        assert result["deleted"]==doomed_id
         assert result["transactions_deleted"]==1
-        assert db.get(Account,doomed.id) is None
-        assert db.get(Account,survivor.id) is not None
-        assert db.scalar(select(Transaction.id).where(Transaction.account_id==doomed.id)) is None
-        assert db.scalar(select(Transaction.id).where(Transaction.account_id==survivor.id)) is not None
+        assert db.scalar(select(Account.id).where(Account.id==doomed_id)) is None
+        assert db.scalar(select(Account.id).where(Account.id==survivor_id))==survivor_id
+        assert db.scalar(select(Transaction.id).where(Transaction.account_id==doomed_id)) is None
+        assert db.scalar(select(Transaction.id).where(Transaction.account_id==survivor_id)) is not None
 
         db.execute(delete(Transaction).where(Transaction.account_id==survivor.id))
         db.delete(survivor);db.commit()
