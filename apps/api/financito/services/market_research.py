@@ -122,17 +122,27 @@ def _plain_text(raw: str) -> str:
 
 def _rates(text: str) -> list[dict]:
     found = []
-    for label, pattern in (
-        ("TIN", r"(\d{1,2}(?:[\.,]\d{1,3})?)\s*%\s*TIN"),
-        ("TAE", r"(\d{1,2}(?:[\.,]\d{1,3})?)\s*%\s*TAE(?:\s+Variable)?"),
-    ):
+    patterns = {
+        "TIN": (
+            r"(\d{1,2}(?:[\.,]\d{1,3})?)\s*%\s*TIN",
+            r"TIN[^\d%]{0,35}(\d{1,2}(?:[\.,]\d{1,3})?)\s*%",
+        ),
+        "TAE": (
+            r"(\d{1,2}(?:[\.,]\d{1,3})?)\s*%\s*TAE(?:\s+Variable)?",
+            r"TAE(?:\s+Variable)?[^\d%]{0,35}(\d{1,2}(?:[\.,]\d{1,3})?)\s*%",
+        ),
+    }
+    for label, candidates in patterns.items():
         seen = set()
-        for match in re.finditer(pattern, text, re.I):
-            value = match.group(1).replace(",", ".")
-            if value in seen:
-                continue
-            seen.add(value)
-            found.append({"type": label, "value_percent": value})
+        for pattern in candidates:
+            for match in re.finditer(pattern, text, re.I):
+                value = match.group(1).replace(",", ".")
+                if value in seen:
+                    continue
+                seen.add(value)
+                found.append({"type": label, "value_percent": value})
+                if len(seen) >= 5:
+                    break
             if len(seen) >= 5:
                 break
     return found
