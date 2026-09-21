@@ -217,6 +217,18 @@ def _normalize_number(raw:str)->str:
         return value.replace(".","")
     return value
 
+def _normalize_money_number(raw:str)->str:
+    value=str(raw).strip().replace(" ","")
+    if "," in value and "." in value:
+        if value.rfind(",")>value.rfind("."):
+            return value.replace(".","").replace(",",".")
+        return value.replace(",","")
+    if "," in value:
+        return value.replace(",",".")
+    if re.fullmatch(r"\d{1,3}(?:\.\d{3})+",value):
+        return value.replace(".","")
+    return value
+
 def extract_contract_facts(text:str,source_page:int|None=None)->list[dict]:
     facts=[]
     patterns=[
@@ -245,7 +257,7 @@ def extract_contract_facts(text:str,source_page:int|None=None)->list[dict]:
                 facts.append({"fact_type":"contract_term","key":key,"value":value,"unit":unit,"confidence":confidence,"source_page":source_page,"source_section":_context(text,match.start(),match.end())})
     for key,pattern,unit,confidence in patterns:
         for match in re.finditer(pattern,lowered,re.I):
-            raw=_normalize_number(match.group(1))
+            raw=_normalize_money_number(match.group(1)) if unit=="EUR" else _normalize_number(match.group(1))
             facts.append({"fact_type":"contract_term","key":key,"value":raw,"unit":unit,"confidence":confidence,"source_page":source_page,"source_section":_context(text,match.start(),match.end())})
     semantic_patterns=[
         ("reference_index",r"\b(eur[ií]bor(?:\s+a\s+\d+\s+meses?)?|irph)\b","text",.82),
@@ -270,13 +282,38 @@ def extract_contract_facts(text:str,source_page:int|None=None)->list[dict]:
         ("rate_review_months",r"(?:revisi[oó]n(?:\s+del\s+tipo)?(?:\s+cada)?)\D{0,25}(\d{1,3})\s*meses","months",.78),
         ("opening_fee_percent",r"(?:comisi[oó]n\s+de\s+apertura)\D{0,45}(\d+[\.,]?\d*)\s*%","percent",.84),
         ("early_repayment_fee_percent",r"(?:compensaci[oó]n\s+por\s+reembolso\s+anticipado|comisi[oó]n\s+por\s+(?:amortizaci[oó]n|reembolso)\s+anticipad[oa])\D{0,90}(\d+[\.,]?\d*)\s*%","percent",.84),
+        ("prepayment_min_amount",r"(?:importe\s+m[ií]nimo|m[ií]nimo\s+de\s+(?:amortizaci[oó]n|reembolso)|(?:amortizaci[oó]n|reembolso)\s+anticipad[oa].{0,45}?m[ií]nim[oa])\D{0,70}(\d{1,3}(?:[\.\s]\d{3})*(?:,\d{1,2})?|\d+(?:[\.,]\d+)?)\s*(?:€|euros?)","EUR",.86),
+        ("prepayment_max_amount",r"(?:importe\s+m[aá]ximo|m[aá]ximo\s+de\s+(?:amortizaci[oó]n|reembolso)|(?:amortizaci[oó]n|reembolso)\s+anticipad[oa].{0,45}?m[aá]xim[oa])\D{0,70}(\d{1,3}(?:[\.\s]\d{3})*(?:,\d{1,2})?|\d+(?:[\.,]\d+)?)\s*(?:€|euros?)","EUR",.86),
+        ("prepayment_notice_days",r"(?:amortizaci[oó]n|reembolso)\s+anticipad[oa].{0,120}?(?:preaviso|antelaci[oó]n|comunicar(?:lo)?\s+con)\D{0,35}(\d{1,3})\s*d[ií]as","days",.84),
+        ("prepayment_frequency_limit_per_year",r"(?:m[aá]ximo|hasta)\D{0,25}(\d{1,2})\s*(?:veces|amortizaciones|reembolsos).{0,45}?(?:al\s+a[nñ]o|por\s+a[nñ]o|anuales?)","per_year",.82),
         ("subrogation_fee_percent",r"(?:comisi[oó]n|compensaci[oó]n)\s+(?:por\s+)?subrogaci[oó]n\D{0,90}(\d+[\.,]?\d*)\s*%","percent",.86),
         ("cancellation_fee_percent",r"(?:comisi[oó]n|penalizaci[oó]n|compensaci[oó]n)\s+(?:por\s+)?cancelaci[oó]n\D{0,90}(\d+[\.,]?\d*)\s*%","percent",.82),
     ]
     for key,pattern,unit,confidence in mortgage_number_patterns:
         for match in re.finditer(pattern,lowered,re.I):
-            raw=_normalize_number(match.group(1))
+            raw=_normalize_money_number(match.group(1)) if unit=="EUR" else _normalize_number(match.group(1))
             facts.append({"fact_type":"mortgage_term","key":key,"value":raw,"unit":unit,"confidence":confidence,"source_page":source_page,"source_section":_context(text,match.start(),match.end())})
+    prepayment_permission_patterns=[
+        ("false",r"(?:no\s+se\s+permite|no\s+podr[aá]|queda\s+prohibid[oa]).{0,100}?(?:amortizaci[oó]n|reembolso)\s+anticipad[oa]\s+parcial"),
+        ("true",r"(?:podr[aá]|puede|se\s+permite|derecho\s+a).{0,120}?(?:amortizar|reembolsar|amortizaci[oó]n|reembolso).{0,70}?(?:parcial|total\s+o\s+parcial|anticipad[oa])"),
+    ]
+    for value,pattern in prepayment_permission_patterns:
+        match=re.search(pattern,lowered,re.I)
+        if match:
+            facts.append({"fact_type":"mortgage_term","key":"partial_prepayment_allowed","value":value,"unit":"boolean","confidence":.86,"source_page":source_page,"source_section":_context(text,match.start(),match.end())})
+            break
+
+    reduction_patterns=[
+        ("both",r"(?:amortizaci[oó]n|reembolso)\s+anticipad[oa].{0,180}?(?:reduc(?:ir|ci[oó]n)|minorar).{0,80}?(?:cuota).{0,100}?(?:plazo)|(?:amortizaci[oó]n|reembolso)\s+anticipad[oa].{0,180}?(?:reduc(?:ir|ci[oó]n)|minorar).{0,80}?(?:plazo).{0,100}?(?:cuota)"),
+        ("payment",r"(?:amortizaci[oó]n|reembolso)\s+anticipad[oa].{0,180}?(?:se\s+aplicar[aá]|destinad[oa]|opci[oó]n).{0,70}?(?:reducir|reducci[oó]n|minorar).{0,40}?cuota"),
+        ("term",r"(?:amortizaci[oó]n|reembolso)\s+anticipad[oa].{0,180}?(?:se\s+aplicar[aá]|destinad[oa]|opci[oó]n).{0,70}?(?:reducir|reducci[oó]n|minorar).{0,40}?plazo"),
+    ]
+    for value,pattern in reduction_patterns:
+        match=re.search(pattern,lowered,re.I)
+        if match:
+            facts.append({"fact_type":"mortgage_term","key":"prepayment_reduction_options","value":value,"unit":"enum","confidence":.80,"source_page":source_page,"source_section":_context(text,match.start(),match.end())})
+            break
+
     linked_patterns=[
         ("linked_salary",r"(?:domiciliaci[oó]n de n[oó]mina|n[oó]mina domiciliada)"),
         ("linked_home_insurance",r"(?:seguro de hogar|seguro hogar)"),

@@ -1,34 +1,70 @@
 from __future__ import annotations
+
 import json
 from datetime import date
-from decimal import Decimal
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-from ..models import Account,Contract,Transaction
-from .local_ai import ask,status
-from .financial_analytics import cash_flow
-from .rag import search
-from .evidence import structured_evidence_context
-from .wealth import summary as wealth_summary
 
-def answer(session:Session,question:str)->dict:
-    today=date.today();start=today.replace(day=1)
-    flow=cash_flow(session,start,today)
-    wealth=wealth_summary(session)
-    contracts=session.scalars(select(Contract)).all()
-    evidence=search(session,question,limit=6)
-    structured={
-        "period":{"start":str(start),"end":str(today)},
-        "cash_flow":{"income":str(flow["income"]),"expenses":str(flow["expenses"]),"savings":str(flow["savings"])},
-        "wealth":wealth,
-        "contracts":[{"provider":c.provider_name,"type":c.contract_type,"renewal":None if c.renewal_date is None else str(c.renewal_date),"penalty":None if c.early_exit_penalty is None else str(c.early_exit_penalty),"evidence_status":c.evidence_status} for c in contracts],
-        "document_evidence":structured_evidence_context(session),
+from sqlalchemy.orm import Session
+
+from .decision_context import live_decision_context
+from .local_ai import ask, status
+from .rag import search
+
+
+def answer(session: Session, question: str) -> dict:
+    today = date.today()
+    structured = live_decision_context(session)
+    current_flow = structured["cash_flow_current_month"]
+    # Alias de compatibilidad para clientes y tests anteriores: el contenido
+    # procede del mismo contexto común, no de un cálculo paralelo.
+    structured["period"] = {"start": current_flow["start"], "end": current_flow["end"]}
+    structured["cash_flow"] = {
+        "income": current_flow["income"],
+        "expenses": current_flow["expenses"],
+        "savings": current_flow["savings"],
     }
-    context=json.dumps(structured,ensure_ascii=False)+"\nFRAGMENTOS DOCUMENTALES RECUPERADOS (pueden requerir revisión):\n"+"\n\n".join(f"[{i+1}] {e['document_name']}: {e['text'][:1200]}" for i,e in enumerate(evidence))
-    ai=status()
+
+    evidence = search(session, question, limit=6)
+    fragments = "\n\n".join(
+        f"[{index + 1}] {item['document_name']}: {item['text'][:1200]}"
+        for index, item in enumerate(evidence)
+    )
+    context = (
+        json.dumps(structured, ensure_ascii=False)
+        + "\nFRAGMENTOS DOCUMENTALES RECUPERADOS (pueden requerir revisión):\n"
+        + fragments
+    )
+    ai = status()
     if ai["available"] and ai["configured_model"]:
-        try:result=ask(question,context)
-        except Exception as exc:result=f"No se pudo consultar el modelo local: {exc}. Los datos estructurados sí están disponibles."
+        try:
+            result = ask(question, context)
+        except Exception as exc:
+            result = (
+                f"No se pudo consultar el modelo local: {exc}. "
+                "Los datos estructurados y cálculos deterministas sí están disponibles."
+            )
     else:
-        result=f"IA local no configurada. Datos verificables del mes: ingresos {flow['income']} €, gastos {flow['expenses']} €, ahorro {flow['savings']} €. Patrimonio neto calculado: {wealth['net_worth']} €. Configura un modelo local para obtener una explicación conversacional."
-    return {"result":result,"sources":[{"document_id":e["document_id"],"document_name":e["document_name"],"chunk_id":e["chunk_id"],"page_start":e["page_start"],"excerpt":e["text"][:400]} for e in evidence],"calculations":structured,"confidence":None,"data_freshness":{"calculated_at":str(today)}}
+        result = (
+            "IA local no configurada. "
+            f"Datos verificables del mes: ingresos {current_flow['income']} €, "
+            f"gastos {current_flow['expenses']} €, ahorro {current_flow['savings']} €. "
+            f"Patrimonio neto calculado: {structured['wealth']['net_worth']} €. "
+            f"Hay {len(structured['decision_alerts'])} alerta(s) determinista(s) y "
+            f"{len(structured['actions'])} acción(es) pendiente(s). "
+            "Configura un modelo local para obtener una explicación conversacional."
+        )
+    return {
+        "result": result,
+        "sources": [
+            {
+                "document_id": item["document_id"],
+                "document_name": item["document_name"],
+                "chunk_id": item["chunk_id"],
+                "page_start": item["page_start"],
+                "excerpt": item["text"][:400],
+            }
+            for item in evidence
+        ],
+        "calculations": structured,
+        "confidence": None,
+        "data_freshness": {"calculated_at": str(today), "context_generated_at": structured["generated_at"]},
+    }

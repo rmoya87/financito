@@ -246,3 +246,66 @@ Regla:
 - las variables futuras introducidas por el usuario se identifican como supuestos;
 - un precio de mercado conserva proveedor y fecha y puede marcarse como desactualizado;
 - un dato ausente permanece desconocido.
+
+## Centro de decisión unificado
+
+GET /api/v1/decision-lab/overview compone una vista determinista orientada a acción sobre el mismo contexto que utiliza el resto de Financito.
+
+La respuesta separa:
+- choice_cards: decisiones que ya pueden contrastarse y decisiones bloqueadas por datos;
+- prepayment_guardrail: escenario ilustrativo de amortización preservando una referencia de liquidez antes de simular;
+- signals: desviaciones de presupuesto y anomalías de movimientos;
+- pending_actions: tareas documentales, renovaciones y otras acciones vigentes;
+- contexto financiero utilizado.
+
+Estados de preparación no equivalen a una recomendación. Por ejemplo, ready_for_market_check significa que las condiciones actuales necesarias para contrastar ofertas están suficientemente estructuradas; la oferta nueva todavía debe verificarse.
+
+### Cambio de hipoteca
+
+Antes de presentar una referencia pública como económicamente comparable deben estar disponibles:
+- capital, plazo y cuota actuales;
+- penalización/coste de salida actual;
+- vinculaciones y pérdida de bonificaciones;
+- costes de entrada conocidos de la nueva alternativa;
+- coste de productos vinculados requeridos por la nueva alternativa.
+
+Una referencia con TIN inferior queda bloqueada si falta un coste material. La FEIN u oferta personalizada es necesaria para cerrar el caso.
+
+### Cambio de seguro
+
+La póliza actual debe aportar como mínimo:
+- prima;
+- franquicia cuando corresponda;
+- coberturas verificadas;
+- renovación y preaviso;
+- coste de salida;
+- impacto hipotecario si existe vinculación.
+
+Una referencia pública de una aseguradora solo descubre una opción. No se considera alternativa comparable hasta disponer de prima y franquicia personalizadas, coberturas/límites, exclusiones y condiciones de cancelación equivalentes.
+
+### Alertas y consumo
+
+Presupuestos y anomalías de movimientos forman parte del contexto de decisión. Una alerta puede modificar la lectura de liquidez o capacidad de asumir costes, pero no altera por sí sola una condición contractual.
+
+## Lenguaje de confianza para usuarios no expertos
+
+La interfaz de decisión debe traducir la trazabilidad técnica a tres estados comprensibles:
+
+- **Confirmado**: procede de movimientos, registros o cláusulas validadas por el usuario.
+- **Calculado**: resultado determinista reproducible construido exclusivamente con datos confirmados y supuestos visibles.
+- **Referencia de mercado**: dato público útil para localizar o solicitar una alternativa, pero que todavía no representa una condición personal.
+
+Nunca se usa una puntuación opaca para ocultar incertidumbre. Si una decisión no puede cerrarse, se muestra qué dato falta, por qué importa y dónde resolverlo.
+
+### Amortización anticipada
+
+Una simulación de amortización guardada debe comprobar antes de calcular:
+- que la amortización parcial está permitida según evidencia confirmada;
+- si existe importe o porcentaje mínimo/máximo;
+- cómo se aplica: reducción de cuota, reducción de plazo, ambas opciones o decisión de la entidad;
+- la comisión/fórmula aplicable.
+
+Preaviso, frecuencia, ventanas y otras condiciones operativas se muestran bajo **Antes de hacerlo**. Pueden permitir calcular el impacto económico pero impiden presentar el escenario como listo para ejecutar hasta revisarlas.
+
+Los indicios extraídos por IA o reglas deterministas permanecen pendientes de validación y bloquean una conclusión cuando son materiales.
+

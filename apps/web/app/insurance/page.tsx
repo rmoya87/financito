@@ -47,6 +47,13 @@ type Verdict={
 type InsightItem={title:string;detail:string;pages:number[];impact?:string};
 type InsightAnalysis={summary:string;confidence:string;advantages:InsightItem[];penalties:InsightItem[];obligations:InsightItem[];risks:InsightItem[];exclusions_or_limits:InsightItem[];linked_products:InsightItem[];optimization_opportunities:InsightItem[];negotiation_points:InsightItem[];comparison_requirements:InsightItem[];cross_area_impacts:InsightItem[];missing_information:InsightItem[]};
 type DocInsight={document_id:string;file_name:string;document_type:string;analysis:InsightAnalysis};
+type InsuranceMarketLead={
+  source_id:string;provider:string;kind:string;insurance_type:string;status:string;url:string;retrieved_at:string;
+  claims:string[];comparison_status:string;can_decide:boolean;missing_candidate_data:string[];
+  current_policies:{policy_id:string;insurance_type:string;provider:string|null;annual_premium:string;deductible:string|null;renewal_date:string|null;cancellation_notice_days:number|null;exit_penalty:string|null;evidence_status:string|null;verified_coverage_count:number;linked_mortgage_ids:string[]}[];
+  rule:string;
+};
+type InsuranceMarketScan={generated_at:string;insurance_leads:InsuranceMarketLead[];insurance_market_summary:{references:number;decision_ready:number;message:string}};
 type InsightKey='advantages'|'penalties'|'obligations'|'risks'|'exclusions_or_limits'|'linked_products'|'optimization_opportunities'|'negotiation_points'|'comparison_requirements'|'cross_area_impacts'|'missing_information';
 
 const statusText:Record<Verdict['status'],{title:string;detail:string}>={
@@ -88,6 +95,7 @@ export default function InsurancePage(){
   const verdict=useQuery({queryKey:['insurance-verdict'],queryFn:()=>apiGet<Verdict>('/api/v1/insurance/verdict')});
   const requirements=useQuery({queryKey:['coverage-requirements'],queryFn:()=>apiGet<CoverageRequirement[]>('/api/v1/coverage-requirements')});
   const insights=useQuery({queryKey:['document-insights','all'],queryFn:()=>apiGet<DocInsight[]>('/api/v1/document-insights')});
+  const market=useQuery({queryKey:['insurance-market-references'],queryFn:()=>apiGet<InsuranceMarketScan>('/api/v1/decision-lab/market-scan'),enabled:false,retry:false});
   const analyze=useMutation({
     mutationFn:()=>apiMutate<Verdict>('/api/v1/insurance/verdict/analyze','POST'),
     onSuccess:data=>qc.setQueryData(['insurance-verdict'],data),
@@ -274,6 +282,27 @@ export default function InsurancePage(){
             <button className="text-xs underline" type="button" onClick={e=>{e.stopPropagation();if(window.confirm('¿Eliminar este seguro? Los documentos no se borrarán del Vault.'))deletePolicy.mutate(p.id)}}>Eliminar</button>
           </div>
         </div>):<EmptyState>Crea tu primer seguro y después asocia su documentación desde la propia póliza.</EmptyState>}</div>
+      </Card>
+
+      <Card className="mt-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="max-w-3xl">
+            <h2 className="font-bold">Comparar seguros con el mercado</h2>
+            <p className="mt-1 text-sm text-[var(--muted)]">Financito consulta referencias públicas solo para descubrir alternativas. Una web genérica nunca se considera mejor que tu póliza sin precio personalizado, franquicia, coberturas, límites, exclusiones y condiciones de cancelación equivalentes.</p>
+          </div>
+          <button className="fin-button" type="button" onClick={()=>market.refetch()} disabled={market.isFetching}>{market.isFetching?'Consultando…':'Buscar alternativas públicas'}</button>
+        </div>
+        {market.error&&<div className="mt-3"><ErrorState error={market.error}/></div>}
+        {market.data&&<>
+          <div className="mt-4 rounded-xl bg-[var(--brand-soft)] p-3 text-sm"><strong>{market.data.insurance_market_summary.references} referencia(s) oficial(es) localizada(s)</strong><div className="mt-1 text-xs">{market.data.insurance_market_summary.message}</div></div>
+          <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{market.data.insurance_leads.length?market.data.insurance_leads.map(lead=><div key={lead.source_id} className="rounded-xl border border-[var(--border)] p-4 text-sm">
+            <div className="flex items-start justify-between gap-3"><div><strong>{lead.provider}</strong><div className="text-xs text-[var(--muted)]">{insuranceLabel[lead.insurance_type]||lead.insurance_type} · referencia pública</div></div><span className="rounded-full bg-[var(--surface-2)] px-2 py-1 text-[10px] font-semibold uppercase text-[var(--muted)]">Falta oferta</span></div>
+            {lead.current_policies.length>0&&<div className="mt-3 rounded-lg bg-[var(--surface-2)] p-3 text-xs"><strong>Tu punto de partida</strong>{lead.current_policies.map(policy=><div key={policy.policy_id} className="mt-1">{policy.provider||insuranceLabel[policy.insurance_type]||'Seguro'} · <Money value={policy.annual_premium}/>/año · {policy.verified_coverage_count} cobertura(s) verificada(s){policy.linked_mortgage_ids.length?' · vinculada a hipoteca':''}</div>)}</div>}
+            <div className="mt-3 text-xs"><strong>Para poder decidir:</strong> prima y franquicia personalizadas, coberturas/límites equivalentes, exclusiones, cancelación y costes de entrada. Si tu póliza bonifica una hipoteca, también se suma la pérdida de esa bonificación.</div>
+            <a className="mt-3 inline-block text-xs underline" href={lead.url} target="_blank" rel="noreferrer">Abrir fuente oficial</a>
+          </div>):<EmptyState>No se han podido recuperar referencias públicas de seguros en esta consulta.</EmptyState>}</div>
+          <div className="mt-3 text-[11px] text-[var(--muted)]">Consulta realizada bajo demanda. No se envían tus pólizas ni tus datos privados a estas páginas.</div>
+        </>}
       </Card>
 
       {data.finances.spend_reconciliation.needs_attention&&<Card className="mt-4">

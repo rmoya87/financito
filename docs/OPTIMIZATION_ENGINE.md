@@ -247,3 +247,23 @@ Reglas:
 - nunca usar una oferta pública como si fuera una FEIN o presupuesto individual;
 - para calcular beneficio neto se requiere una oferta personalizada y los costes contractuales actuales confirmados;
 - una mejora aparente de TIN debe incorporar seguros, productos vinculados, costes de salida, costes de entrada y cualquier pérdida de bonificación.
+
+## Completitud de la alternativa de mercado
+
+Una mejora nominal no es todavía una mejora neta.
+
+Para hipotecas, el comparador público exige que los costes de entrada de la alternativa estén conocidos o explícitamente declarados inexistentes antes de clasificarla como escenario que compensa. Si una página no permite determinar apertura/gestión u otro coste de entrada material, la comparación queda incompleta aunque el TIN sea inferior.
+
+Los costes de cancelar seguros actuales se muestran dentro del contexto del paquete vinculado, pero no se cargan artificialmente al escenario «cambiar solo la hipoteca» cuando el usuario puede conservar esas pólizas. Se aplican al escenario de paquete completo cuando realmente se cancelen.
+
+Para seguros, las fuentes públicas son exclusivamente discovery. insurance_leads conserva proveedor, fuente y fecha, pero can_decide=false hasta incorporar una oferta personalizada con:
+- prima;
+- franquicia;
+- coberturas y límites equivalentes verificados;
+- exclusiones;
+- cancelación/preaviso;
+- costes de entrada/cambio;
+- efecto sobre bonificaciones hipotecarias si aplica.
+
+Esto evita optimizar una prima destruyendo cobertura o encareciendo otra parte del patrimonio financiero.
+

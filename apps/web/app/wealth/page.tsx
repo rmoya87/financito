@@ -23,6 +23,14 @@ type Investment={security_id:string;name:string;identifier:string|null;asset_cla
 type Policy={id:string;insurance_type:string;annual_premium:string;currency:string;deductible:string|null;provider:string|null;contract_id:string|null};
 type WealthDetails={summary:WealthSummary;accounts:Account[];assets:Asset[];liabilities:Liability[];mortgages:Mortgage[];investments:Investment[];insurance:{annual_premium_total:string;policies:Policy[]}};
 
+type PrepaymentRestriction={
+  status:string;calculation_ready:boolean;permission_confirmed:boolean;partial_prepayment_allowed:boolean|null;
+  missing:string[];pending_review:{key:string;value:any;unit:string|null;document_id:string|null;page:number|null;source?:string|null;status?:string}[];
+  blockers:{code:string;message:string;limit?:string}[];effective_min_amount:string|null;effective_max_amount:string|null;
+  notice_days:number|null;frequency_limit_per_year:number|null;window:string|null;condition:string|null;
+  allowed_reduction_options:string[];operational_checks:{code:string;message:string;confirmed?:boolean}[];
+  requires_manual_execution_check:boolean;
+};
 type MortgageExtra={
   original_principal:string|null;original_term_months:number|null;start_date:string|null;maturity_date:string|null;
   apr_rate:string|null;reference_index:string|null;differential_rate:string|null;rate_review_months:number|null;next_review_date:string|null;
@@ -37,6 +45,7 @@ type HomeData={
   mortgage_payments:MortgagePayment[];
   current_apr_estimate:null|{rate:string|null;status:string;monthly_payment:string;known_linked_annual_cost:string;known_linked_monthly_cost:string;basis:string};
   rate_review_automation:{status:string;automatic:boolean;missing:string[];reference_index?:string|null;differential_rate?:string|null;rate_review_months?:number|null;next_review_date?:string|null;reference_index_lag_months?:number|null;rule?:string;message?:string|null;estimate?:null|{review_date:string;reference_month:string;reference_index_value_percent:string;reference_source:string;reference_series:string;reference_period:string;estimated_nominal_rate:string;estimated_monthly_payment:string;estimated_remaining_interest:string;estimated_current_apr:string|null;known_linked_annual_cost:string;confirmation_required:boolean;notice:string}};
+  prepayment_restrictions:PrepaymentRestriction|null;
   pending_review:{key:string;label:string;reason:string;value:any;unit:string|null;document_id:string|null;page:number|null;source:string|null;status:string}[];
   missing:{key:string;label:string;reason:string}[];
 };
@@ -51,6 +60,18 @@ type MarketScan={
   current_conditions:{remaining_months:number|null;known_exit_penalty:string|null;exit_penalty_status:string|null;linked_insurance_annual_cost:string;linked_policies:{policy_id:string;insurance_type:string;annual_premium:string;provider:string|null;exit_penalty:string|null;conditions:string}[];linked_product_rate_impacts:any[];linked_product_signals:string[]};
   official_sources:{id:string;provider:string;kind:string;url:string;description:string}[];leads:MarketLead[];better_offers:MarketLead[];lower_rate_but_not_better:MarketLead[];conclusion:MarketConclusion;disclaimer:string;
 };
+
+const editableMortgageMissingKeys=new Set([
+  'apr_rate','reference_index','differential_rate','rate_review_months','next_review_date',
+  'early_repayment_fee_percent','subrogation_fee_percent',
+]);
+
+function prepaymentOptionLabel(value:string){
+  if(value==='payment')return 'reducir cuota';
+  if(value==='term')return 'reducir plazo';
+  if(value==='lender_choice')return 'lo decide la entidad';
+  return value;
+}
 
 function sumAssets(rows:Asset[],types:string[]){
   return rows.filter(x=>types.includes(x.type.toLowerCase())).reduce((sum,x)=>sum+Number(x.value||0)*Number(x.ownership_percentage||100)/100,0);
@@ -304,6 +325,23 @@ export default function WealthPage(){
             {home.data.current_apr_estimate?.basis&&<div className="mt-2 text-[11px] text-[var(--muted)]">{home.data.current_apr_estimate.basis}</div>}
           </div>}
 
+          {home.data.prepayment_restrictions&&<div className="mt-4 rounded-xl border border-[var(--border)] p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="font-semibold">Amortización anticipada</h3>
+                <p className="mt-1 text-xs text-[var(--muted)]">Aquí ves qué condiciones usa Financito antes de decirte qué ocurriría al amortizar. Si algo no está confirmado, el cálculo se bloquea en vez de asumirlo.</p>
+              </div>
+              <Link className="fin-button secondary py-1.5 text-xs" href="/tools/">Simular</Link>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+              <div className="rounded-lg bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">¿Se puede?</div><strong>{home.data.prepayment_restrictions.partial_prepayment_allowed===true?'Sí, confirmado':home.data.prepayment_restrictions.partial_prepayment_allowed===false?'No, según contrato':'Pendiente'}</strong></div>
+              <div className="rounded-lg bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Importe permitido</div><strong>{home.data.prepayment_restrictions.effective_min_amount?'Desde '+home.data.prepayment_restrictions.effective_min_amount+' €':'Sin mínimo confirmado'}</strong><div className="text-[11px] text-[var(--muted)]">Máximo {home.data.prepayment_restrictions.effective_max_amount||'pendiente'} €</div></div>
+              <div className="rounded-lg bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Cómo se aplica</div><strong>{home.data.prepayment_restrictions.allowed_reduction_options.length?home.data.prepayment_restrictions.allowed_reduction_options.map(prepaymentOptionLabel).join(' / '):'Pendiente'}</strong></div>
+              <div className="rounded-lg bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Preaviso</div><strong>{home.data.prepayment_restrictions.notice_days===null?'Pendiente':home.data.prepayment_restrictions.notice_days+' días'}</strong></div>
+            </div>
+            {home.data.prepayment_restrictions.operational_checks.length>0&&<div className="mt-3 rounded-lg bg-[var(--brand-soft)] p-3 text-xs"><strong>Antes de hacerlo</strong><div className="mt-1 space-y-1">{home.data.prepayment_restrictions.operational_checks.map((item,i)=><div key={item.code+i}>{item.message}</div>)}</div></div>}
+          </div>}
+
           {home.data.pending_review?.length>0&&<div className="mt-4 rounded-xl border border-[var(--brand)] bg-[var(--brand-soft)] p-4">
             <h3 className="font-semibold">Datos ya encontrados pendientes de validar</h3>
             <p className="mt-1 text-xs text-[var(--muted)]">No están ausentes: el extractor o la IA local los ha localizado. Confírmalos en el documento para que se proyecten automáticamente a la hipoteca y entren en cálculos.</p>
@@ -312,7 +350,7 @@ export default function WealthPage(){
 
           {home.data.missing.length>0&&selectedMortgageId&&!creatingMortgage&&<div className="mt-4 rounded-xl bg-[var(--surface-2)] p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div><h3 className="font-semibold">Información que falta</h3><p className="mt-1 text-xs text-[var(--muted)]">Primero intenta localizarla en los documentos de esta hipoteca. Si la IA local no puede encontrarla, completa el campo aquí y quedará guardado en el perfil de la hipoteca.</p></div>
+              <div><h3 className="font-semibold">Información que falta</h3><p className="mt-1 text-xs text-[var(--muted)]">Primero intenta localizarla en los documentos de esta hipoteca. Los datos numéricos sencillos pueden completarse manualmente; las condiciones contractuales como permiso, límites o forma de amortizar deben confirmarse desde la documentación.</p></div>
               <button className="fin-button secondary py-1.5 text-xs" type="button" onClick={()=>analyzeMortgageDocs.mutate()} disabled={analyzeMortgageDocs.isPending}>{analyzeMortgageDocs.isPending?'Buscando…':'Intentar completar con IA'}</button>
             </div>
             <div className="mt-3 grid gap-3 md:grid-cols-2">{home.data.missing.map(x=><div key={x.key} className="rounded-lg bg-white p-3 text-xs">
@@ -330,7 +368,7 @@ export default function WealthPage(){
             </div>)}</div>
             <div className="mt-3 flex gap-2">
               {home.data.missing.some(x=>x.key==='property_value')&&<button className="fin-button secondary" type="button" onClick={()=>saveHomeValue.mutate()} disabled={!homeValue||saveHomeValue.isPending}>Guardar valor vivienda</button>}
-              {home.data.missing.some(x=>x.key!=='property_value')&&<button className="fin-button" type="button" onClick={()=>saveExtra.mutate()} disabled={saveExtra.isPending}>Guardar datos de hipoteca</button>}
+              {home.data.missing.some(x=>editableMortgageMissingKeys.has(x.key))&&<button className="fin-button" type="button" onClick={()=>saveExtra.mutate()} disabled={saveExtra.isPending}>Guardar datos de hipoteca</button>}
             </div>
             {analyzeMortgageDocs.error&&<div className="mt-3"><ErrorState error={analyzeMortgageDocs.error}/></div>}
           </div>}

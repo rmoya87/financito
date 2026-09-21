@@ -1016,3 +1016,24 @@ En **Casa > Capital pendiente**, cuando consta el capital inicial, se muestra el
 - Desvincular un movimiento concreto no elimina la regla aprendida: ese movimiento queda como excepción manual y los futuros movimientos del mismo concepto siguen automatizados. Volver a vincular manualmente un movimiento de ese concepto reafirma la regla para las coincidencias existentes.
 - Las reglas aprendidas se muestran en **Movimientos > Ver reglas > Vinculaciones automáticas de pagos**. Se pueden pausar/activar o eliminar sin borrar las asociaciones históricas ya realizadas.
 - Al eliminar una póliza o hipoteca también se eliminan sus reglas automáticas de pago para evitar asociaciones futuras a productos inexistentes.
+
+## Decisiones simples, trazables y fiables
+
+Financito presenta las decisiones con tres niveles visibles:
+- **Confirmado**: dato real o cláusula validada.
+- **Calculado**: resultado reproducible a partir de datos confirmados.
+- **Referencia de mercado**: información pública para localizar alternativas; no sustituye una oferta personal.
+
+Cuando falta un dato material, la interfaz no muestra una falsa recomendación. Indica en lenguaje natural qué falta, por qué es necesario y enlaza con la sección donde puede resolverse.
+
+### Amortización anticipada de hipoteca
+
+Antes de calcular con una hipoteca guardada, Financito comprueba las condiciones confirmadas de amortización parcial:
+- permiso o prohibición;
+- mínimo/máximo, cuando consten;
+- comisión;
+- reducción de cuota/plazo o modalidad aplicable;
+- preaviso y otras condiciones operativas.
+
+Las condiciones encontradas automáticamente se muestran como pendientes de validar. No se puede lanzar una simulación contractual como si fueran ciertas hasta confirmarlas. Los campos contractuales no se sustituyen con valores inventados ni con reglas generales del mercado.
+

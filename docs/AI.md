@@ -106,3 +106,31 @@ Cada cambio debe tener:
 - motivo.
 
 No incrustar reglas críticas únicamente en prompts; deben existir también en dominio/validación.
+
+## Contexto común del chat
+
+El chat local no construye un resumen financiero paralelo. services/chat.py consume live_decision_context y añade únicamente los fragmentos RAG relevantes para la pregunta.
+
+Por tanto, la IA recibe las mismas bases deterministas que el Laboratorio:
+- cash-flow y patrimonio;
+- hipotecas con coste efectivo restante, reglas de revisión y preparación de cambio;
+- seguros, coberturas, conciliación de pagos y vinculaciones;
+- contratos y evidencia;
+- presupuestos, anomalías, compromisos y acciones;
+- inversiones.
+
+El modelo puede explicar relaciones y prioridades, pero no vuelve a calcular importes ni convierte un needs_more_data en una conclusión. Las cifras y estados materiales proceden de motores/estructuras deterministas.
+
+## Restricciones hipotecarias propuestas por IA
+
+La IA puede localizar y proponer hechos sobre amortización anticipada, incluidos permiso, importes, porcentajes, preaviso, frecuencia, ventanas y forma de aplicar la amortización.
+
+Estas propuestas:
+- deben citar página concreta;
+- no se generan por práctica bancaria general;
+- no se confirman automáticamente;
+- no entran en cálculos mientras sigan inferred, ambiguous o conflicting;
+- se vuelven a buscar en documentos antiguos cuando cambia la versión del esquema de análisis.
+
+El motor determinista tiene precedencia absoluta sobre la explicación del modelo.
+

@@ -15,7 +15,7 @@ from .local_ai import generate_json, status as ai_status
 
 ANALYSIS_FACT_TYPE = "ai_insight"
 ANALYSIS_KEY = "document_analysis"
-ANALYSIS_SCHEMA_VERSION = 3
+ANALYSIS_SCHEMA_VERSION = 4
 MAX_CONTEXT_CHARS = 48000
 MAX_CHUNKS = 18
 
@@ -31,6 +31,10 @@ MORTGAGE_FACT_KEYS = {
     "start_date","maturity_date","mortgage_term_years","rate_review_months","next_review_date",
     "reference_index_lag_months","default_interest_rate_percent","opening_fee_percent",
     "early_repayment_fee_percent","subrogation_fee_percent","cancellation_fee_percent",
+    "partial_prepayment_allowed","prepayment_min_amount","prepayment_max_amount",
+    "prepayment_min_percent_current_balance","prepayment_max_percent_current_balance",
+    "prepayment_notice_days","prepayment_frequency_limit_per_year","prepayment_window",
+    "prepayment_condition","prepayment_reduction_options",
     "remaining_principal","monthly_payment","remaining_months",
 }
 LINKED_FACT_KEYS = {
@@ -84,8 +88,9 @@ TYPE_FOCUS = {
     ),
     "mortgage": (
         "Analiza especialmente TIN/TAE, tipo fijo/variable/mixto, índice y diferencial, capital/plazo, "
-        "comisiones, amortización anticipada, subrogación, novación, productos vinculados, bonificaciones, "
-        "coste de perder cada bonificación, obligaciones y cláusulas que afecten a cambiar de entidad."
+        "comisiones y amortización anticipada (si se permite, importe mínimo/máximo, preaviso, frecuencia, ventanas "
+        "y si reduce cuota/plazo), subrogación, novación, productos vinculados, bonificaciones, coste de perder cada "
+        "bonificación, obligaciones y cláusulas que afecten a cambiar de entidad."
     ),
     "loan": (
         "Analiza especialmente TIN/TAE, plazo, cuota, amortización anticipada, cancelación, comisiones, "
@@ -530,6 +535,11 @@ REGLAS OBLIGATORIAS:
 - Si el documento dice un porcentaje máximo registral de demora, puedes proponer default_interest_rate_percent solo cuando el porcentaje aplicable/máximo esté explícito; nunca conviertas el importe de responsabilidad por intereses en una tasa.
 - Si aparece una fecha de vencimiento contractual explícita, propón maturity_date. Si aparece duración explícita, propón mortgage_term_years solo si el texto ya expresa años o la conversión desde meses es exacta e inequívoca. No conviertas el plazo original (por ejemplo 420 meses) en remaining_months salvo que el documento indique explícitamente que son meses pendientes a fecha del documento.
 - Si el contrato especifica qué mes/publicación del índice se usa antes de la revisión (por ejemplo, el Euríbor publicado dos meses antes), propón reference_index_lag_months con ese número de meses. No lo deduzcas por práctica bancaria general.
+- Para amortización anticipada parcial: propón partial_prepayment_allowed SOLO si el texto permite/prohíbe explícitamente la amortización parcial; usa true/false.
+- Propón prepayment_min_amount/prepayment_max_amount SOLO para importes explícitos en EUR. Usa prepayment_min_percent_current_balance/prepayment_max_percent_current_balance SOLO si el contrato dice expresamente que el porcentaje se aplica al capital pendiente actual.
+- Propón prepayment_notice_days y prepayment_frequency_limit_per_year solo cuando el contrato dé un número explícito.
+- Para prepayment_reduction_options normaliza únicamente a payment, term, both o lender_choice cuando el texto sea inequívoco. Si no lo es, deja la clave sin proponer y explica la condición en missing_information/comparison_requirements.
+- prepayment_window y prepayment_condition deben resumir de forma breve una ventana o condición expresamente escrita; no inventes restricciones por práctica bancaria.
 - No infieras TAE, diferencial, índice de referencia, comisión de amortización o subrogación a partir de una nota simple cuando no consten expresamente: deben quedar en missing_information.
 - En coverage_facts incluye SOLO coberturas explícitas del seguro, con página concreta. No inventes límites, franquicias, condiciones ni exclusiones ausentes.
 - Devuelve SOLO JSON válido.
