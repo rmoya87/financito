@@ -7,6 +7,6 @@ export function DataStatus({label,detail,tone='neutral'}:{label:string;detail?:s
         ?'bg-[var(--brand-soft)] text-[var(--brand)] border-[var(--border)]'
         :'bg-[var(--surface-2)] text-[var(--muted)] border-[var(--border)]';
   return <span className={'inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium '+cls} title={detail||label}>
-    <span>{label}</span>{detail&&<span className="hidden text-[10px] opacity-80 sm:inline">· {detail}</span>}
+    <span>{label}</span>{detail&&<span className="hidden text-[10px] sm:inline">· {detail}</span>}
   </span>;
 }
