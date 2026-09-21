@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import timedelta
+from datetime import date,timedelta
 from decimal import Decimal
 from statistics import median
 
@@ -80,6 +80,13 @@ def _create_series(session:Session,label:str,items:list[Transaction],confidence:
     cadence,gap=_infer_cadence(ordered)
     if cadence is None or len(ordered)<3:
         return None
+    next_expected=ordered[-1].booking_date+timedelta(days=round(gap))
+    # A historical pattern is not automatically a current recurring expense.
+    # Once an expected occurrence has been missed for a cadence-aware grace
+    # period, stop projecting it until a new real transaction revives it.
+    stale_grace_days={"weekly":14,"monthly":45,"quarterly":120,"annual":180}[cadence]
+    if date.today()>next_expected+timedelta(days=stale_grace_days):
+        return None
     amounts=[-item.amount for item in ordered if item.amount<0]
     if len(amounts)<3:
         return None
@@ -92,7 +99,7 @@ def _create_series(session:Session,label:str,items:list[Transaction],confidence:
         cadence=cadence,
         expected_amount=expected,
         amount_tolerance=tolerance,
-        next_expected_date=ordered[-1].booking_date+timedelta(days=round(gap)),
+        next_expected_date=next_expected,
         confidence=confidence,
     )
     session.add(row)
