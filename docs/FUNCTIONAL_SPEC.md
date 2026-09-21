@@ -875,3 +875,19 @@ Las otras deudas deben poder eliminarse explícitamente. El borrado quita el pas
 ## Vigencia de patrones recurrentes
 
 Un patrón estadísticamente regular no debe permanecer activo indefinidamente. Financito considera la fecha esperada siguiente y una gracia dependiente de su cadencia; si el cobro no vuelve a aparecer tras ese margen, el patrón se trata como inactivo y deja de mostrarse/proyectarse. Una nueva ocurrencia real permite detectarlo de nuevo.
+
+## Interacción contextual con hipoteca y pólizas
+
+La vista Casa debe priorizar lectura sobre edición. La información financiera principal de la hipoteca se muestra directamente como métricas; los formularios de mantenimiento solo aparecen al pulsar “Datos de la hipoteca”. La documentación de una hipoteca o póliza se abre en modal contextual y debe permitir añadir documentos, seleccionar documentos ya asociados, visualizar el original y leer un resumen local conciso con enlaces a las páginas de evidencia.
+
+No deben coexistir en Casa dos módulos que representen el mismo conjunto de seguros. Casa muestra únicamente los seguros relacionados con vivienda/vida/hipoteca. La página de Seguros y coberturas mantiene la gestión completa de pólizas.
+
+La lectura documental de seguros se organiza por póliza y evita repetir análisis narrativos extensos. Debe priorizar: coberturas confirmadas, ventajas/puntos favorables, penalizaciones, límites/exclusiones y evidencia exacta.
+
+## Mercado: actualización y apoyo a decisiones
+
+Al entrar en Mercado, Financito intenta actualizar los precios e histórico de todos los activos seguidos. Los fallos de una fuente externa no deben impedir usar los últimos datos locales conocidos. La cartera simulada y la evolución histórica forman parte de “Mis activos”.
+
+La cabecera de Mercado presenta primero una lectura de cartera producida localmente. Sus entradas son exclusivamente datos estructurados guardados: tipo de posición (real/simulada/seguimiento), valoración/P&L, histórico y métricas de riesgo deterministas, y noticias vinculadas almacenadas. La IA local puede sintetizar esos datos, pero no inventar precios, objetivos, probabilidades o noticias. Las orientaciones son categorías para revisar una decisión, no recomendaciones ejecutables ni predicciones.
+
+Las consultas de noticias deben tolerar limitación de proveedor. Se reutiliza caché y noticias locales cuando el proveedor devuelve 429 u otro fallo temporal; la UI muestra un aviso breve y nunca la excepción técnica o URL del proveedor.
