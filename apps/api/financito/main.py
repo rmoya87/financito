@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from decimal import Decimal
 import json
 from pathlib import Path
+from threading import Thread
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
@@ -34,13 +35,31 @@ from .services.categorization import ensure_categories,propagate_verified_mercha
 from .services.transaction_ops import apply_category_semantics,detect_internal_transfers,detect_refunds,pair_internal_transfer_counterpart,set_category_for_same_concept,synchronize_transaction_semantics
 from .services.documents import index_document,reprocess_document,safe_path,store_uploaded_document
 from .services.evidence import confirm_document_coherent_evidence,confirm_entity_coherent_evidence,create_document_evidence_group,link_document_to_entity,review_summary,synchronize_all_document_evidence,synchronize_document_evidence
-from .services.document_ai import analyze_document_by_id,domain_insights,latest_analysis
+from .services.document_ai import analyze_document_by_id,domain_insights,latest_analysis,stale_analysis_document_ids
 from .services.forecast import forecast
 from .services.month_end import month_end_projection
 from .services.imports import import_csv
 from .services.local_ai import status as ai_status
 from .services.secure_config import provider_status
 from .services.snapshots import record_snapshot
+
+
+def _refresh_stale_document_ai() -> None:
+    ai=ai_status()
+    if not (ai.get("available") and ai.get("configured_model") and ai.get("chat_ready",True)):
+        return
+    with SessionLocal() as db:
+        ids=stale_analysis_document_ids(db)
+    for document_id in ids:
+        with SessionLocal() as db:
+            try:
+                result=analyze_document_by_id(db,document_id)
+                if result.get("status")!="ready":
+                    db.rollback()
+                    break
+                db.commit()
+            except Exception:
+                db.rollback()
 
 
 @asynccontextmanager
@@ -54,6 +73,7 @@ async def lifespan(_: FastAPI):
         synchronize_all_document_evidence(db)
         db.commit()
     watcher=VaultWatcher(); watcher.start()
+    Thread(target=_refresh_stale_document_ai,name="financito-document-ai-refresh",daemon=True).start()
     try:
         yield
     finally:
