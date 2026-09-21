@@ -43,7 +43,7 @@ export function FinancialFiltersProvider({children}:{children:React.ReactNode}){
   useEffect(()=>{
     if(!hydrated)return;
     writeFinancialFilters(filters);
-    qc.invalidateQueries();
+    void qc.cancelQueries().then(()=>qc.invalidateQueries());
   },[filters,hydrated,qc]);
 
   const value:ContextValue={

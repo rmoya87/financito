@@ -5,6 +5,7 @@ import {MoreHorizontal} from 'lucide-react';
 import {useMutation,useQuery,useQueryClient} from '@tanstack/react-query';
 import {apiGet,apiMutate,apiUpload} from '@/lib/api';
 import {PageHeader} from '@/components/page-header';
+import {useFinancialFilters} from '@/components/financial-filters';
 import {Card} from '@/components/ui/card';
 import {Money} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
@@ -43,6 +44,7 @@ const specialHelp:Record<string,string>={
 
 export default function TransactionsPage(){
   const qc=useQueryClient();
+  const {start:globalStart,end:globalEnd,accountScope}=useFinancialFilters();
   const [accountId,setAccountId]=useState('');
   const [file,setFile]=useState<File|null>(null);
   const [search,setSearch]=useState('');
@@ -64,7 +66,7 @@ export default function TransactionsPage(){
   const insurance=useQuery({queryKey:['insurance'],queryFn:()=>apiGet<InsuranceRef[]>('/api/v1/insurance')});
   const mortgages=useQuery({queryKey:['mortgages'],queryFn:()=>apiGet<MortgageRef[]>('/api/v1/mortgages')});
   const txs=useQuery({
-    queryKey:['transactions',deferredSearch,categoryFilter,page,pageSize],
+    queryKey:['transactions',deferredSearch,categoryFilter,globalStart,globalEnd,accountScope,page,pageSize],
     queryFn:()=>{
       const params=new URLSearchParams({page:String(page),page_size:String(pageSize)});
       if(deferredSearch.trim())params.set('q',deferredSearch.trim());
@@ -157,7 +159,7 @@ export default function TransactionsPage(){
 
   useEffect(()=>{
     setPage(1);
-  },[deferredSearch,categoryFilter,pageSize]);
+  },[deferredSearch,categoryFilter,globalStart,globalEnd,accountScope,pageSize]);
 
   useEffect(()=>{
     if(txs.data&&page!==txs.data.page)setPage(txs.data.page);
