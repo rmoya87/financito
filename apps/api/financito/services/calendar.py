@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from ..models import Category,Commitment,Contract,FinancialGoal,Transaction
 from ..models_analytics import RecurringSeries
+from ..domain.analytics import recurring_is_current
 
 
 PREDICTABLE_CATEGORY_KEYS={
@@ -108,6 +109,8 @@ def events(session:Session,start:date,end:date)->list[dict]:
     for g in session.scalars(select(FinancialGoal).where(FinancialGoal.target_date>=start,FinancialGoal.target_date<=end,FinancialGoal.status=="active")).all():
         out.append({"date":g.target_date,"type":"goal","title":g.name,"amount":str(g.target_amount),"entity_id":g.id,"confidence":"1","basis":"Objetivo registrado"})
     for r in session.scalars(select(RecurringSeries).where(RecurringSeries.status=="active")).all():
+        if not recurring_is_current(r,start):
+            continue
         occurrence=r.next_expected_date
         guard=0
         while occurrence<start and guard<60:
