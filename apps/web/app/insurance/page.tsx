@@ -170,7 +170,6 @@ export default function InsurancePage(){
   const status=data?statusText[data.status]:null;
   const selectedPolicy=data?.policies.find(p=>p.id===selectedPolicyId)||null;
   const selectedProfile=profiles.data?.find(p=>p.id===selectedPolicyId)||null;
-  const selectedInsights=selectedPolicy?((insights.data||[]).filter(item=>(selectedPolicy.source_document_ids||[]).includes(item.document_id))):[];
   const selectedPending=selectedPolicy?data?.pending_review.filter(item=>item.policy_id===selectedPolicy.id)||[]:[];
   const selectedMissing=selectedPolicy?data?.missing_information.filter(item=>item.policy_id===selectedPolicy.id)||[]:[];
 
@@ -324,11 +323,6 @@ export default function InsurancePage(){
                 {coverage.source_document_id&&<a className="mt-2 inline-block text-xs underline" target="_blank" rel="noreferrer" href={'/api/v1/documents/'+coverage.source_document_id+'/file'+(coverage.source_page?'#page='+coverage.source_page:'')}>Ver en el documento{coverage.source_page?' · pág. '+coverage.source_page:''}</a>}
               </div>):<EmptyState>No hay coberturas verificadas o extraídas para esta póliza.</EmptyState>}</div>
             </div>
-
-            {selectedInsights.length>0&&<div className="mt-5">
-              <h3 className="font-semibold">Lectura de sus documentos</h3>
-              <div className="mt-3 space-y-3">{selectedInsights.map(item=><div key={item.document_id} className="rounded-xl border border-[var(--border)] p-4 text-sm"><div className="flex justify-between gap-3"><strong>{item.file_name}</strong><Link className="text-xs underline" href={'/documents/?document='+encodeURIComponent(item.document_id)}>Abrir evidencia</Link></div><p className="mt-2">{item.analysis.summary}</p>{item.analysis.exclusions_or_limits.length>0&&<div className="mt-2 text-xs"><strong>Límites/exclusiones:</strong> {item.analysis.exclusions_or_limits.map(x=>x.title||x.detail).join(' · ')}</div>}{item.analysis.risks.length>0&&<div className="mt-2 text-xs"><strong>Riesgos:</strong> {item.analysis.risks.map(x=>x.title||x.detail).join(' · ')}</div>}{item.analysis.penalties.length>0&&<div className="mt-2 text-xs"><strong>Penalizaciones:</strong> {item.analysis.penalties.map(x=>x.title||x.detail).join(' · ')}</div>}</div>)}</div>
-            </div>}
 
             {(selectedPending.length>0||selectedMissing.length>0)&&<div className="mt-5 grid gap-4 lg:grid-cols-2">
               <div><h3 className="font-semibold">Datos encontrados pendientes</h3><div className="mt-2 space-y-2">{selectedPending.length?selectedPending.map((item,i)=><div key={item.field+i} className="rounded-xl bg-[var(--brand-soft)] p-3 text-xs"><strong>{item.label}</strong><div className="mt-1">{readableDetail(item.value)}{item.unit?' '+item.unit:''}</div></div>):<EmptyState>Sin datos pendientes.</EmptyState>}</div></div>
