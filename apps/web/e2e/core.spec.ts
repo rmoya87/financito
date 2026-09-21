@@ -87,6 +87,31 @@ test('Movimientos y Análisis comparten el selector temporal de Inicio',async({p
   await expectAccessible(page);
 });
 
+test('Análisis muestra 30 días, tarta de comercios y permite alternar a listado',async({page})=>{
+  await page.goto('/analytics/');
+  await expect(page.getByText('Próximos 30 días')).toBeVisible();
+  const chartButton=page.getByRole('button',{name:'Gráfica'});
+  const listButton=page.getByRole('button',{name:'Listado'});
+  await expect(chartButton).toHaveAttribute('aria-pressed','true');
+  await listButton.click();
+  await expect(listButton).toHaveAttribute('aria-pressed','true');
+  await expect(page.getByText('E2E Shop',{exact:true})).toBeVisible();
+  await expectAccessible(page);
+});
+
+test('Cuentas permite eliminar una cuenta y sus movimientos locales',async({page})=>{
+  await page.goto('/accounts/');
+  const accountCard=page.getByText('Cuenta E2E',{exact:true}).locator('..').locator('..').locator('..');
+  await accountCard.getByRole('button',{name:'Eliminar cuenta'}).click();
+  const dialog=page.getByRole('dialog',{name:'Eliminar cuenta'});
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button',{name:'Eliminar definitivamente'}).click();
+  await expect(page.getByText('Cuenta E2E',{exact:true})).not.toBeVisible();
+
+  await page.goto('/transactions/');
+  await expect(page.getByText('Compra E2E',{exact:true})).not.toBeVisible();
+});
+
 test('Documentos permite subir y procesar un archivo desde la aplicación',async({page})=>{
   await page.goto('/documents/');
   await page.locator('input[type="file"]').first().setInputFiles({
