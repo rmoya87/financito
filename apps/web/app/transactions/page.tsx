@@ -53,6 +53,7 @@ export default function TransactionsPage(){
   const [pageSize,setPageSize]=useState(50);
   const deferredSearch=useDeferredValue(search);
   const [rulesOpen,setRulesOpen]=useState(false);
+  const [showImport,setShowImport]=useState(false);
   useEffect(()=>{
     const q=new URLSearchParams(window.location.search).get('q');
     if(q)setSearch(q);
@@ -186,47 +187,27 @@ export default function TransactionsPage(){
     <PageHeader
       title="Movimientos"
       description="Todos tus movimientos en un único sitio. Si cambias una categoría, Financito aplica esa corrección a todo el histórico con el mismo concepto y crea una regla para los futuros movimientos iguales."
+      action={<button type="button" className="fin-button" onClick={()=>setShowImport(true)}>Importar extracto</button>}
     />
 
-    <Card>
-      <form onSubmit={submit} className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-        <select className="fin-input" aria-label="Cuenta destino" value={accountId} onChange={e=>setAccountId(e.target.value)} required>
-          <option value="">Cuenta destino…</option>
-          {accounts.data?.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
-        <input className="fin-input" aria-label="Archivo de extracto" type="file" accept=".csv,.xlsx,.xlsm,.qif,.ofx,.xml,.camt,.053,.mt940,.sta" onChange={e=>setFile(e.target.files?.[0]||null)} required/>
-        <button className="fin-button" disabled={upload.isPending}>{upload.isPending?'Importando…':'Importar extracto'}</button>
-      </form>
-      <div className="mt-2 text-xs text-[var(--muted)]">
-        Al importar, Financito intenta identificar automáticamente movimientos entre tus cuentas y reembolsos. Una corrección de categoría en la tabla se aplica al mismo concepto tanto en movimientos pasados como futuros.
-      </div>
-      {upload.data&&<div className="mt-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm">
-        <div><strong>Importación terminada:</strong> {upload.data.inserted} nuevos · {upload.data.duplicates} duplicados · {upload.data.rejected} rechazados.</div>
-        <div className="mt-1 text-xs text-[var(--muted)]">
-          Detección automática: {upload.data.transfer_pairs??0} pareja(s) entre cuentas · {upload.data.refunds??0} reembolso(s) enlazados.
-        </div>
-      </div>}
-      {upload.error&&<div className="mt-3"><ErrorState error={upload.error}/></div>}
+    <div className="mb-3 flex flex-wrap gap-2">
+      <button type="button" className="fin-button secondary" onClick={()=>openRuleFor()}>Nueva regla</button>
+      <button type="button" className="fin-button secondary" onClick={()=>setRulesOpen(true)}>Ver reglas ({(rules.data?.length??0)+(paymentRules.data?.length??0)})</button>
+      <button type="button" className="fin-button secondary" onClick={()=>aiCategorize.mutate()} disabled={aiCategorize.isPending}>
+        {aiCategorize.isPending?'Analizando con IA local…':'Mejorar categorización con IA local'}
+      </button>
+    </div>
+    {aiCategorize.data&&<div className="mb-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm">
+      <strong>Mejora terminada:</strong> {aiCategorize.data.reevaluated} recategorizados · {aiCategorize.data.unresolved} sin evidencia suficiente.
+      {aiCategorize.data.warnings.length>0&&<div className="mt-1 text-xs text-[var(--muted)]">{aiCategorize.data.warnings.join(' ')}</div>}
+    </div>}
+    {aiCategorize.error&&<div className="mb-3"><ErrorState error={aiCategorize.error}/></div>}
+    {categoryMutation.data&&<div className="mb-3 rounded-xl bg-[var(--brand-soft)] p-3 text-sm">Categoría aplicada al concepto. {categoryMutation.data.reclassified} movimiento(s) histórico(s) actualizado(s); los futuros con el mismo concepto usarán esta categoría automáticamente.</div>}
+    {categoryMutation.error&&<div className="mb-3"><ErrorState error={categoryMutation.error}/></div>}
+    {insuranceLink.error&&<div className="mb-3"><ErrorState error={insuranceLink.error}/></div>}
+    {mortgageLink.error&&<div className="mb-3"><ErrorState error={mortgageLink.error}/></div>}
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        <button className="fin-button secondary" onClick={()=>openRuleFor()}>Nueva regla</button>
-        <button className="fin-button secondary" onClick={()=>setRulesOpen(true)}>Ver reglas ({(rules.data?.length??0)+(paymentRules.data?.length??0)})</button>
-        <button className="fin-button secondary" onClick={()=>aiCategorize.mutate()} disabled={aiCategorize.isPending}>
-          {aiCategorize.isPending?'Analizando con IA local…':'Mejorar categorización con IA local'}
-        </button>
-      </div>
-      {aiCategorize.data&&<div className="mt-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm">
-        <strong>Mejora terminada:</strong> {aiCategorize.data.reevaluated} recategorizados · {aiCategorize.data.unresolved} sin evidencia suficiente.
-        {aiCategorize.data.warnings.length>0&&<div className="mt-1 text-xs text-[var(--muted)]">{aiCategorize.data.warnings.join(' ')}</div>}
-      </div>}
-      {aiCategorize.error&&<div className="mt-3"><ErrorState error={aiCategorize.error}/></div>}
-      {categoryMutation.data&&<div className="mt-3 rounded-xl bg-[var(--brand-soft)] p-3 text-sm">Categoría aplicada al concepto. {categoryMutation.data.reclassified} movimiento(s) histórico(s) actualizado(s); los futuros con el mismo concepto usarán esta categoría automáticamente.</div>}
-      {categoryMutation.error&&<div className="mt-3"><ErrorState error={categoryMutation.error}/></div>}
-      {insuranceLink.error&&<div className="mt-3"><ErrorState error={insuranceLink.error}/></div>}
-      {mortgageLink.error&&<div className="mt-3"><ErrorState error={mortgageLink.error}/></div>}
-    </Card>
-
-    <Card className="mt-4 overflow-visible">
+    <Card className="overflow-visible">
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="font-bold">Todos los movimientos</h2>
@@ -312,6 +293,28 @@ export default function TransactionsPage(){
         </div>
       </div>}
     </Card>
+
+    {showImport&&<div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Importar extracto">
+      <Card className="w-full max-w-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <div><h2 className="text-lg font-bold">Importar extracto</h2><p className="mt-1 text-sm text-[var(--muted)]">Añade un archivo bancario a la cuenta correcta. La detección de transferencias propias, reembolsos y reglas se aplica automáticamente.</p></div>
+          <button type="button" className="text-sm underline" onClick={()=>setShowImport(false)}>Cerrar</button>
+        </div>
+        <form onSubmit={submit} className="mt-5 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+          <select className="fin-input" aria-label="Cuenta destino" value={accountId} onChange={e=>setAccountId(e.target.value)} required>
+            <option value="">Cuenta destino…</option>
+            {accounts.data?.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+          <input className="fin-input" aria-label="Archivo de extracto" type="file" accept=".csv,.xlsx,.xlsm,.qif,.ofx,.xml,.camt,.053,.mt940,.sta" onChange={e=>setFile(e.target.files?.[0]||null)} required/>
+          <button className="fin-button" disabled={upload.isPending}>{upload.isPending?'Importando…':'Importar'}</button>
+        </form>
+        {upload.data&&<div className="mt-4 rounded-xl bg-[var(--surface-2)] p-3 text-sm">
+          <div><strong>Importación terminada:</strong> {upload.data.inserted} nuevos · {upload.data.duplicates} duplicados · {upload.data.rejected} rechazados.</div>
+          <div className="mt-1 text-xs text-[var(--muted)]">Detección automática: {upload.data.transfer_pairs??0} pareja(s) entre cuentas · {upload.data.refunds??0} reembolso(s) enlazados.</div>
+        </div>}
+        {upload.error&&<div className="mt-4"><ErrorState error={upload.error}/></div>}
+      </Card>
+    </div>}
 
     {rulesOpen&&<div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Reglas automáticas">
       <div className="max-h-[88vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl">
