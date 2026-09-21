@@ -63,11 +63,10 @@ const statusLabels:Record<string,string>={
 };
 const priorityLabels:Record<string,string>={high:'Alta',medium:'Media',low:'Baja'};
 
-function readableMissing(value:string){
+function readableMissing(value:string):string{
   const map:Record<string,string>={
     mortgage:'hipoteca',
     mortgage_exit_or_subrogation_penalty:'coste de salida/subrogación',
-    prepayment_penalty:'comisión de amortización',
     expense_history:'histórico de gasto',
     confirmed_policy_evidence:'evidencia confirmada de la póliza',
     cancellation_notice_days:'preaviso de cancelación',
