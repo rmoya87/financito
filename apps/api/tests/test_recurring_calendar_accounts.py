@@ -72,9 +72,7 @@ def test_recurring_detection_and_90_day_historical_patterns():
 
         db.execute(delete(RecurringSeries).where(RecurringSeries.merchant_normalized==merchant))
         db.execute(delete(Transaction).where(Transaction.account_id==account.id))
-        db.delete(account)
-        db.delete(anomaly_category)
-        db.commit()
+        db.delete(account);db.commit()
 
 
 def test_manual_balance_can_be_corrected_but_connected_balance_is_bank_owned():
@@ -133,4 +131,6 @@ def test_analysis_routes_filter_recurring_and_anomalies_by_period():
         )))
         db.execute(delete(RecurringSeries).where(RecurringSeries.merchant_normalized==merchant))
         db.execute(delete(Transaction).where(Transaction.account_id==account.id))
-        db.delete(account);db.commit()
+        db.delete(account)
+        db.delete(anomaly_category)
+        db.commit()
