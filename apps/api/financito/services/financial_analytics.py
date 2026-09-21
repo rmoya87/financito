@@ -253,6 +253,6 @@ def overview(session: Session, start: date, end: date) -> dict:
             k: str(v) for k, v in essential_discretionary(session, start, end).items()
         },
         "monthly": monthly_cashflow(session, start, end),
-        "daily": daily_cashflow(session,start,end),
+        "daily": daily_cashflow(session,start,end) if (end-start).days<=45 else [],
         "budget_vs_actual": budget_vs_actual(session, start, end),
     }
