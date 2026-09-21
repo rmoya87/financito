@@ -155,7 +155,7 @@ def _ai_series(session:Session,candidates:list[Transaction])->list[tuple[str,lis
     return out
 
 
-def detect_recurring(session:Session)->list[RecurringSeries]:
+def detect_recurring(session:Session,use_ai:bool=True)->list[RecurringSeries]:
     txs=session.scalars(
         select(Transaction)
         .where(Transaction.amount<0,Transaction.is_internal_transfer.is_(False))
@@ -188,11 +188,12 @@ def detect_recurring(session:Session)->list[RecurringSeries]:
         if row:
             out.append(row);used.update(x.id for x in items)
 
-    unresolved=[tx for tx in txs if tx.id not in used]
-    for label,items,confidence in _ai_series(session,unresolved):
-        row=_create_series(session,label,items,confidence)
-        if row:
-            out.append(row);used.update(x.id for x in items)
+    if use_ai:
+        unresolved=[tx for tx in txs if tx.id not in used]
+        for label,items,confidence in _ai_series(session,unresolved):
+            row=_create_series(session,label,items,confidence)
+            if row:
+                out.append(row);used.update(x.id for x in items)
     return out
 
 
