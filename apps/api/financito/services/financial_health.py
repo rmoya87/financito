@@ -251,6 +251,15 @@ def period_changes(
     }
 
 
+def _selected_monthly_spending(
+    session:Session,start:date,end:date,account_id:str|None=None,account_type:str|None=None
+)->Decimal:
+    """Normalize the selected period's real expenses to a 30-day spending rate."""
+    days=max(1,(end-start).days+1)
+    observed=cash_flow(session,start,end,account_id,account_type)["expenses"]
+    return (observed*Decimal("30")/Decimal(days)).quantize(CENT)
+
+
 def financial_health_summary(
     session:Session,as_of:date|None=None,start:date|None=None,end:date|None=None,
     account_id:str|None=None,account_type:str|None=None,
@@ -263,18 +272,19 @@ def financial_health_summary(
     liquidity=sum((_account_balance(a) for a in accounts),Decimal("0"))
     reserved,emergency_allocated=_goal_allocations(session,ids if (account_id or account_type) else None)
     essential_monthly=essential_monthly_average(session,as_of,account_id,account_type)
+    selected_monthly_spending=_selected_monthly_spending(session,start,end,account_id,account_type)
     next_income=_predict_next_income(session,as_of,ids if (account_id or account_type) else None)
     horizon_date=date.fromisoformat(next_income["date"]) if next_income else as_of+timedelta(days=30)
     horizon_date=min(horizon_date,as_of+timedelta(days=30))
     days=max(1,(horizon_date-as_of).days)
-    baseline_essential=(essential_monthly*Decimal(days)/Decimal("30")).quantize(CENT)
+    selected_spending_floor=(selected_monthly_spending*Decimal(days)/Decimal("30")).quantize(CENT)
     known=Decimal("0")
     for event in calendar_events(session,as_of,horizon_date,account_id,account_type):
         if event.get("type") not in {"commitment","recurring","historical_pattern"} or event.get("amount") is None:
             continue
         try:known+=Decimal(str(event["amount"]))
         except Exception:pass
-    obligations=max(baseline_essential,known)
+    obligations=max(selected_spending_floor,known)
     minimum_buffer=essential_monthly
     buffer_gap=max(Decimal("0"),minimum_buffer-emergency_allocated)
     free_after_goals=max(Decimal("0"),liquidity-reserved)
@@ -311,7 +321,11 @@ def financial_health_summary(
             "reserved_goals":str(reserved.quantize(CENT)),"obligations_until_next_income":str(obligations.quantize(CENT)),
             "minimum_buffer":str(minimum_buffer.quantize(CENT)),"buffer_gap":str(buffer_gap.quantize(CENT)),
             "horizon_date":str(horizon_date),"next_income":next_income,
-            "explanation":"Liquidez disponible menos dinero reservado para objetivos, gastos previsibles hasta el siguiente ingreso y el colchón mínimo aún no cubierto.",
+            "selected_period_start":str(start),"selected_period_end":str(end),
+            "selected_monthly_spending":str(selected_monthly_spending),
+            "selected_spending_floor":str(selected_spending_floor),
+            "known_future_outflows":str(known.quantize(CENT)),
+            "explanation":"Liquidez actual menos dinero reservado para objetivos, el mayor entre el ritmo de gasto del periodo seleccionado y los cargos futuros conocidos hasta el siguiente ingreso, y el colchón mínimo aún no cubierto.",
         },
         "emergency_fund":{
             "essential_monthly":str(essential_monthly.quantize(CENT)),
