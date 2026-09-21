@@ -141,13 +141,13 @@ def test_daily_overview_fills_each_day_of_selected_month_range():
     with SessionLocal() as db:
         account=Account(name="Daily analytics test",current_balance=Decimal("1000"),source="manual")
         db.add(account);db.flush()
-        _tx(db,account.id,date(2026,9,1),"1200","Nómina diaria test","empresa daily test")
-        _tx(db,account.id,date(2026,9,3),"-40","Compra diaria test","tienda daily test")
+        _tx(db,account.id,date(2040,2,1),"1200","Nómina diaria test","empresa daily test")
+        _tx(db,account.id,date(2040,2,3),"-40","Compra diaria test","tienda daily test")
         db.commit()
 
-        data=analytics_overview(db,date(2026,9,1),date(2026,9,4))
+        data=analytics_overview(db,date(2040,2,1),date(2040,2,4))
         assert [row["period"] for row in data["daily"]]==[
-            "2026-09-01","2026-09-02","2026-09-03","2026-09-04"
+            "2040-02-01","2040-02-02","2040-02-03","2040-02-04"
         ]
         assert data["daily"][0]["income"]=="1200.00"
         assert data["daily"][1]["income"]=="0.00"
