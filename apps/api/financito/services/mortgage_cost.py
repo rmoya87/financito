@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 from ..domain.engines import MortgageEngine
 from ..models import Mortgage
 from ..models_analytics import LinkedProduct
-from ..models_extended import InsurancePolicy
+from ..models_extended import InsurancePolicy,MortgageProfileExtra
+from .contractual_costs import mortgage_contract_context
 
 
 def _monthly_irr(principal:Decimal,payment:Decimal,months:int)->Decimal|None:
@@ -72,5 +73,47 @@ def current_remaining_apr_estimate(session:Session,mortgage:Mortgage)->dict:
         "basis":(
             "Estimación sobre capital y plazo restantes, TIN vigente guardado y primas futuras de seguros "
             "vinculados conocidas. No sustituye la TAE contractual ni incorpora costes ya pagados."
+        ),
+    }
+
+
+def rate_review_readiness(session:Session,mortgage:Mortgage)->dict:
+    if mortgage.interest_type=="fixed":
+        return {"status":"not_applicable","missing":[],"automatic":False}
+    extra=session.scalar(select(MortgageProfileExtra).where(MortgageProfileExtra.mortgage_id==mortgage.id))
+    context=mortgage_contract_context(session,mortgage.id)
+    confirmed=context.get("by_key") or {}
+
+    def pick_extra(field:str):
+        return None if extra is None else getattr(extra,field)
+
+    reference_index=pick_extra("reference_index") or (confirmed.get("reference_index") or {}).get("value")
+    differential=pick_extra("differential_rate")
+    if differential is None and confirmed.get("differential_rate"):
+        try:differential=Decimal(str(confirmed["differential_rate"]["value"]).replace(",", "."))/Decimal("100")
+        except Exception:differential=None
+    review_months=pick_extra("rate_review_months") or (confirmed.get("rate_review_months") or {}).get("value")
+    next_review=pick_extra("next_review_date") or (confirmed.get("next_review_date") or {}).get("value")
+    lag=(confirmed.get("reference_index_lag_months") or {}).get("value")
+
+    missing=[]
+    if not reference_index:missing.append("reference_index")
+    if differential is None:missing.append("differential_rate")
+    if not review_months:missing.append("rate_review_months")
+    if not next_review:missing.append("next_review_date")
+    if lag in {None,""}:missing.append("reference_index_lag_months")
+
+    return {
+        "status":"ready" if not missing else "needs_more_data",
+        "automatic":not missing,
+        "missing":missing,
+        "reference_index":reference_index,
+        "differential_rate":None if differential is None else str(differential),
+        "rate_review_months":None if not review_months else int(Decimal(str(review_months))),
+        "next_review_date":None if not next_review else str(next_review),
+        "reference_index_lag_months":None if lag in {None,""} else int(Decimal(str(lag))),
+        "rule":(
+            "La actualización automática del tipo solo puede activarse cuando la regla temporal del índice "
+            "está confirmada en documentación; nunca se presupone el mes de Euríbor."
         ),
     }
