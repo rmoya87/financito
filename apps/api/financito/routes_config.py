@@ -6,7 +6,7 @@ from fastapi import APIRouter,Depends,HTTPException
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
-from .services.banking import close_connection,complete_authorization,list_connections,sync_connection
+from .services.banking import close_connection,complete_authorization,list_connections,sync_all_connections,sync_connection
 from .services.secure_config import provider_status,set_secret
 from .services.preferences import effective_banking_redirect_url,read_preferences,update_preferences
 from .services.local_ai import diagnose as ai_diagnose,status as ai_status
@@ -100,6 +100,13 @@ def banking_sync(connection_id:str,db:Session=Depends(dbdep)):
         result=sync_connection(db,connection_id);db.commit();return result
     except ValueError as exc:
         db.rollback();raise HTTPException(404,str(exc))
+    except Exception as exc:
+        db.rollback();raise HTTPException(503,str(exc))
+
+@router.post("/banking/sync-all")
+def banking_sync_all(db:Session=Depends(dbdep)):
+    try:
+        result=sync_all_connections(db);db.commit();return result
     except Exception as exc:
         db.rollback();raise HTTPException(503,str(exc))
 
