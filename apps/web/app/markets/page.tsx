@@ -24,7 +24,7 @@ type TrackedAsset={
   price_fetched_at:string|null;price_delayed:boolean|null;price_age_minutes:number|null;price_stale:boolean;simulation:Simulation|null
 };
 type SimHistory={security_id:string;simulation:null|{started_at:string;invested_amount:string;entry_price:string;quantity:string;currency:string};rows:{timestamp:string;price:string;value:string;pnl:string;return:string;provider:string}[]};
-type TrackedHistory={security_id:string;name:string;identifier:string|null;currency:string;owned:boolean;rows:{timestamp:string;close:string;currency:string;provider:string;is_delayed:boolean}[]};
+type TrackedHistory={security_id:string;name:string;identifier:string|null;currency:string;owned:boolean;rows:{timestamp:string;close:string;currency:string;provider:string;delayed:boolean}[]};
 type RefreshAll={refreshed:{security_id:string;quote:unknown}[];failed:{security_id:string;error:string}[];assets:TrackedAsset[]};
 type Research={
   query:string;ingest:{inserted:number;discovered:number};
@@ -72,7 +72,7 @@ export default function MarketsPage(){
       fees:trackedForm.fees||'0',fx_rate:trackedForm.fx_rate||'1',currency:trackedForm.currency,
       provider_asset_id:trackedForm.asset_class==='crypto'?trackedForm.identifier:null,notes:null,
     }),
-    onSuccess:()=>{setTrackedForm({...trackedForm,name:'',identifier:'',quantity:'',purchase_price:'',fees:'0',fx_rate:'1'});qc.invalidateQueries({queryKey:['tracked-assets']});qc.invalidateQueries({queryKey:['portfolios']});qc.invalidateQueries({queryKey:['securities']})},
+    onSuccess:()=>{setTrackedForm({...trackedForm,name:'',identifier:'',quantity:'',purchase_price:'',fees:'0',fx_rate:'1'});qc.invalidateQueries({queryKey:['tracked-assets']});qc.invalidateQueries({queryKey:['tracked-assets-history']});qc.invalidateQueries({queryKey:['portfolios']});qc.invalidateQueries({queryKey:['securities']})},
   });
   const refreshTracked=useMutation({
     mutationFn:(id:string)=>apiMutate('/api/v1/tracked-assets/'+id+'/refresh?include_history=true','POST'),
@@ -88,7 +88,7 @@ export default function MarketsPage(){
   });
   const removeTracked=useMutation({
     mutationFn:(id:string)=>apiMutate('/api/v1/tracked-assets/'+id+'/unfollow','POST'),
-    onSuccess:(_,id)=>{if(selectedSimulation===id)setSelectedSimulation('');qc.invalidateQueries({queryKey:['tracked-assets']})},
+    onSuccess:(_,id)=>{if(selectedSimulation===id)setSelectedSimulation('');qc.invalidateQueries({queryKey:['tracked-assets']});qc.invalidateQueries({queryKey:['tracked-assets-history']})},
   });
 
   const simulations=useMemo(()=>tracked.data?.filter(a=>a.simulation)||[],[tracked.data]);
