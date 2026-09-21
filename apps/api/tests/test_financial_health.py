@@ -144,6 +144,34 @@ def test_spending_structure_is_exclusive_and_safe_to_spend_protects_reserved_mon
         db.delete(goal);db.delete(account);db.commit()
 
 
+def test_available_to_spend_changes_with_selected_period_spending_rate():
+    suffix=uuid4().hex[:8]
+    with SessionLocal() as db:
+        cats=ensure_categories(db)
+        discretionary=[category for key,category in cats.items() if key not in ESSENTIAL]
+        assert len(discretionary)>=2
+        account=Account(
+            name="Period health "+suffix,current_balance=Decimal("10000"),
+            available_balance=Decimal("10000"),source="manual",
+        )
+        db.add(account);db.flush()
+        today=date.today()
+        previous=today-timedelta(days=30)
+        _transaction(db,account.id,previous,"-10","Low spend "+suffix,discretionary[0].id,False)
+        _transaction(db,account.id,today,"-100","High spend "+suffix,discretionary[1].id,False)
+        db.commit()
+
+        low=financial_health_summary(db,as_of=today,start=previous,end=previous,account_id=account.id)
+        high=financial_health_summary(db,as_of=today,start=today,end=today,account_id=account.id)
+
+        assert Decimal(low["safe_to_spend"]["selected_monthly_spending"])==Decimal("300.00")
+        assert Decimal(high["safe_to_spend"]["selected_monthly_spending"])==Decimal("3000.00")
+        assert Decimal(high["safe_to_spend"]["amount"])<Decimal(low["safe_to_spend"]["amount"])
+
+        db.execute(delete(Transaction).where(Transaction.account_id==account.id))
+        db.delete(account);db.commit()
+
+
 def test_recurring_manual_commitment_repeats_in_calendar():
     suffix=uuid4().hex[:8]
     with SessionLocal() as db:
