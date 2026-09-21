@@ -64,7 +64,7 @@ def test_recurring_detection_and_90_day_historical_patterns():
 
         upcoming=events(db,date(2026,9,21),date(2026,12,20))
         assert any(item["type"]=="recurring" and merchant in item["title"] for item in upcoming)
-        grocery=[item for item in upcoming if item["type"]=="historical_pattern" and item.get("category")=="Alimentación"]
+        grocery=[item for item in upcoming if item["type"]=="historical_pattern" and item.get("category")=="Supermercado"]
         assert len(grocery)>=2
         assert all(Decimal(item["amount"])>Decimal("0") for item in grocery)
         assert all(item.get("basis") for item in grocery)
