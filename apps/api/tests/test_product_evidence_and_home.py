@@ -233,6 +233,7 @@ def test_confirmed_mortgage_document_projects_extended_profile_fields():
             "mortgage_term_years":"30",
             "rate_review_months":"12",
             "next_review_date":"15/02/2027",
+            "reference_index_lag_months":"2",
             "opening_fee_percent":"0.10",
             "early_repayment_fee_percent":"0.25",
             "subrogation_fee_percent":"0.50",
@@ -259,6 +260,10 @@ def test_confirmed_mortgage_document_projects_extended_profile_fields():
         assert extra.early_repayment_fee_percent==Decimal("0.25")
         assert extra.subrogation_fee_percent==Decimal("0.50")
         assert extra.cancellation_fee_percent==Decimal("0.40")
+        from financito.services.mortgage_cost import rate_review_readiness
+        readiness=rate_review_readiness(db,mortgage)
+        assert readiness["status"]=="ready"
+        assert readiness["reference_index_lag_months"]==2
 
 
 def test_mortgage_context_keeps_found_unverified_fact_out_of_missing_truth():
