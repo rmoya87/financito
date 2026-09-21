@@ -251,13 +251,128 @@ def period_changes(
     }
 
 
+def _projectable_expenses(
+    session:Session,start:date,end:date,account_id:str|None=None,account_type:str|None=None,
+)->Decimal:
+    """Real expenses excluding explicitly extraordinary outflows that should not be extrapolated."""
+    if end<start:
+        return Decimal("0")
+    expenses=cash_flow(session,start,end,account_id,account_type)["expenses"]
+    stmt=select(Transaction).where(
+        Transaction.booking_date>=start,
+        Transaction.booking_date<=end,
+        Transaction.amount<0,
+        Transaction.is_extraordinary.is_(True),
+    )
+    if account_id:
+        stmt=stmt.where(Transaction.account_id==account_id)
+    elif account_type:
+        stmt=stmt.where(Transaction.account_id.in_(select(Account.id).where(Account.account_type==account_type)))
+    internal_id=session.scalar(select(Category.id).where(Category.system_key=="internal_transfer"))
+    extraordinary=Decimal("0")
+    for tx in session.scalars(stmt).all():
+        if tx.is_internal_transfer or (internal_id is not None and tx.category_id==internal_id):
+            continue
+        extraordinary+=-tx.amount
+    return max(Decimal("0"),expenses-extraordinary).quantize(CENT)
+
+
 def _selected_monthly_spending(
     session:Session,start:date,end:date,account_id:str|None=None,account_type:str|None=None
 )->Decimal:
-    """Normalize the selected period's real expenses to a 30-day spending rate."""
+    """Normalize projectable expenses in the selected period to a 30-day rate."""
     days=max(1,(end-start).days+1)
-    observed=cash_flow(session,start,end,account_id,account_type)["expenses"]
+    observed=_projectable_expenses(session,start,end,account_id,account_type)
     return (observed*Decimal("30")/Decimal(days)).quantize(CENT)
+
+
+def _previous_year(value:date)->date:
+    try:
+        return value.replace(year=value.year-1)
+    except ValueError:
+        return value.replace(year=value.year-1,day=28)
+
+
+def _future_spending_projection(
+    session:Session,as_of:date,horizon_date:date,selected_start:date,selected_end:date,
+    account_id:str|None=None,account_type:str|None=None,
+)->dict:
+    """Prudent near-term spend estimate using several independent local signals.
+
+    No signal is added blindly to another: the largest credible signal becomes the
+    protected amount. This avoids both double counting fixed bills and the old
+    failure mode where a quiet partial month was extrapolated as if spending were
+    evenly distributed across every day.
+    """
+    future_start=as_of+timedelta(days=1)
+    horizon_days=max(0,(horizon_date-as_of).days)
+    selected_days=max(1,(selected_end-selected_start).days+1)
+    selected_expenses=_projectable_expenses(session,selected_start,selected_end,account_id,account_type)
+    selected_monthly=(selected_expenses*Decimal("30")/Decimal(selected_days)).quantize(CENT)
+
+    recent_start=as_of-timedelta(days=89)
+    recent_days=max(1,(as_of-recent_start).days+1)
+    recent_expenses=_projectable_expenses(session,recent_start,as_of,account_id,account_type)
+
+    if horizon_days<=0:
+        return {
+            "protected":Decimal("0"),"selected_monthly":selected_monthly,
+            "selected_estimate":Decimal("0"),"recent_estimate":Decimal("0"),
+            "seasonal_estimate":Decimal("0"),"pattern_estimate":Decimal("0"),
+            "known_estimate":Decimal("0"),"basis":"horizon_closed",
+        }
+
+    selected_daily=selected_expenses/Decimal(selected_days)
+    recent_daily=recent_expenses/Decimal(recent_days)
+    # Short current/custom periods are noisy. Shrink them towards the recent
+    # 90-day pace until roughly a full month of observations is available.
+    selected_weight=min(Decimal("1"),Decimal(selected_days)/Decimal("30"))
+    smoothed_selected_daily=(
+        selected_daily*selected_weight+recent_daily*(Decimal("1")-selected_weight)
+        if recent_expenses>0 else selected_daily
+    )
+    selected_estimate=(smoothed_selected_daily*Decimal(horizon_days)).quantize(CENT)
+    recent_estimate=(recent_daily*Decimal(horizon_days)).quantize(CENT)
+
+    seasonal_start=_previous_year(future_start)
+    seasonal_end=_previous_year(horizon_date)
+    seasonal_estimate=_projectable_expenses(session,seasonal_start,seasonal_end,account_id,account_type)
+
+    explicit=Decimal("0")
+    pattern=Decimal("0")
+    for event in calendar_events(session,future_start,horizon_date,account_id,account_type):
+        if event.get("amount") is None:
+            continue
+        try:
+            amount=Decimal(str(event["amount"]))
+        except Exception:
+            continue
+        if event.get("type") in {"commitment","recurring"}:
+            explicit+=amount
+        elif event.get("type")=="historical_pattern":
+            pattern+=amount
+    known_estimate=explicit.quantize(CENT)
+    pattern_estimate=pattern.quantize(CENT)
+
+    signals={
+        "selected_period":selected_estimate,
+        "recent_90_days":recent_estimate,
+        "same_period_last_year":seasonal_estimate,
+        "known_future":known_estimate,
+        "category_patterns":pattern_estimate,
+    }
+    basis=max(signals,key=lambda key:signals[key])
+    protected=max(signals.values()).quantize(CENT)
+    return {
+        "protected":protected,
+        "selected_monthly":selected_monthly,
+        "selected_estimate":selected_estimate,
+        "recent_estimate":recent_estimate,
+        "seasonal_estimate":seasonal_estimate,
+        "pattern_estimate":pattern_estimate,
+        "known_estimate":known_estimate,
+        "basis":basis,
+    }
 
 
 def financial_health_summary(
@@ -272,19 +387,16 @@ def financial_health_summary(
     liquidity=sum((_account_balance(a) for a in accounts),Decimal("0"))
     reserved,emergency_allocated=_goal_allocations(session,ids if (account_id or account_type) else None)
     essential_monthly=essential_monthly_average(session,as_of,account_id,account_type)
-    selected_monthly_spending=_selected_monthly_spending(session,start,end,account_id,account_type)
     next_income=_predict_next_income(session,as_of,ids if (account_id or account_type) else None)
     horizon_date=date.fromisoformat(next_income["date"]) if next_income else as_of+timedelta(days=30)
     horizon_date=min(horizon_date,as_of+timedelta(days=30))
-    days=max(1,(horizon_date-as_of).days)
-    selected_spending_floor=(selected_monthly_spending*Decimal(days)/Decimal("30")).quantize(CENT)
-    known=Decimal("0")
-    for event in calendar_events(session,as_of,horizon_date,account_id,account_type):
-        if event.get("type") not in {"commitment","recurring","historical_pattern"} or event.get("amount") is None:
-            continue
-        try:known+=Decimal(str(event["amount"]))
-        except Exception:pass
-    obligations=max(selected_spending_floor,known)
+    spend_projection=_future_spending_projection(
+        session,as_of,horizon_date,start,end,account_id,account_type,
+    )
+    selected_monthly_spending=Decimal(spend_projection["selected_monthly"])
+    selected_spending_floor=Decimal(spend_projection["selected_estimate"])
+    known=Decimal(spend_projection["known_estimate"])
+    obligations=Decimal(spend_projection["protected"])
     minimum_buffer=essential_monthly
     buffer_gap=max(Decimal("0"),minimum_buffer-emergency_allocated)
     free_after_goals=max(Decimal("0"),liquidity-reserved)
@@ -324,8 +436,13 @@ def financial_health_summary(
             "selected_period_start":str(start),"selected_period_end":str(end),
             "selected_monthly_spending":str(selected_monthly_spending),
             "selected_spending_floor":str(selected_spending_floor),
+            "recent_spending_floor":str(Decimal(spend_projection["recent_estimate"])),
+            "seasonal_spending_floor":str(Decimal(spend_projection["seasonal_estimate"])),
+            "historical_pattern_floor":str(Decimal(spend_projection["pattern_estimate"])),
             "known_future_outflows":str(known.quantize(CENT)),
-            "explanation":"Liquidez actual menos dinero reservado para objetivos, el mayor entre el ritmo de gasto del periodo seleccionado y los cargos futuros conocidos hasta el siguiente ingreso, y el colchón mínimo aún no cubierto.",
+            "projection_basis":str(spend_projection["basis"]),
+            "projection_method":"Estimación prudente: se protege la mayor señal creíble entre periodo seleccionado, últimos 90 días, mismo tramo del año anterior, cargos futuros conocidos y patrones por categoría. Los extraordinarios marcados no se extrapolan.",
+            "explanation":"Liquidez actual menos objetivos reservados, una estimación prudente de gasto hasta el siguiente ingreso y el colchón mínimo aún no cubierto.",
         },
         "emergency_fund":{
             "essential_monthly":str(essential_monthly.quantize(CENT)),
