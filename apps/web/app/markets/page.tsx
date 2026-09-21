@@ -1,6 +1,6 @@
 'use client';
 
-import {FormEvent,useMemo,useState} from 'react';
+import {FormEvent,useEffect,useMemo,useRef,useState} from 'react';
 import {useMutation,useQuery,useQueryClient} from '@tanstack/react-query';
 import {CartesianGrid,Line,LineChart,ResponsiveContainer,Tooltip,XAxis,YAxis} from 'recharts';
 import {apiGet,apiMutate} from '@/lib/api';
@@ -27,12 +27,24 @@ type SimHistory={security_id:string;simulation:null|{started_at:string;invested_
 type TrackedHistory={security_id:string;name:string;identifier:string|null;currency:string;owned:boolean;rows:{timestamp:string;close:string;currency:string;provider:string;delayed:boolean}[]};
 type RefreshAll={refreshed:{security_id:string;quote:unknown}[];failed:{security_id:string;error:string}[];assets:TrackedAsset[]};
 type Research={
-  query:string;ingest:{inserted:number;discovered:number};
+  query:string;ingest:{inserted:number;discovered:number;warning?:string|null};
   brief:{summary:string;facts:{headline:string;source:string;published_at:string;url:string;linked_assets:string[];event_types:string[];impact_levels:string[]}[];portfolio_impacts:{asset?:string;observation?:string;possible_effects?:string|any[];evidence_headlines?:string[]}[];risks:string[];watch:string[];method:string;ai_available:boolean;ai_warning?:string}
 };
+type MarketGuidance={security_id:string;name:string;orientation:'estudiar_entrada'|'mantener_observacion'|'revisar_exposicion'|'datos_insuficientes';summary:string;reasons:string[];risks:string[];watch:string[]};
+type MarketInsightAsset={security_id:string;name:string;identifier:string|null;asset_class:string;position_type:'owned'|'simulated'|'watching';owned:boolean;current_price:string|null;cost_basis:string|null;current_value:string|null;unrealized_pnl:string|null;unrealized_return:string|null;simulation:Simulation|null;history:{observations:number;return_30d:number|null;return_90d:number|null;return_365d:number|null;volatility:number|null;max_drawdown:number|null;sharpe:number|null};news:{headline:string;source:string;published_at:string;url:string}[]};
+type MarketInsights={generated_at:string;summary:string;assets:MarketInsightAsset[];guidance:MarketGuidance[];ai_available:boolean;method:string;news_refresh:{inserted:number;discovered:number;warning?:string|null};notice:string};
+
 
 function sentimentLabel(value:number){return value>.15?'positivo':value<-.15?'negativo':'neutral'}
 function pct(value:string|null){return value===null?'—':(Number(value)*100).toLocaleString('es-ES',{maximumFractionDigits:2})+'%'}
+function insightLabel(value:MarketGuidance['orientation']){
+  if(value==='estudiar_entrada')return 'Estudiar entrada';
+  if(value==='revisar_exposicion')return 'Revisar exposición';
+  if(value==='mantener_observacion')return 'Mantener / observar';
+  return 'Datos insuficientes';
+}
+function metricPct(value:number|null){return value===null||value===undefined?'—':(value*100).toLocaleString('es-ES',{maximumFractionDigits:1})+'%'}
+
 function seriesColor(id:string){
   let hash=0;
   for(let i=0;i<id.length;i++)hash=((hash<<5)-hash)+id.charCodeAt(i);
@@ -48,11 +60,16 @@ export default function MarketsPage(){
   const [trackedForm,setTrackedForm]=useState({asset_class:'stock',name:'',identifier:'',owned:'no',portfolio_id:'',quantity:'',purchase_price:'',purchase_date:new Date().toISOString().slice(0,10),fees:'0',currency:'EUR',fx_rate:'1'});
   const [simAmounts,setSimAmounts]=useState<Record<string,string>>({});
   const [selectedSimulation,setSelectedSimulation]=useState('');
+  const autoRefreshStarted=useRef(false);
 
   const portfolios=useQuery({queryKey:['portfolios'],queryFn:()=>apiGet<Portfolio[]>('/api/v1/portfolios')});
   const tracked=useQuery({queryKey:['tracked-assets'],queryFn:()=>apiGet<TrackedAsset[]>('/api/v1/tracked-assets')});
   const trackedHistory=useQuery({queryKey:['tracked-assets-history'],queryFn:()=>apiGet<TrackedHistory[]>('/api/v1/tracked-assets/history?days=365')});
   const local=useQuery({queryKey:['local-news'],queryFn:()=>apiGet<LocalNews>('/api/v1/news/local?limit=30')});
+  const portfolioInsights=useMutation({
+    mutationFn:()=>apiMutate<MarketInsights>('/api/v1/market/portfolio-insights?refresh_news=true','POST'),
+    onSuccess:()=>qc.invalidateQueries({queryKey:['local-news']}),
+  });
   const simHistory=useQuery({queryKey:['simulation-history',selectedSimulation],queryFn:()=>apiGet<SimHistory>('/api/v1/tracked-assets/'+selectedSimulation+'/simulation-history'),enabled:!!selectedSimulation});
 
   const quote=useMutation({mutationFn:()=>apiGet<Quote>('/api/v1/market/quote/'+encodeURIComponent(symbol))});
@@ -80,7 +97,7 @@ export default function MarketsPage(){
   });
   const refreshAll=useMutation({
     mutationFn:()=>apiMutate<RefreshAll>('/api/v1/tracked-assets/refresh-all?include_history=true','POST'),
-    onSuccess:()=>{qc.invalidateQueries({queryKey:['tracked-assets']});qc.invalidateQueries({queryKey:['tracked-assets-history']});qc.invalidateQueries({queryKey:['portfolios']});qc.invalidateQueries({queryKey:['simulation-history']})},
+    onSuccess:()=>{qc.invalidateQueries({queryKey:['tracked-assets']});qc.invalidateQueries({queryKey:['tracked-assets-history']});qc.invalidateQueries({queryKey:['portfolios']});qc.invalidateQueries({queryKey:['simulation-history']});portfolioInsights.mutate()},
   });
   const startSimulation=useMutation({
     mutationFn:({id,amount}:{id:string;amount:string})=>apiMutate<TrackedAsset>('/api/v1/tracked-assets/'+id+'/simulation','POST',{amount}),
@@ -90,6 +107,13 @@ export default function MarketsPage(){
     mutationFn:(id:string)=>apiMutate('/api/v1/tracked-assets/'+id+'/unfollow','POST'),
     onSuccess:(_,id)=>{if(selectedSimulation===id)setSelectedSimulation('');qc.invalidateQueries({queryKey:['tracked-assets']});qc.invalidateQueries({queryKey:['tracked-assets-history']})},
   });
+
+  useEffect(()=>{
+    if(tracked.isLoading||autoRefreshStarted.current)return;
+    autoRefreshStarted.current=true;
+    if(tracked.data?.length)refreshAll.mutate();
+    else portfolioInsights.mutate();
+  },[tracked.isLoading,tracked.data?.length]);
 
   const simulations=useMemo(()=>tracked.data?.filter(a=>a.simulation)||[],[tracked.data]);
   const simulatedTotals=useMemo(()=>simulations.reduce((acc,a)=>{
@@ -121,18 +145,29 @@ export default function MarketsPage(){
 
   return <>
     <PageHeader title="Mercados e inversiones seguidas" description="Carteras reales y simuladas persistentes, precios externos normalizados y noticias analizadas contra tus activos. Los escenarios no son predicciones ni recomendaciones."/>
-
-    {simulations.length>0&&<Card className="mb-4">
-      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Cartera simulada</h2><p className="mt-1 text-sm text-[var(--muted)]">Agrupa todas tus compras hipotéticas guardadas. Cada activo conserva su fecha y precio real de entrada.</p></div><div className="text-xs text-[var(--muted)]">{simulations.length} activo(s) simulados</div></div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-3"><div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Invertido hipotético</div><strong><Money value={simulatedTotals.invested}/></strong></div><div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Valor actual</div><strong><Money value={simulatedTotals.current}/></strong></div><div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Resultado</div><strong><Money value={simulatedTotals.pnl}/></strong></div></div>
-    </Card>}
-
-    {historySeries.length>0&&<Card className="mb-4">
-      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Evolución de los valores que sigues</h2><p className="mt-1 text-sm text-[var(--muted)]">Compara el cambio porcentual de cada activo durante los últimos 12 meses desde su primer precio disponible. Se normaliza a 0% para que activos con precios y divisas distintas sean comparables.</p></div><div className="text-xs text-[var(--muted)]">{historySeries.length} serie(s)</div></div>
-      {trackedChart.length>1?<div className="mt-4 h-80"><ResponsiveContainer width="100%" height="100%"><LineChart data={trackedChart}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date" tickFormatter={v=>new Date(String(v)+'T00:00:00').toLocaleDateString('es-ES',{month:'short',year:'2-digit'})}/><YAxis tickFormatter={v=>Number(v).toLocaleString('es-ES',{maximumFractionDigits:0})+'%'}/><Tooltip labelFormatter={v=>new Date(String(v)+'T00:00:00').toLocaleDateString('es-ES')} formatter={(v,name)=>[Number(v).toLocaleString('es-ES',{maximumFractionDigits:2})+'%',historySeries.find(x=>x.security_id===String(name))?.name||String(name)]}/>{historySeries.map(asset=><Line key={asset.security_id} type="monotone" dataKey={asset.security_id} name={asset.security_id} stroke={seriesColor(asset.security_id)} strokeWidth={2.5} dot={false} connectNulls/>)}</LineChart></ResponsiveContainer></div>:<EmptyState>Aún no hay dos fechas de precio suficientes para dibujar la evolución.</EmptyState>}
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs">{historySeries.map(asset=><div key={asset.security_id} className="flex items-center gap-2"><span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-full" style={{background:seriesColor(asset.security_id)}}></span><span>{asset.name} · {asset.identifier||'sin ticker'}</span></div>)}</div>
-      <div className="mt-3 overflow-auto"><table className="w-full min-w-[520px] text-xs"><thead><tr className="text-left text-[var(--muted)]"><th className="p-2">Activo</th><th className="p-2">Primer dato</th><th className="p-2">Último dato</th><th className="p-2">Fuente última</th></tr></thead><tbody>{historySeries.map(asset=><tr key={asset.security_id} className="border-t border-[var(--border)]"><td className="p-2 font-medium">{asset.name}</td><td className="p-2">{new Date(asset.rows[0].timestamp).toLocaleDateString('es-ES')}</td><td className="p-2">{new Date(asset.rows[asset.rows.length-1].timestamp).toLocaleDateString('es-ES')}</td><td className="p-2">{asset.rows[asset.rows.length-1].provider}</td></tr>)}</tbody></table></div>
-    </Card>}
+    <Card className="mb-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">IA local</div><h2 className="mt-1 text-xl font-bold">Lectura de tus activos ahora</h2><p className="mt-1 text-sm text-[var(--muted)]">Cruza valoración real o simulada, histórico guardado, riesgo y noticias vinculadas. La orientación sirve para decidir qué revisar; no ejecuta compras ni ventas.</p></div>
+        <button className="fin-button secondary py-2 text-xs" type="button" onClick={()=>portfolioInsights.mutate()} disabled={portfolioInsights.isPending}>{portfolioInsights.isPending?'Analizando…':'Actualizar análisis'}</button>
+      </div>
+      {portfolioInsights.isPending&&!portfolioInsights.data&&<div className="mt-4 text-sm text-[var(--muted)]">Actualizando precios, histórico, noticias y análisis local…</div>}
+      {portfolioInsights.error&&<div className="mt-3"><ErrorState error={portfolioInsights.error}/></div>}
+      {portfolioInsights.data&&<>
+        <div className="mt-4 rounded-xl bg-[var(--brand-soft)] p-4 text-sm"><strong>{portfolioInsights.data.ai_available?'Resumen de la IA local':'Resumen disponible'}</strong><p className="mt-1">{portfolioInsights.data.summary}</p><div className="mt-2 text-[11px] text-[var(--muted)]">{portfolioInsights.data.notice}</div></div>
+        {portfolioInsights.data.news_refresh.warning&&<div className="mt-3 rounded-xl bg-[var(--surface-2)] p-3 text-xs"><strong>Noticias:</strong> {portfolioInsights.data.news_refresh.warning} Se mantienen las noticias guardadas anteriormente.</div>}
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">{portfolioInsights.data.guidance.map(item=>{
+          const asset=portfolioInsights.data?.assets.find(a=>a.security_id===item.security_id);
+          return <div key={item.security_id} className="rounded-xl border border-[var(--border)] p-4 text-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3"><div><strong>{item.name}</strong><div className="mt-1 text-xs text-[var(--muted)]">{asset?.position_type==='owned'?'Posición real':asset?.position_type==='simulated'?'Compra simulada':'Solo seguimiento'} · {asset?.identifier||asset?.asset_class}</div></div><span className="rounded-full bg-[var(--surface-2)] px-3 py-1 text-xs font-semibold">{insightLabel(item.orientation)}</span></div>
+            <p className="mt-3">{item.summary}</p>
+            {asset&&<div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4"><div><span className="text-[var(--muted)]">30 días</span><div className="font-semibold">{metricPct(asset.history.return_30d)}</div></div><div><span className="text-[var(--muted)]">90 días</span><div className="font-semibold">{metricPct(asset.history.return_90d)}</div></div><div><span className="text-[var(--muted)]">12 meses</span><div className="font-semibold">{metricPct(asset.history.return_365d)}</div></div><div><span className="text-[var(--muted)]">Drawdown</span><div className="font-semibold">{metricPct(asset.history.max_drawdown)}</div></div></div>}
+            {item.reasons.length>0&&<div className="mt-3 text-xs"><strong>Por qué:</strong> {item.reasons.join(' · ')}</div>}
+            {item.risks.length>0&&<div className="mt-2 text-xs"><strong>Riesgos:</strong> {item.risks.join(' · ')}</div>}
+            {item.watch.length>0&&<div className="mt-2 text-xs text-[var(--muted)]"><strong>Qué vigilar:</strong> {item.watch.join(' · ')}</div>}
+          </div>;
+        })}</div>
+      </>}
+    </Card>
 
     <Card className="mb-4">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Mis activos</h2><p className="mt-1 text-sm text-[var(--muted)]">Registra una tenencia real o sigue un activo. Si no lo tienes puedes iniciar una compra simulada y ver cómo habría evolucionado.</p></div><button className="fin-button secondary" disabled={refreshAll.isPending||!tracked.data?.length} onClick={()=>refreshAll.mutate()}>{refreshAll.isPending?'Actualizando…':'Actualizar precios e histórico'}</button></div>
@@ -181,6 +216,18 @@ export default function MarketsPage(){
           <div className="mt-3 text-xs text-[var(--muted)]">{a.price_provider?(a.price_provider+' · '+(a.price_as_of?new Date(a.price_as_of).toLocaleString('es-ES'):'fecha no informada')+(a.price_stale?' · precio desactualizado':'')):'Aún no hay un precio de mercado guardado.'}</div>
         </div>):<EmptyState>No has guardado activos todavía.</EmptyState>}
       </div>
+    {simulations.length>0&&<Card className="mt-5">
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Cartera simulada</h2><p className="mt-1 text-sm text-[var(--muted)]">Agrupa todas tus compras hipotéticas guardadas. Cada activo conserva su fecha y precio real de entrada.</p></div><div className="text-xs text-[var(--muted)]">{simulations.length} activo(s) simulados</div></div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-3"><div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Invertido hipotético</div><strong><Money value={simulatedTotals.invested}/></strong></div><div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Valor actual</div><strong><Money value={simulatedTotals.current}/></strong></div><div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Resultado</div><strong><Money value={simulatedTotals.pnl}/></strong></div></div>
+    </Card>}
+
+    {historySeries.length>0&&<Card className="mt-5">
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Evolución de los valores que sigues</h2><p className="mt-1 text-sm text-[var(--muted)]">Compara el cambio porcentual de cada activo durante los últimos 12 meses desde su primer precio disponible. Se normaliza a 0% para que activos con precios y divisas distintas sean comparables.</p></div><div className="text-xs text-[var(--muted)]">{historySeries.length} serie(s)</div></div>
+      {trackedChart.length>1?<div className="mt-4 h-80"><ResponsiveContainer width="100%" height="100%"><LineChart data={trackedChart}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date" tickFormatter={v=>new Date(String(v)+'T00:00:00').toLocaleDateString('es-ES',{month:'short',year:'2-digit'})}/><YAxis tickFormatter={v=>Number(v).toLocaleString('es-ES',{maximumFractionDigits:0})+'%'}/><Tooltip labelFormatter={v=>new Date(String(v)+'T00:00:00').toLocaleDateString('es-ES')} formatter={(v,name)=>[Number(v).toLocaleString('es-ES',{maximumFractionDigits:2})+'%',historySeries.find(x=>x.security_id===String(name))?.name||String(name)]}/>{historySeries.map(asset=><Line key={asset.security_id} type="monotone" dataKey={asset.security_id} name={asset.security_id} stroke={seriesColor(asset.security_id)} strokeWidth={2.5} dot={false} connectNulls/>)}</LineChart></ResponsiveContainer></div>:<EmptyState>Aún no hay dos fechas de precio suficientes para dibujar la evolución.</EmptyState>}
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs">{historySeries.map(asset=><div key={asset.security_id} className="flex items-center gap-2"><span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-full" style={{background:seriesColor(asset.security_id)}}></span><span>{asset.name} · {asset.identifier||'sin ticker'}</span></div>)}</div>
+      <div className="mt-3 overflow-auto"><table className="w-full min-w-[520px] text-xs"><thead><tr className="text-left text-[var(--muted)]"><th className="p-2">Activo</th><th className="p-2">Primer dato</th><th className="p-2">Último dato</th><th className="p-2">Fuente última</th></tr></thead><tbody>{historySeries.map(asset=><tr key={asset.security_id} className="border-t border-[var(--border)]"><td className="p-2 font-medium">{asset.name}</td><td className="p-2">{new Date(asset.rows[0].timestamp).toLocaleDateString('es-ES')}</td><td className="p-2">{new Date(asset.rows[asset.rows.length-1].timestamp).toLocaleDateString('es-ES')}</td><td className="p-2">{asset.rows[asset.rows.length-1].provider}</td></tr>)}</tbody></table></div>
+    </Card>}
+
     </Card>
 
     {selectedSimulation&&<Card className="mb-4">
@@ -217,7 +264,7 @@ export default function MarketsPage(){
         <p className="mt-1 text-sm text-[var(--muted)]">Una sola búsqueda guarda las noticias, vincula entidades y, si tu IA local funciona, separa hechos de posibles impactos sobre tus activos.</p>
         <form className="mt-3 flex gap-2" onSubmit={(e:FormEvent)=>{e.preventDefault();research.mutate()}}><input className="fin-input" aria-label="Consulta de noticias" value={newsQ} onChange={e=>setNewsQ(e.target.value)}/><button className="fin-button" disabled={research.isPending}>{research.isPending?'Buscando…':'Buscar y analizar'}</button></form>
         {research.error&&<div className="mt-3"><ErrorState error={research.error}/></div>}
-        {research.data&&<div className="mt-4 space-y-3"><div className="rounded-xl bg-[var(--brand-soft)] p-3 text-sm"><strong>Resumen</strong><div className="mt-1">{research.data.brief.summary}</div><div className="mt-2 text-[11px] text-[var(--muted)]">{research.data.ingest.inserted} nuevas de {research.data.ingest.discovered} encontradas · método {research.data.brief.method}{research.data.brief.ai_available?' · IA local disponible':' · sin IA local'}</div></div>{research.data.brief.portfolio_impacts?.map((x,i)=><div key={i} className="rounded-xl bg-[var(--surface-2)] p-3 text-xs"><strong>{x.asset||'Impacto transversal'}</strong>{x.observation&&<div className="mt-1">{x.observation}</div>}{x.possible_effects&&<div className="mt-1 text-[var(--muted)]">Escenarios: {Array.isArray(x.possible_effects)?x.possible_effects.join(' · '):x.possible_effects}</div>}</div>)}{research.data.brief.risks.length>0&&<div className="text-xs"><strong>Riesgos / límites:</strong> {research.data.brief.risks.join(' · ')}</div>}{research.data.brief.watch.length>0&&<div className="text-xs"><strong>Qué vigilar:</strong> {research.data.brief.watch.join(' · ')}</div>}<div className="space-y-2">{research.data.brief.facts.slice(0,8).map(x=><a key={x.url} href={x.url} target="_blank" rel="noreferrer" className="block rounded-xl border border-[var(--border)] p-3 text-xs"><strong>{x.headline}</strong><div className="mt-1 text-[var(--muted)]">{x.source} · {new Date(x.published_at).toLocaleString('es-ES')}{x.linked_assets.length?' · '+x.linked_assets.join(', '):''}</div></a>)}</div></div>}
+        {research.data&&<div className="mt-4 space-y-3"><div className="rounded-xl bg-[var(--brand-soft)] p-3 text-sm"><strong>Resumen</strong><div className="mt-1">{research.data.brief.summary}</div><div className="mt-2 text-[11px] text-[var(--muted)]">{research.data.ingest.inserted} nuevas de {research.data.ingest.discovered} encontradas · método {research.data.brief.method}{research.data.brief.ai_available?' · IA local disponible':' · sin IA local'}</div>{research.data.ingest.warning&&<div className="mt-2 text-xs"><strong>Fuente de noticias:</strong> {research.data.ingest.warning} Se ha continuado con las noticias ya guardadas.</div>}</div>{research.data.brief.portfolio_impacts?.map((x,i)=><div key={i} className="rounded-xl bg-[var(--surface-2)] p-3 text-xs"><strong>{x.asset||'Impacto transversal'}</strong>{x.observation&&<div className="mt-1">{x.observation}</div>}{x.possible_effects&&<div className="mt-1 text-[var(--muted)]">Escenarios: {Array.isArray(x.possible_effects)?x.possible_effects.join(' · '):x.possible_effects}</div>}</div>)}{research.data.brief.risks.length>0&&<div className="text-xs"><strong>Riesgos / límites:</strong> {research.data.brief.risks.join(' · ')}</div>}{research.data.brief.watch.length>0&&<div className="text-xs"><strong>Qué vigilar:</strong> {research.data.brief.watch.join(' · ')}</div>}<div className="space-y-2">{research.data.brief.facts.slice(0,8).map(x=><a key={x.url} href={x.url} target="_blank" rel="noreferrer" className="block rounded-xl border border-[var(--border)] p-3 text-xs"><strong>{x.headline}</strong><div className="mt-1 text-[var(--muted)]">{x.source} · {new Date(x.published_at).toLocaleString('es-ES')}{x.linked_assets.length?' · '+x.linked_assets.join(', '):''}</div></a>)}</div></div>}
       </Card>
 
       <Card className="xl:col-span-2">
