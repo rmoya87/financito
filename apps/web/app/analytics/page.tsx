@@ -41,8 +41,14 @@ type MonthEndAccount={id:string;name:string;institution_name:string;currency:str
 type MonthEnd={
   as_of?:string;month_end?:string;
   projected_month_end?:{income:string;expenses:string;savings:string;total_balance:string};
-  forecast_remaining?:{known_commitments:string;commitment_floor_adjustment:string};
-  accuracy?:{months_evaluated:number;expense_wape:string|null;expense_accuracy:string|null;savings_mae:string|null};
+  forecast_remaining?:{
+    known_commitments:string;historical_pattern_floor?:string;calendar_floor?:string;
+    commitment_floor_adjustment:string;historical_underprediction_adjustment?:string;
+  };
+  accuracy?:{
+    months_evaluated:number;expense_wape:string|null;expense_accuracy:string|null;
+    expense_bias?:string|null;typical_underprediction?:string|null;savings_mae:string|null;
+  };
   accounts?:MonthEndAccount[]
 };
 
@@ -177,7 +183,7 @@ export default function AnalyticsPage(){
     <SectionIntro eyebrow="Evolución" title="Cómo se mueve tu dinero" description="Tendencia, cierre estimado y composición del gasto con el mismo periodo global."/>
     <div className="grid gap-4 xl:grid-cols-2">
       <Card className="xl:col-span-2">
-        <h2 className="font-bold">Ingresos, gasto y ahorro</h2>
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Ingresos, gasto y ahorro</h2><p className="mt-1 text-sm text-[var(--muted)]">{usesDailyTrend?'Vista diaria para ver cómo evoluciona el mes día a día.':'Vista mensual para periodos amplios.'}</p></div><DataStatus label={usesDailyTrend?'Por días':'Por meses'} tone="calculated"/></div>
         {overview.isLoading?<div className="mt-4"><Loading/></div>:overview.error?<div className="mt-4"><ErrorState error={overview.error}/></div>:trendData.length?
           <div className="mt-4 h-72"><ResponsiveContainer width="100%" height="100%"><LineChart data={trendData}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="period" tickFormatter={value=>usesDailyTrend?String(value).slice(8,10):String(value)}/><YAxis tickFormatter={(value)=>formatNumber(value,0,0)}/><Tooltip formatter={value=>formatMoney(Number(value||0))}/><Legend/><Line type="monotone" dataKey="income" name="Ingresos" stroke="var(--chart-income)" strokeWidth={3} dot={usesDailyTrend}/><Line type="monotone" dataKey="expenses" name="Gastos" stroke="var(--chart-expenses)" strokeWidth={3} dot={usesDailyTrend}/><Line type="monotone" dataKey="savings" name="Ahorro" stroke="var(--chart-savings)" strokeWidth={3} dot={usesDailyTrend}/></LineChart></ResponsiveContainer></div>:
           <EmptyState>Importa histórico para ver la evolución.</EmptyState>}
@@ -196,7 +202,10 @@ export default function AnalyticsPage(){
             <div className="rounded-2xl bg-[var(--surface-2)] p-4"><div className="text-xs uppercase text-[var(--muted)]">Precisión histórica</div><div className="mt-2 text-2xl font-bold">{accuracy?.expense_accuracy==null?'—':(Number(accuracy.expense_accuracy)*100).toFixed(0)+'%'}</div><div className="mt-1 text-xs text-[var(--muted)]">{accuracy?.months_evaluated?accuracy.months_evaluated+' meses evaluados':'Aún sin histórico suficiente'}</div></div>
           </div>
           <div className="mt-5"><h3 className="font-bold">Saldo estimado por cuenta</h3><div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{accounts.length?accounts.map(a=><div key={a.id} className="rounded-2xl border border-[var(--border)] bg-white p-4"><div className="flex justify-between gap-3"><div><strong>{a.name}</strong><div className="text-xs text-[var(--muted)]">{a.institution_name}</div></div><strong><Money value={a.projected_closing_balance} currency={a.currency}/></strong></div><div className="mt-3 grid grid-cols-2 gap-2 text-xs"><div>Actual<br/><strong><Money value={a.current_balance} currency={a.currency}/></strong></div><div>Cambio<br/><strong><Money value={a.projected_change} currency={a.currency}/></strong></div></div><div className="mt-2 text-[11px] text-[var(--muted)]">{a.method}</div></div>):<EmptyState>No hay cuentas para proyectar.</EmptyState>}</div></div>
-          {Number(forecastRemaining?.commitment_floor_adjustment||0)>0&&<div className="mt-4 rounded-xl bg-[var(--brand-soft)] p-3 text-sm">Compromisos conocidos pendientes hasta fin de mes: <strong><Money value={forecastRemaining?.known_commitments||'0'}/></strong>.</div>}
+          {(Number(forecastRemaining?.commitment_floor_adjustment||0)>0||Number(forecastRemaining?.historical_underprediction_adjustment||0)>0)&&<div className="mt-4 grid gap-2 md:grid-cols-2">
+            {Number(forecastRemaining?.commitment_floor_adjustment||0)>0&&<div className="rounded-xl bg-[var(--brand-soft)] p-3 text-sm">Los compromisos/patrones conocidos elevan el suelo de gasto pendiente. Cargos conocidos: <strong><Money value={forecastRemaining?.known_commitments||'0'}/></strong>.</div>}
+            {Number(forecastRemaining?.historical_underprediction_adjustment||0)>0&&<div className="rounded-xl bg-amber-50 p-3 text-sm">Corrección por infrapredicción histórica: <strong><Money value={forecastRemaining?.historical_underprediction_adjustment||'0'}/></strong>. Financito ha detectado que en meses anteriores tendía a quedarse corto y compensa ese sesgo.</div>}
+          </div>}
         </>:<EmptyState>No hay una previsión disponible todavía.</EmptyState>}
       </Card>
 
