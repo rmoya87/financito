@@ -105,7 +105,8 @@ test('Cuentas permite eliminar una cuenta y sus movimientos locales',async({page
   const dialog=page.getByRole('dialog',{name:'Eliminar cuenta'});
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button',{name:'Eliminar definitivamente'}).click();
-  await expect(page.getByText('Cuenta E2E',{exact:true})).not.toBeVisible();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.locator('div.font-semibold').filter({hasText:/^Cuenta E2E$/})).toHaveCount(0);
 
   await page.goto('/transactions/');
   await expect(page.getByText('Compra E2E',{exact:true})).not.toBeVisible();
