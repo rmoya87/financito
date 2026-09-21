@@ -7,7 +7,7 @@ from pydantic import BaseModel,Field
 from sqlalchemy import func,select
 from sqlalchemy.orm import Session
 from .db import SessionLocal
-from .domain.analytics import detect_anomalies,detect_recurring
+from .domain.analytics import detect_anomalies,detect_recurring,recurring_is_current
 from .domain.backtest import amortize_vs_invest,backtest_ma
 from .domain.recommendations import score
 from .models import Transaction
@@ -26,7 +26,17 @@ def refresh(db:Session=Depends(dbdep)):
     recurring=detect_recurring(db);anomalies=detect_anomalies(db);db.commit();return {"recurring_series":len(recurring),"anomalies":len(anomalies)}
 @router.get("/recurring")
 def recurring(db:Session=Depends(dbdep)):
-    rows=db.scalars(select(RecurringSeries).where(RecurringSeries.status=="active").order_by(RecurringSeries.next_expected_date)).all()
+    stored=db.scalars(select(RecurringSeries).where(RecurringSeries.status=="active").order_by(RecurringSeries.next_expected_date)).all()
+    rows=[]
+    changed=False
+    for row in stored:
+        if recurring_is_current(row):
+            rows.append(row)
+        else:
+            row.status="inactive"
+            changed=True
+    if changed:
+        db.flush()
     if not rows:
         expenses=int(db.scalar(select(func.count()).select_from(Transaction).where(
             Transaction.amount<0,
@@ -34,8 +44,9 @@ def recurring(db:Session=Depends(dbdep)):
         )) or 0)
         if expenses>=3:
             rows=detect_recurring(db,use_ai=False)
-            db.commit()
-    return [{"id":r.id,"merchant":r.merchant_normalized,"cadence":r.cadence,"expected_amount":str(r.expected_amount),"next_expected_date":r.next_expected_date,"confidence":str(r.confidence)} for r in rows]
+    if changed or (not stored and rows):
+        db.commit()
+    return [{"id":r.id,"merchant":r.merchant_normalized,"cadence":r.cadence,"expected_amount":str(r.expected_amount),"next_expected_date":r.next_expected_date,"confidence":str(r.confidence)} for r in rows if recurring_is_current(r)]
 class AnomalyStatusIn(BaseModel):
     status:str=Field(pattern="^(open|normal|ignored|resolved)$")
 

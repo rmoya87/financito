@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import {useEffect,useState} from 'react';
 import {usePathname} from 'next/navigation';
 import {
   ArrowLeftRight,
@@ -39,9 +40,11 @@ const areas:Area[]=[
     href:'/wealth/',
     label:'Patrimonio',
     Icon:WalletCards,
-    paths:['/wealth/','/investments/','/markets/','/history/','/tax/'],
+    paths:['/wealth/','/insurance/','/investments/','/markets/','/history/','/tax/'],
     secondary:[
       {href:'/wealth/',label:'Resumen'},
+      {href:'/wealth/#casa',label:'Casa'},
+      {href:'/insurance/',label:'Seguros y protección'},
       {href:'/investments/',label:'Inversiones'},
       {href:'/markets/',label:'Mercado'},
       {href:'/tax/',label:'Fiscalidad'},
@@ -52,7 +55,7 @@ const areas:Area[]=[
     href:'/actions/',
     label:'Decisiones',
     Icon:Sparkles,
-    paths:['/actions/','/decisions/','/goals/','/tools/','/forecast/','/contracts/','/insurance/'],
+    paths:['/actions/','/decisions/','/goals/','/tools/','/forecast/','/contracts/'],
     secondary:[
       {href:'/actions/',label:'Para ti'},
       {href:'/goals/',label:'Objetivos'},
@@ -79,15 +82,18 @@ function navLinkClass(active:boolean){
   return `flex min-w-max items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium ${active?'bg-[var(--brand)] text-white':'text-[var(--muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]'}`;
 }
 
-function ContextNav({label,items,path}:{label:string;items:NavItem[];path:string}){
+function ContextNav({label,items,path,onHashChange}:{label:string;items:NavItem[];path:string;onHashChange?:(hash:string)=>void}){
   if(!items.length)return null;
   return <nav aria-label={`Navegación de ${label}`} className="mb-6 overflow-x-auto">
     <div className="inline-flex min-w-full gap-1 rounded-2xl border border-[var(--border)] bg-white p-1 sm:min-w-0">
       {items.map(item=>{
-        const active=path.startsWith(item.href);
+        const [itemPath,itemHash='']=item.href.split('#');
+        const [currentPath,currentHash='']=path.split('#');
+        const active=itemHash?currentPath===itemPath&&currentHash===itemHash:currentPath.startsWith(itemPath)&&!currentHash;
         return <Link
           key={item.href}
           href={item.href}
+          onClick={()=>onHashChange?.(itemHash)}
           aria-current={active?'page':undefined}
           className={`rounded-xl px-3 py-2 text-sm font-semibold ${active?'bg-[var(--brand)] text-white':'text-[var(--muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]'}`}
         >
@@ -100,6 +106,14 @@ function ContextNav({label,items,path}:{label:string;items:NavItem[];path:string
 
 export function Shell({children}:{children:React.ReactNode}){
   const path=usePathname();
+  const [hash,setHash]=useState('');
+  useEffect(()=>{
+    const update=()=>setHash(window.location.hash.replace(/^#/,''));
+    update();
+    window.addEventListener('hashchange',update);
+    return ()=>window.removeEventListener('hashchange',update);
+  },[path]);
+  const contextPath=hash?path+'#'+hash:path;
   const activeArea=areas.find(area=>matches(path,area.paths));
   const inConfiguration=matches(path,configurationPaths);
 
@@ -137,7 +151,7 @@ export function Shell({children}:{children:React.ReactNode}){
     </aside>
 
     <main className="min-w-0 p-4 md:p-7 lg:p-9">
-      {activeArea&&activeArea.href!=='/'?<ContextNav label={activeArea.label} items={activeArea.secondary} path={path}/>:null}
+      {activeArea&&activeArea.href!=='/'?<ContextNav label={activeArea.label} items={activeArea.secondary} path={contextPath} onHashChange={setHash}/>:null}
       {inConfiguration?<ContextNav label="Configuración" items={configurationNav} path={path}/>:null}
       {children}
     </main>

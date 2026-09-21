@@ -860,3 +860,18 @@ Las vistas Inicio, Movimientos y Análisis deben compartir el mismo patrón de s
 - El reparto por comercios debe mostrar tanto valor monetario como porcentaje y permitir cambiar entre gráfica de tarta y listado, siendo la gráfica la vista inicial.
 - Los patrones recurrentes requieren histórico transversal; no deben desaparecer por aplicar un filtro mensual que, por definición, no contiene suficientes repeticiones para validar una recurrencia. Si no existe ninguna serie validada, la sección se oculta.
 - Una cuenta puede eliminarse desde Cuentas. Debe informarse de que se eliminarán sus movimientos locales y, si procede de banca conectada, de que la autorización general no se revoca automáticamente.
+
+
+## Casa y activos no financieros
+
+Patrimonio debe disponer de un acceso contextual **Casa**. Esta área reúne la vivienda, sus valoraciones, hipoteca y condiciones, seguros relacionados con vivienda/vida/hipoteca y un resumen navegable de todos los seguros. Seguros y protección pertenece al contexto de Patrimonio, no al de Decisiones.
+
+Una póliza debe ser una entidad consultable: pulsarla abre su ficha consolidada, combinando los datos estructurados del seguro y contrato, coberturas verificadas, límites, franquicias, vigencia, condiciones/exclusiones y documentos/evidencias asociados. Los documentos continúan siendo la fuente canónica cuando el dato procede de ellos.
+
+Los bienes manuales (inmuebles, vehículos y otros) se incluyen en el patrimonio por su última valoración confirmada. Cada nueva valoración guarda snapshot y, cuando existe una valoración anterior, la interfaz muestra el cambio absoluto y porcentual. Esto representa evolución entre valoraciones guardadas, no una tasación automática.
+
+Las otras deudas deben poder eliminarse explícitamente. El borrado quita el pasivo del patrimonio actual y conserva evidencia histórica mediante snapshot de eliminación.
+
+## Vigencia de patrones recurrentes
+
+Un patrón estadísticamente regular no debe permanecer activo indefinidamente. Financito considera la fecha esperada siguiente y una gracia dependiente de su cadencia; si el cobro no vuelve a aparecer tras ese margen, el patrón se trata como inactivo y deja de mostrarse/proyectarse. Una nueva ocurrencia real permite detectarlo de nuevo.

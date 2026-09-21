@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import {FormEvent,useState} from 'react';
+import {FormEvent,useEffect,useState} from 'react';
 import {useMutation,useQuery,useQueryClient} from '@tanstack/react-query';
 import {apiGet,apiMutate} from '@/lib/api';
 import {PageHeader} from '@/components/page-header';
@@ -13,10 +13,15 @@ type CoverageRequirement={id:string;insurance_type:string|null;coverage_type:str
 type InsuranceProfile={id:string;insurance_type:string;annual_premium:string;deductible:string|null;currency:string;policy_number_masked?:string|null;contract_id:string|null;provider_name?:string|null;renewal_date?:string|null;cancellation_notice_days?:number|null;early_exit_penalty?:string|null;document_count?:number;source_document_ids?:string[]};
 type Policy={
   id:string;insurance_type:string;annual_premium:string;monthly_equivalent:string;deductible:string|null;
+  policy_number_masked?:string|null;insured_object?:any;
   source_document_id:string|null;source_document_name:string|null;
   source_document_ids?:string[];source_documents?:{id:string;file_name:string}[];
-  contract:null|{provider_name:string;renewal_date:string|null;cancellation_notice_days:number|null;early_exit_penalty:string|null;evidence_status:string};
-  coverages:{id:string;coverage_type:string;limit_amount:string|null;deductible:string|null;confidence:string;user_verified:boolean;source_page:number|null}[];
+  contract:null|{
+    provider_name:string;start_date?:string|null;renewal_date:string|null;cancellation_notice_days:number|null;
+    permanence_end_date?:string|null;early_exit_penalty:string|null;annual_cost?:string|null;currency?:string;evidence_status:string
+  };
+  coverages:{id:string;coverage_type:string;limit_amount:string|null;deductible:string|null;confidence:string;user_verified:boolean;
+    effective_from?:string|null;effective_to?:string|null;conditions?:any;exclusions?:any;source_document_id?:string|null;source_page:number|null}[];
 };
 type Missing={field:string;label:string;policy_id:string|null;document_id:string|null;why:string};
 type PendingEvidence=Missing&{value:any;unit?:string|null;page?:number|null;source?:string|null;status?:string};
@@ -41,6 +46,18 @@ const statusText:Record<Verdict['status'],{title:string;detail:string}>={
 };
 const insuranceLabel:Record<string,string>={home:'Hogar',car:'Coche',life:'Vida',health:'Salud',pet:'Mascota',travel:'Viaje',other:'Otro',unknown:'Seguro'};
 
+function readableDetail(value:any):string{
+  if(value===null||value===undefined||value==='')return '—';
+  if(Array.isArray(value))return value.length?value.map(readableDetail).join(' · '):'—';
+  if(typeof value==='object'){
+    const entries=Object.entries(value);
+    return entries.length?entries.map(([key,item])=>key.replaceAll('_',' ')+': '+readableDetail(item)).join(' · '):'—';
+  }
+  if(typeof value==='boolean')return value?'Sí':'No';
+  return String(value);
+}
+
+
 export default function InsurancePage(){
   const qc=useQueryClient();
   const profiles=useQuery({queryKey:['insurance'],queryFn:()=>apiGet<InsuranceProfile[]>('/api/v1/insurance')});
@@ -56,7 +73,13 @@ export default function InsurancePage(){
   const [policyForm,setPolicyForm]=useState(emptyPolicy);
   const [editingPolicyId,setEditingPolicyId]=useState<string|null>(null);
   const [showPolicyForm,setShowPolicyForm]=useState(false);
+  const [selectedPolicyId,setSelectedPolicyId]=useState<string|null>(null);
   const [manualMissing,setManualMissing]=useState<Record<string,string>>({});
+
+  useEffect(()=>{
+    const requested=new URLSearchParams(window.location.search).get('policy');
+    if(requested)setSelectedPolicyId(requested);
+  },[]);
   const [req,setReq]=useState({insurance_type:'',coverage_type:'',minimum_limit:'',notes:''});
   const refreshInsurance=()=>{
     qc.invalidateQueries({queryKey:['insurance']});
@@ -82,7 +105,7 @@ export default function InsurancePage(){
   });
   const deletePolicy=useMutation({
     mutationFn:(id:string)=>apiMutate('/api/v1/insurance/'+id,'DELETE'),
-    onSuccess:()=>{setEditingPolicyId(null);setShowPolicyForm(false);refreshInsurance()},
+    onSuccess:(_,id)=>{setEditingPolicyId(null);setShowPolicyForm(false);if(selectedPolicyId===id)setSelectedPolicyId(null);refreshInsurance()},
   });
   const analyzePolicyDocs=useMutation({
     mutationFn:(id:string)=>apiMutate('/api/v1/evidence-groups/insurance_policy/'+id+'/analyze','POST'),
@@ -143,6 +166,11 @@ export default function InsurancePage(){
 
   const data=verdict.data;
   const status=data?statusText[data.status]:null;
+  const selectedPolicy=data?.policies.find(p=>p.id===selectedPolicyId)||null;
+  const selectedProfile=profiles.data?.find(p=>p.id===selectedPolicyId)||null;
+  const selectedInsights=selectedPolicy?((insights.data||[]).filter(item=>(selectedPolicy.source_document_ids||[]).includes(item.document_id))):[];
+  const selectedPending=selectedPolicy?data?.pending_review.filter(item=>item.policy_id===selectedPolicy.id)||[]:[];
+  const selectedMissing=selectedPolicy?data?.missing_information.filter(item=>item.policy_id===selectedPolicy.id)||[]:[];
 
   return <>
     <PageHeader title="Seguros y coberturas" description="La fuente de verdad son tus documentos confirmados. Financito los cruza con movimientos, ingresos, coste, coberturas, duplicidades y productos vinculados antes de darte una conclusión."/>
@@ -190,8 +218,8 @@ export default function InsurancePage(){
         <Card>
           <h2 className="font-bold">Pólizas consolidadas</h2>
           <p className="mt-1 text-sm text-[var(--muted)]">Una póliza puede tener varios PDFs, anexos o condiciones. Financito los reúne en una sola ficha y combina su evidencia sin multiplicar seguros.</p>
-          <div className="mt-4 space-y-3">{data.policies.length?data.policies.map(p=><div key={p.id} className="rounded-xl bg-[var(--surface-2)] p-4">
-            <div className="flex items-start justify-between gap-3"><div><strong>{insuranceLabel[p.insurance_type]||p.insurance_type}</strong><div className="text-xs text-[var(--muted)]">{p.contract?.provider_name||p.source_document_name||'Proveedor pendiente'}</div></div><div className="text-right"><strong><Money value={p.annual_premium}/>/año</strong><div className="text-xs text-[var(--muted)]"><Money value={p.monthly_equivalent}/>/mes equivalente</div><div className="mt-2 flex gap-2"><button className="text-xs underline" type="button" onClick={()=>editPolicy(p)}>Editar</button><button className="text-xs underline" type="button" onClick={()=>{if(window.confirm('¿Eliminar este seguro? Los documentos no se borrarán del Vault.'))deletePolicy.mutate(p.id)}}>Eliminar</button></div></div></div>
+          <div className="mt-4 space-y-3">{data.policies.length?data.policies.map(p=><div key={p.id} onClick={()=>setSelectedPolicyId(p.id)} className="cursor-pointer rounded-xl bg-[var(--surface-2)] p-4 hover:ring-1 hover:ring-[var(--brand)]">
+            <div className="flex items-start justify-between gap-3"><div><strong>{insuranceLabel[p.insurance_type]||p.insurance_type}</strong><div className="text-xs text-[var(--muted)]">{p.contract?.provider_name||p.source_document_name||'Proveedor pendiente'}</div></div><div className="text-right"><strong><Money value={p.annual_premium}/>/año</strong><div className="text-xs text-[var(--muted)]"><Money value={p.monthly_equivalent}/>/mes equivalente</div><div className="mt-2 flex gap-2"><button className="text-xs underline" type="button" onClick={e=>{e.stopPropagation();editPolicy(p)}}>Editar</button><button className="text-xs underline" type="button" onClick={e=>{e.stopPropagation();if(window.confirm('¿Eliminar este seguro? Los documentos no se borrarán del Vault.'))deletePolicy.mutate(p.id)}}>Eliminar</button></div></div></div>
             <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
               <div>Franquicia: <strong><Money value={p.deductible}/></strong></div>
               <div>Renovación: <strong>{p.contract?.renewal_date?new Date(p.contract.renewal_date).toLocaleDateString('es-ES'):'—'}</strong></div>
@@ -200,8 +228,9 @@ export default function InsurancePage(){
             </div>
             {p.coverages.length>0&&<div className="mt-3 flex flex-wrap gap-1">{p.coverages.map(c=><span key={c.id} className="rounded-full bg-white px-2 py-1 text-[11px]">{c.coverage_type}{c.limit_amount?' · '+new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(Number(c.limit_amount)):''}</span>)}</div>}
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Link className="fin-button secondary py-1.5 text-xs" href={'/documents/?entity_type=insurance_policy&entity_id='+encodeURIComponent(p.id)+'&label='+encodeURIComponent('Seguro '+(insuranceLabel[p.insurance_type]||p.insurance_type)+' · '+(p.contract?.provider_name||'sin proveedor'))}>Documentación</Link>
-              <button className="fin-button secondary py-1.5 text-xs" type="button" onClick={()=>analyzePolicyDocs.mutate(p.id)} disabled={analyzePolicyDocs.isPending}>Buscar datos con IA</button>
+              <Link onClick={e=>e.stopPropagation()} className="fin-button secondary py-1.5 text-xs" href={'/documents/?entity_type=insurance_policy&entity_id='+encodeURIComponent(p.id)+'&label='+encodeURIComponent('Seguro '+(insuranceLabel[p.insurance_type]||p.insurance_type)+' · '+(p.contract?.provider_name||'sin proveedor'))}>Documentación</Link>
+              <button className="fin-button secondary py-1.5 text-xs" type="button" onClick={e=>{e.stopPropagation();analyzePolicyDocs.mutate(p.id)}} disabled={analyzePolicyDocs.isPending}>Buscar datos con IA</button>
+              <button className="fin-button secondary py-1.5 text-xs" type="button" onClick={e=>{e.stopPropagation();setSelectedPolicyId(p.id)}}>Ver detalle</button>
               <span className="text-xs text-[var(--muted)]">{p.source_documents?.length??(p.source_document_id?1:0)} documento(s) asociados</span>
             </div>
           </div>):<EmptyState>Crea tu primer seguro y después asocia su documentación desde la propia póliza.</EmptyState>}</div>
@@ -248,6 +277,75 @@ export default function InsurancePage(){
         {(analyzePolicyDocs.error||saveMissingPolicy.error)&&<div className="mt-3"><ErrorState error={(analyzePolicyDocs.error||saveMissingPolicy.error)!}/></div>}
       </Card>
     </>}
+
+      {selectedPolicy&&<div className="fixed inset-0 z-50 overflow-y-auto bg-black/45 p-4 md:p-8" role="dialog" aria-modal="true" aria-label="Detalle del seguro">
+        <div className="mx-auto max-w-5xl">
+          <Card>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Seguro</div>
+                <h2 className="mt-1 text-xl font-bold">{insuranceLabel[selectedPolicy.insurance_type]||selectedPolicy.insurance_type}</h2>
+                <div className="mt-1 text-sm text-[var(--muted)]">{selectedPolicy.contract?.provider_name||selectedProfile?.provider_name||'Proveedor pendiente'}{selectedPolicy.policy_number_masked?' · póliza '+selectedPolicy.policy_number_masked:''}</div>
+              </div>
+              <button className="fin-button secondary py-2 text-xs" type="button" onClick={()=>setSelectedPolicyId(null)}>Cerrar</button>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Prima anual</div><strong><Money value={selectedPolicy.annual_premium}/></strong></div>
+              <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Equivalente mensual</div><strong><Money value={selectedPolicy.monthly_equivalent}/></strong></div>
+              <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Franquicia general</div><strong><Money value={selectedPolicy.deductible}/></strong></div>
+              <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Evidencia</div><strong>{selectedPolicy.contract?.evidence_status||'Sin contrato consolidado'}</strong></div>
+            </div>
+
+            <div className="mt-5 grid gap-4 lg:grid-cols-2">
+              <div className="rounded-xl border border-[var(--border)] p-4">
+                <h3 className="font-semibold">Condiciones contractuales</h3>
+                <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+                  <div>Inicio: <strong>{selectedPolicy.contract?.start_date||'—'}</strong></div>
+                  <div>Renovación: <strong>{selectedPolicy.contract?.renewal_date||'—'}</strong></div>
+                  <div>Preaviso: <strong>{selectedPolicy.contract?.cancellation_notice_days==null?'—':selectedPolicy.contract.cancellation_notice_days+' días'}</strong></div>
+                  <div>Fin permanencia: <strong>{selectedPolicy.contract?.permanence_end_date||'—'}</strong></div>
+                  <div>Penalización salida: <strong><Money value={selectedPolicy.contract?.early_exit_penalty}/></strong></div>
+                  <div>Coste contractual anual: <strong><Money value={selectedPolicy.contract?.annual_cost||selectedPolicy.annual_premium}/></strong></div>
+                  <div className="sm:col-span-2">Objeto asegurado: <strong>{readableDetail(selectedPolicy.insured_object)}</strong></div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-[var(--border)] p-4">
+                <h3 className="font-semibold">Documentos a consultar</h3>
+                <div className="mt-3 space-y-2">{selectedPolicy.source_documents?.length?selectedPolicy.source_documents.map(doc=><Link key={doc.id} className="block rounded-xl bg-[var(--surface-2)] p-3 text-sm underline" href={'/documents/?entity_type=insurance_policy&entity_id='+encodeURIComponent(selectedPolicy.id)+'&document='+encodeURIComponent(doc.id)}>{doc.file_name}</Link>):<EmptyState>Esta póliza no tiene documentos asociados todavía.</EmptyState>}</div>
+                <Link className="fin-button secondary mt-3 inline-flex py-1.5 text-xs" href={'/documents/?entity_type=insurance_policy&entity_id='+encodeURIComponent(selectedPolicy.id)+'&label='+encodeURIComponent('Seguro '+(insuranceLabel[selectedPolicy.insurance_type]||selectedPolicy.insurance_type))}>Gestionar documentación</Link>
+              </div>
+            </div>
+
+            <div className="mt-5">
+              <h3 className="font-semibold">Coberturas, límites y exclusiones</h3>
+              <div className="mt-3 space-y-3">{selectedPolicy.coverages.length?selectedPolicy.coverages.map(coverage=><div key={coverage.id} className="rounded-xl bg-[var(--surface-2)] p-4 text-sm">
+                <div className="flex flex-wrap items-start justify-between gap-3"><strong>{coverage.coverage_type}</strong><span className="text-xs text-[var(--muted)]">{coverage.user_verified?'Verificada':'Pendiente de validar'} · confianza {Math.round(Number(coverage.confidence||0)*100)}%</span></div>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2"><div>Límite: <strong><Money value={coverage.limit_amount}/></strong></div><div>Franquicia: <strong><Money value={coverage.deductible}/></strong></div><div>Vigencia desde: <strong>{coverage.effective_from||'—'}</strong></div><div>Vigencia hasta: <strong>{coverage.effective_to||'—'}</strong></div></div>
+                <div className="mt-3 text-xs"><strong>Condiciones:</strong> {readableDetail(coverage.conditions)}</div>
+                <div className="mt-2 text-xs"><strong>Exclusiones:</strong> {readableDetail(coverage.exclusions)}</div>
+                {coverage.source_document_id&&<Link className="mt-2 inline-block text-xs underline" href={'/documents/?document='+encodeURIComponent(coverage.source_document_id)}>Ver evidencia{coverage.source_page?' · pág. '+coverage.source_page:''}</Link>}
+              </div>):<EmptyState>No hay coberturas verificadas o extraídas para esta póliza.</EmptyState>}</div>
+            </div>
+
+            {selectedInsights.length>0&&<div className="mt-5">
+              <h3 className="font-semibold">Lectura de sus documentos</h3>
+              <div className="mt-3 space-y-3">{selectedInsights.map(item=><div key={item.document_id} className="rounded-xl border border-[var(--border)] p-4 text-sm"><div className="flex justify-between gap-3"><strong>{item.file_name}</strong><Link className="text-xs underline" href={'/documents/?document='+encodeURIComponent(item.document_id)}>Abrir evidencia</Link></div><p className="mt-2">{item.analysis.summary}</p>{item.analysis.exclusions_or_limits.length>0&&<div className="mt-2 text-xs"><strong>Límites/exclusiones:</strong> {item.analysis.exclusions_or_limits.map(x=>x.title||x.detail).join(' · ')}</div>}{item.analysis.risks.length>0&&<div className="mt-2 text-xs"><strong>Riesgos:</strong> {item.analysis.risks.map(x=>x.title||x.detail).join(' · ')}</div>}{item.analysis.penalties.length>0&&<div className="mt-2 text-xs"><strong>Penalizaciones:</strong> {item.analysis.penalties.map(x=>x.title||x.detail).join(' · ')}</div>}</div>)}</div>
+            </div>}
+
+            {(selectedPending.length>0||selectedMissing.length>0)&&<div className="mt-5 grid gap-4 lg:grid-cols-2">
+              <div><h3 className="font-semibold">Datos encontrados pendientes</h3><div className="mt-2 space-y-2">{selectedPending.length?selectedPending.map((item,i)=><div key={item.field+i} className="rounded-xl bg-[var(--brand-soft)] p-3 text-xs"><strong>{item.label}</strong><div className="mt-1">{readableDetail(item.value)}{item.unit?' '+item.unit:''}</div></div>):<EmptyState>Sin datos pendientes.</EmptyState>}</div></div>
+              <div><h3 className="font-semibold">Información que todavía falta</h3><div className="mt-2 space-y-2">{selectedMissing.length?selectedMissing.map((item,i)=><div key={item.field+i} className="rounded-xl bg-[var(--surface-2)] p-3 text-xs"><strong>{item.label}</strong><div className="mt-1 text-[var(--muted)]">{item.why}</div></div>):<EmptyState>No faltan campos básicos.</EmptyState>}</div></div>
+            </div>}
+
+            <div className="mt-5 flex flex-wrap gap-2">
+              <button className="fin-button" type="button" onClick={()=>{editPolicy(selectedPolicy);setSelectedPolicyId(null)}}>Editar seguro</button>
+              <button className="fin-button secondary" type="button" onClick={()=>analyzePolicyDocs.mutate(selectedPolicy.id)} disabled={analyzePolicyDocs.isPending}>Buscar datos con IA</button>
+            </div>
+          </Card>
+        </div>
+      </div>}
 
     <Card className="mt-4">
       <h2 className="font-bold">Qué cobertura consideras necesaria</h2>

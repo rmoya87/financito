@@ -118,14 +118,17 @@ export default function AnalyticsPage(){
 
   const merchants=Array.isArray(overview.data?.by_merchant)?overview.data!.by_merchant!:[];
   const merchantTotal=Math.max(0,Number(overview.data?.merchant_spending_total||0));
+  const listedMerchantTotal=useMemo(()=>merchants.reduce((sum,row)=>sum+Math.max(0,Number(row.amount||0)),0),[merchants]);
+  const merchantShareTotal=Math.max(merchantTotal,listedMerchantTotal);
   const merchantChartData=useMemo(()=>{
-    if(!merchants.length||merchantTotal<=0)return [];
-    const top=merchants.slice(0,9).map(row=>({name:row.merchant,amount:Number(row.amount||0)}));
+    if(!merchants.length||merchantShareTotal<=0)return [];
+    const top=merchants.slice(0,9).map(row=>({name:row.merchant,amount:Math.max(0,Number(row.amount||0))}));
     const visible=top.reduce((sum,row)=>sum+row.amount,0);
-    const other=Math.max(0,merchantTotal-visible);
+    const other=Math.max(0,merchantShareTotal-visible);
     const rows=other>0?[...top,{name:'Otros',amount:other}]:top;
-    return rows.map(row=>({...row,percent:merchantTotal>0?row.amount/merchantTotal*100:0}));
-  },[merchants,merchantTotal]);
+    const total=rows.reduce((sum,row)=>sum+row.amount,0);
+    return rows.map(row=>({...row,percent:total>0?Math.min(100,Math.max(0,row.amount/total*100)):0}));
+  },[merchants,merchantShareTotal]);
   const recurringRows=Array.isArray(recurring.data)?recurring.data:[];
   const anomalyRows=Array.isArray(anomalies.data)?anomalies.data:[];
   const issues=Array.isArray(recon.data?.issues)?recon.data!.issues!:[];
@@ -201,14 +204,14 @@ export default function AnalyticsPage(){
           </div>
         </div>
         {!merchants.length?<div className="mt-3"><EmptyState>Sin gasto por comercio.</EmptyState></div>:merchantView==='chart'?
-          <div className="mt-3 h-80"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={merchantChartData} dataKey="amount" nameKey="name" innerRadius={55} outerRadius={105} paddingAngle={2} label={({percent=0})=>percent>=0.05?`${(percent*100).toFixed(1)}%`:''}>{merchantChartData.map((row,i)=><Cell key={row.name} fill={['var(--chart-income)','var(--chart-expenses)','var(--chart-savings)','var(--chart-fixed)','var(--chart-variable)','var(--chart-essential)','var(--chart-discretionary)','var(--brand)','var(--muted)','var(--surface-3)'][i%10]}/>)}</Pie><Tooltip formatter={(value)=>formatMoney(Number(value||0))}/><Legend/></PieChart></ResponsiveContainer></div>:
-          <div className="mt-3 space-y-2">{merchants.slice(0,10).map(row=>{const pct=merchantTotal>0?Number(row.amount||0)/merchantTotal*100:0;return <div key={row.merchant} className="flex items-center justify-between gap-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm"><span>{row.merchant}</span><div className="text-right"><strong><Money value={row.amount}/></strong><div className="text-xs text-[var(--muted)]">{formatNumber(pct,1,1)}%</div></div></div>})}</div>}
+          <div className="mt-3 h-96 overflow-visible"><ResponsiveContainer width="100%" height="100%"><PieChart margin={{top:34,right:42,bottom:30,left:42}}><Pie data={merchantChartData} dataKey="amount" nameKey="name" innerRadius={52} outerRadius={88} cy="47%" paddingAngle={2} labelLine label={(props:any)=>{const pct=Number(props?.payload?.percent||0);return pct>=4?`${formatNumber(pct,1,1)}%`:''}}>{merchantChartData.map((row,i)=><Cell key={row.name} fill={['var(--chart-income)','var(--chart-expenses)','var(--chart-savings)','var(--chart-fixed)','var(--chart-variable)','var(--chart-essential)','var(--chart-discretionary)','var(--brand)','var(--muted)','var(--surface-3)'][i%10]}/>)}</Pie><Tooltip formatter={(value)=>formatMoney(Number(value||0))}/><Legend/></PieChart></ResponsiveContainer></div>:
+          <div className="mt-3 space-y-2">{merchants.slice(0,10).map(row=>{const pct=merchantShareTotal>0?Math.min(100,Math.max(0,Number(row.amount||0)/merchantShareTotal*100)):0;return <div key={row.merchant} className="flex items-center justify-between gap-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm"><span>{row.merchant}</span><div className="text-right"><strong><Money value={row.amount}/></strong><div className="text-xs text-[var(--muted)]">{formatNumber(pct,1,1)}%</div></div></div>})}</div>}
       </Card>
 
       {(recurring.isLoading||recurring.error||recurringRows.length>0)&&<Card>
         <h2 className="font-bold">Recurrentes</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">Patrones validados usando el histórico completo. El recálculo puede usar IA local para unir referencias distintas, pero importe, cadencia y próxima fecha se validan de forma determinista.</p>
-        {recurring.isLoading?<div className="mt-3"><Loading/></div>:recurring.error?<div className="mt-3"><ErrorState error={recurring.error}/></div>:<div className="mt-3 space-y-2">{recurringRows.map(row=><div key={row.id} className="flex justify-between gap-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div><strong>{row.merchant}</strong><div className="text-xs text-[var(--muted)]">{cadenceLabel(row.cadence)} · próxima {row.next_expected_date} · confianza {Math.round(Number(row.confidence||0)*100)}%</div></div><strong><Money value={row.expected_amount}/></strong></div>)}</div>}
+        {recurring.isLoading?<div className="mt-3"><Loading/></div>:recurring.error?<div className="mt-3"><ErrorState error={recurring.error}/></div>:<div className="mt-3 max-h-[420px] space-y-2 overflow-y-auto pr-1" tabIndex={0} role="region" aria-label="Patrones recurrentes">{recurringRows.map(row=><div key={row.id} className="flex justify-between gap-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div><strong>{row.merchant}</strong><div className="text-xs text-[var(--muted)]">{cadenceLabel(row.cadence)} · próxima {row.next_expected_date} · confianza {Math.round(Number(row.confidence||0)*100)}%</div></div><strong><Money value={row.expected_amount}/></strong></div>)}</div>}
       </Card>}
 
       <Card>
