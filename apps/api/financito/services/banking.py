@@ -287,10 +287,10 @@ def sync_all_connections(session:Session,provider_factory=EnableBankingProvider)
         provider=provider_factory()
     for row in rows:
         try:
-            result=sync_connection(session,row.id,provider)
+            with session.begin_nested():
+                result=sync_connection(session,row.id,provider)
             results.append(result)
         except Exception as exc:
-            session.rollback()
             errors.append({"connection_id":row.id,"bank_name":row.bank_name,"error":str(exc)[:300]})
     return {
         "connections":len(rows),
