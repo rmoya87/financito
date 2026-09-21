@@ -8,6 +8,7 @@ import {Card} from '@/components/ui/card';
 import {Money} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
 import {DataStatus} from '@/components/data-status';
+import {MetricTile,SectionIntro,VisualPanel} from '@/components/finance-ui';
 
 type Account={id:string;name:string;institution_name:string};
 type Category={id:string;name:string;system_key:string};
@@ -41,6 +42,11 @@ export default function BudgetsPage(){
   const rows=budgets.data||[];
   const household=useMemo(()=>rows.filter(x=>x.scope==='household'),[rows]);
   const byAccount=useMemo(()=>rows.filter(x=>x.scope==='account'),[rows]);
+  const totals=useMemo(()=>rows.reduce((acc,row)=>{
+    acc.budget+=Number(row.amount||0);acc.actual+=Number(row.actual||0);
+    if(Number(row.utilization||0)>=Number(row.alert_threshold||0))acc.alerts+=1;
+    return acc;
+  },{budget:0,actual:0,alerts:0}),[rows]);
 
   function BudgetCard({b}:{b:Budget}){
     const pct=Math.max(0,Number(b.utilization||0)*100);
@@ -63,7 +69,16 @@ export default function BudgetsPage(){
 
   return <>
     <PageHeader title="Presupuestos" description="Define límites para todo el hogar o para una cuenta concreta. Un presupuesto de hogar nunca se compara contra una sola cuenta, y viceversa."/>
-    <Card>
+    {rows.length>0&&<>
+      <SectionIntro eyebrow="Lectura rápida" title="Cómo van tus límites" description="Primero el total, después cada categoría. Los importes respetan el ámbito Hogar o Cuenta."/>
+      <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricTile label="Presupuestado" value={<Money value={totals.budget}/>} detail={rows.length+' presupuesto(s) activos'} status="Definido por ti" statusTone="confirmed"/>
+        <MetricTile label="Gastado" value={<Money value={totals.actual}/>} detail="Movimientos reales del periodo de cada presupuesto" status="Calculado" statusTone="calculated"/>
+        <MetricTile label="Margen" value={<Money value={totals.budget-totals.actual}/>} detail="Presupuesto total menos gasto observado" emphasis/>
+        <MetricTile label="Necesitan atención" value={totals.alerts} detail="Cerca del umbral o ya superados" status={totals.alerts?'Revisar':'Sin alertas'} statusTone={totals.alerts?'pending':'confirmed'}/>
+      </div>
+    </>}
+    <VisualPanel title="Nuevo presupuesto" description="Elige si el límite pertenece a todo el hogar o solo a una cuenta. Así nunca se comparan importes incompatibles." status="Movimientos reales" statusTone="calculated">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Nuevo presupuesto</h2><p className="mt-1 text-sm text-[var(--muted)]">El ámbito evita comparar importes que no representan lo mismo.</p></div><DataStatus label="Calculado con movimientos reales" tone="calculated"/></div>
       <form className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-5" onSubmit={(e:FormEvent)=>{e.preventDefault();add.mutate()}}>
         <select className="fin-input" aria-label="Ámbito del presupuesto" value={scope} onChange={e=>setScope(e.target.value)}>
@@ -76,11 +91,11 @@ export default function BudgetsPage(){
         <button className="fin-button" disabled={add.isPending}>{add.isPending?'Guardando…':'Crear presupuesto'}</button>
       </form>
       {add.error&&<div className="mt-3"><ErrorState error={add.error}/></div>}
-    </Card>
+    </VisualPanel>
 
     {budgets.isLoading?<div className="mt-4"><Loading/></div>:budgets.error?<div className="mt-4"><ErrorState error={budgets.error}/></div>:<>
-      <section className="mt-5"><h2 className="mb-3 text-lg font-bold">Hogar</h2><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{household.length?household.map(b=><BudgetCard key={b.id} b={b}/>):<EmptyState>No hay presupuestos de hogar.</EmptyState>}</div></section>
-      <section className="mt-5"><h2 className="mb-3 text-lg font-bold">Por cuenta</h2><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{byAccount.length?byAccount.map(b=><BudgetCard key={b.id} b={b}/>):<EmptyState>No hay presupuestos ligados a cuentas concretas.</EmptyState>}</div></section>
+      <section className="mt-6"><SectionIntro eyebrow="Hogar" title="Presupuestos compartidos" description="Se comparan contra el gasto consolidado de todas las cuentas."/><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{household.length?household.map(b=><BudgetCard key={b.id} b={b}/>):<EmptyState>No hay presupuestos de hogar.</EmptyState>}</div></section>
+      <section className="mt-6"><SectionIntro eyebrow="Cuenta" title="Presupuestos específicos" description="Solo se comparan con los movimientos de la cuenta vinculada."/><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{byAccount.length?byAccount.map(b=><BudgetCard key={b.id} b={b}/>):<EmptyState>No hay presupuestos ligados a cuentas concretas.</EmptyState>}</div></section>
     </>}
     {(update.error||remove.error)&&<div className="mt-4"><ErrorState error={(update.error||remove.error)!}/></div>}
   </>;
