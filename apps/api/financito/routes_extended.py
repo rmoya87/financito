@@ -335,7 +335,13 @@ def tracked_assets_history(days:int=365,db:Session=Depends(dbdep)):
     cutoff=datetime.now(timezone.utc)-timedelta(days=days)
     result=[]
     for item in tracked_assets(db):
-        rows=[row for row in history(db,item["security_id"]) if row["timestamp"]>=cutoff]
+        rows=[]
+        for row in history(db,item["security_id"]):
+            stamp=row["timestamp"]
+            if stamp.tzinfo is None:
+                stamp=stamp.replace(tzinfo=timezone.utc)
+            if stamp>=cutoff:
+                rows.append(row)
         result.append({
             "security_id":item["security_id"],
             "name":item["name"],
