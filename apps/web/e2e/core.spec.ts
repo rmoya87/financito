@@ -51,7 +51,7 @@ test('cuenta e importación de extracto funcionan de extremo a extremo',async({p
   await expect(page.getByText('Cuenta E2E')).toBeVisible();
 
   await page.goto('/transactions/');
-  await page.getByRole('combobox').first().selectOption({label:'Cuenta E2E'});
+  await page.getByRole('combobox',{name:'Cuenta destino'}).selectOption({label:'Cuenta E2E'});
   await page.locator('input[type="file"]').first().setInputFiles({
     name:'e2e.csv',
     mimeType:'text/csv',
