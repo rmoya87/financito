@@ -142,7 +142,7 @@ test('Patrimonio separa Casa, Hipoteca y Seguros',async({page})=>{
   await expect(page.getByRole('heading',{name:'Amortización anticipada'})).toHaveCount(0);
 
   await wealthNav.getByRole('link',{name:'Hipoteca'}).click();
-  await expect(page.getByRole('heading',{name:'Hipoteca'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Hipoteca',level:1})).toBeVisible();
   await expect(page.getByRole('heading',{name:'Tu hipoteca'})).toBeVisible();
   await page.getByRole('button',{name:'Nueva hipoteca'}).click();
   const newMortgage=page.getByRole('dialog',{name:'Nueva hipoteca'});
