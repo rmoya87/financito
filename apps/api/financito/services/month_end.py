@@ -4,6 +4,7 @@ import calendar
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
+from statistics import median
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -11,9 +12,10 @@ from sqlalchemy.orm import Session
 from ..models import Account, Category, Commitment, Transaction
 from ..models_analytics import EntityLink
 from .financial_analytics import cash_flow
+from .calendar import events as calendar_events
 
 CENT = Decimal("0.01")
-MODEL_VERSION = "month-end-history-v1"
+MODEL_VERSION = "month-end-history-v2"
 
 
 def _money(value: Decimal) -> Decimal:
@@ -151,25 +153,41 @@ def _remaining_projection_for_account(
     }
 
 
-def _known_commitments(session: Session, start: date, end: date, account_id: str | None = None, account_type: str | None = None) -> Decimal:
+def _calendar_expense_floor(
+    session: Session, start: date, end: date,
+    account_id: str | None = None, account_type: str | None = None,
+) -> dict[str, Decimal]:
+    """Known/recurring charges and historical category patterns as alternative floors.
+
+    They are not added together because the same future expense can be represented
+    by a recurring merchant and by a category pattern.
+    """
     if end < start:
-        return Decimal("0")
-    stmt=select(Commitment).where(
-        Commitment.due_date >= start,
-        Commitment.due_date <= end,
-        Commitment.status == "active",
-    )
-    if account_id:
-        stmt=stmt.where(Commitment.account_id==account_id)
-    elif account_type:
-        stmt=stmt.where(Commitment.account_id.in_(select(Account.id).where(Account.account_type==account_type)))
-    rows = session.scalars(stmt).all()
-    return sum((row.amount for row in rows), Decimal("0"))
+        return {"known":Decimal("0"),"patterns":Decimal("0"),"floor":Decimal("0")}
+    known=Decimal("0");patterns=Decimal("0")
+    for event in calendar_events(session,start,end,account_id,account_type):
+        if event.get("amount") is None:
+            continue
+        try:
+            amount=Decimal(str(event["amount"]))
+        except Exception:
+            continue
+        if event.get("type") in {"commitment","recurring"}:
+            known+=amount
+        elif event.get("type")=="historical_pattern":
+            patterns+=amount
+    return {
+        "known":_money(known),
+        "patterns":_money(patterns),
+        "floor":_money(max(known,patterns)),
+    }
 
 
 def _backtest_accuracy(session: Session, as_of: date, months: int = 6, account_id: str | None = None, account_type: str | None = None) -> dict:
     expense_abs_error = Decimal("0")
     expense_actual_total = Decimal("0")
+    expense_errors: list[Decimal] = []
+    expense_shortfalls: list[Decimal] = []
     savings_abs_error = Decimal("0")
     evaluated = 0
 
@@ -198,11 +216,16 @@ def _backtest_accuracy(session: Session, as_of: date, months: int = 6, account_i
             remaining_income += Decimal(projection["income"])
             remaining_expenses += Decimal(projection["expenses"])
 
+        floor=_calendar_expense_floor(session,cutoff+timedelta(days=1),month_end,account_id,account_type)
+        remaining_expenses=max(remaining_expenses,Decimal(floor["floor"]))
         predicted_expenses = partial["expenses"] + remaining_expenses
         predicted_savings = partial["savings"] + remaining_income - remaining_expenses
 
-        expense_abs_error += abs(predicted_expenses - actual["expenses"])
+        error=predicted_expenses-actual["expenses"]
+        expense_abs_error += abs(error)
         expense_actual_total += actual["expenses"]
+        expense_errors.append(error)
+        expense_shortfalls.append(max(Decimal("0"),-error))
         savings_abs_error += abs(predicted_savings - actual["savings"])
         evaluated += 1
         cursor = month_start - timedelta(days=1)
@@ -212,15 +235,21 @@ def _backtest_accuracy(session: Session, as_of: date, months: int = 6, account_i
             "months_evaluated": 0,
             "expense_wape": None,
             "expense_accuracy": None,
+            "expense_bias": None,
+            "typical_underprediction": None,
             "savings_mae": None,
         }
 
     wape = None if expense_actual_total <= 0 else expense_abs_error / expense_actual_total
     accuracy = None if wape is None else max(Decimal("0"), Decimal("1") - wape)
+    bias=sum(expense_errors,Decimal("0"))/Decimal(evaluated)
+    typical_underprediction=Decimal(str(median(expense_shortfalls))) if expense_shortfalls else Decimal("0")
     return {
         "months_evaluated": evaluated,
         "expense_wape": None if wape is None else str(wape.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)),
         "expense_accuracy": None if accuracy is None else str(accuracy.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)),
+        "expense_bias":str(_money(bias)),
+        "typical_underprediction":str(_money(typical_underprediction)),
         "savings_mae": str(_money(savings_abs_error / Decimal(evaluated))),
     }
 
@@ -263,20 +292,26 @@ def month_end_projection(session: Session, as_of: date | None = None, account_id
             "history_days": projection["history_days"],
         })
 
-    commitments = _known_commitments(session, as_of + timedelta(days=1), end, account_id, account_type)
-    # Commitments are not linked to a bank account in the current domain model.
-    # Treat them as a floor for total remaining expenses, never distribute them
-    # arbitrarily across accounts.
-    total_remaining_expenses = max(remaining_expenses, commitments)
-    commitment_adjustment = max(Decimal("0"), commitments - remaining_expenses)
+    calendar_floor=_calendar_expense_floor(session,as_of+timedelta(days=1),end,account_id,account_type)
+    base_remaining_expenses=max(remaining_expenses,Decimal(calendar_floor["floor"]))
+    floor_adjustment=max(Decimal("0"),Decimal(calendar_floor["floor"])-remaining_expenses)
+
+    accuracy = _backtest_accuracy(session, as_of, account_id=account_id, account_type=account_type)
+    remaining_days=max(0,(end-as_of).days)
+    month_days=max(1,end.day)
+    typical_under=Decimal(str(accuracy.get("typical_underprediction") or "0"))
+    calibration_adjustment=(
+        typical_under*Decimal(remaining_days)/Decimal(month_days)
+        if int(accuracy.get("months_evaluated") or 0)>=3 else Decimal("0")
+    )
+    calibration_adjustment=_money(calibration_adjustment)
+    total_remaining_expenses=_money(base_remaining_expenses+calibration_adjustment)
 
     predicted_income = actual["income"] + remaining_income
     predicted_expenses = actual["expenses"] + total_remaining_expenses
     predicted_savings = predicted_income - predicted_expenses
     current_total_balance = sum((account.current_balance for account in accounts), Decimal("0"))
     projected_total_balance = current_total_balance + remaining_income - total_remaining_expenses
-
-    accuracy = _backtest_accuracy(session, as_of, account_id=account_id, account_type=account_type)
     return {
         "as_of": str(as_of),
         "month_start": str(start),
@@ -290,8 +325,11 @@ def month_end_projection(session: Session, as_of: date | None = None, account_id
         "forecast_remaining": {
             "income": str(_money(remaining_income)),
             "expenses_from_history": str(_money(remaining_expenses)),
-            "known_commitments": str(_money(commitments)),
-            "commitment_floor_adjustment": str(_money(commitment_adjustment)),
+            "known_commitments": str(calendar_floor["known"]),
+            "historical_pattern_floor":str(calendar_floor["patterns"]),
+            "calendar_floor":str(calendar_floor["floor"]),
+            "commitment_floor_adjustment": str(_money(floor_adjustment)),
+            "historical_underprediction_adjustment":str(calibration_adjustment),
             "expenses": str(_money(total_remaining_expenses)),
         },
         "projected_month_end": {
@@ -304,7 +342,8 @@ def month_end_projection(session: Session, as_of: date | None = None, account_id
         "accounts": account_rows,
         "notes": [
             "La proyección combina el mismo periodo del año anterior con el ritmo de los últimos 60 días cuando ambos existen.",
-            "Los compromisos conocidos actúan como mínimo de gasto restante para no contarlos dos veces sobre el patrón histórico.",
+            "Los compromisos y recurrentes conocidos, y los patrones históricos por categoría, actúan como suelos alternativos: no se suman entre sí para evitar doble conteo.",
+            "Si el backtest de al menos tres meses muestra una infrapredicción típica, se añade una corrección proporcional a los días que quedan.",
             "Los compromisos se incluyen según la cuenta bancaria vinculada cuando el filtro global limita el ámbito.",
             "Es una estimación basada en histórico y datos actuales, no un saldo garantizado.",
         ],
