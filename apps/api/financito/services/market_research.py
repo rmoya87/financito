@@ -164,6 +164,8 @@ def _claims(text: str) -> list[str]:
         ("linked_home_insurance", r"seguro de hogar"),
         ("linked_life_insurance", r"seguro de vida"),
         ("salary_link", r"domicili(?:ar|aci[oó]n).{0,40}n[oó]mina"),
+        ("linked_card", r"(?:contratar|usar|utilizaci[oó]n|gasto).{0,60}tarjeta|tarjeta.{0,60}(?:contratar|usar|utilizaci[oó]n|gasto)"),
+        ("linked_pension_plan", r"plan de pensiones|plan de previsi[oó]n"),
         ("personalized_quote", r"precio personalizado|estudio personalizado|oferta vinculante|sujeta a aprobaci[oó]n"),
         ("home_insurance_discount", r"(?:\d{1,2})\s*%\s+menos.{0,80}seguro de hogar"),
     )
@@ -389,11 +391,12 @@ def _market_conclusion(
         scenario=lead["scenario"]
         return {
             "status":"request_personalized_offer",
-            "headline":f"{len(better_offers)} referencia(s) pública(s) mejoran tu escenario con los costes conocidos",
+            "headline":f"{len(better_offers)} referencia(s) pública(s) justifican pedir una oferta personalizada",
             "action":(
-                f"La referencia con mayor ahorro conocido es {lead['provider']}. Solicita una FEIN/oferta personalizada "
-                f"y compárala con tu hipoteca actual. Con la penalización confirmada, el cambio empezaría a compensar "
-                f"aproximadamente a los {scenario['break_even_months']} meses si la oferta final conserva estas condiciones."
+                f"La referencia con mayor mejora estimada es {lead['provider']}. Solicita una FEIN/oferta personalizada "
+                f"y compárala con tu hipoteca actual. No se considera una hipoteca mejor hasta incorporar todos los costes "
+                f"y vinculaciones de la oferta final. Con los datos públicos actuales, el punto de equilibrio estimado sería "
+                f"de unos {scenario['break_even_months']} meses."
             ),
             "provider":lead["provider"],
             "source_id":lead["source_id"],
@@ -410,7 +413,7 @@ def _market_conclusion(
                 "Se usa el mismo capital pendiente y plazo restante.",
                 "El ahorro mensual se compara contra tu cuota guardada actual.",
                 "Solo se muestran como mejores las referencias cuyo ahorro conocido supera la penalización y cuyo punto de equilibrio llega antes del final de la hipoteca.",
-                "Una referencia con seguros vinculados de coste no publicado no se considera mejor hasta conocer ese coste.",
+                "Una referencia con cualquier vinculación o coste de entrada no confirmado no se considera mejor hasta conocerlo.",
             ],
         }
 
@@ -475,7 +478,9 @@ def scan_public_market(session: Session, mortgage_id: str | None = None) -> dict
             if known_penalty is not None and actual_saving>0:
                 break_even=(known_penalty/actual_saving).quantize(Decimal("0.1"))
             priced_link_unknown=any(
-                claim in source["claims"] for claim in ("linked_home_insurance","linked_life_insurance")
+                claim in source["claims"] for claim in (
+                    "linked_home_insurance","linked_life_insurance","salary_link","linked_card","linked_pension_plan"
+                )
             )
             unpriced_entry_costs=[] if "no_opening_fee" in source["claims"] else ["opening_or_arrangement_cost"]
             comparison_complete=(
@@ -504,7 +509,7 @@ def scan_public_market(session: Session, mortgage_id: str | None = None) -> dict
             elif net_known is not None and net_known<=0:
                 reason="El ahorro de intereses conocido no supera la penalización de salida."
             elif priced_link_unknown:
-                reason="La oferta exige seguro vinculado y no publica un coste suficiente para demostrar el ahorro neto."
+                reason="La oferta pública incluye una vinculación que debe valorarse con una oferta personalizada antes de afirmar que compensa."
             elif unpriced_entry_costs:
                 reason="Faltan costes de entrada de la nueva hipoteca; no se presuponen 0 € aunque el TIN sea inferior."
             scenario={
@@ -584,7 +589,7 @@ def scan_public_market(session: Session, mortgage_id: str | None = None) -> dict
         "disclaimer":(
             "Solo se muestran como mejores las referencias que, con la cuota, capital, plazo y penalización confirmada actuales, "
             "mantienen ahorro conocido positivo y recuperan el coste de salida antes del fin de la hipoteca. "
-            "Si la nueva referencia exige seguros vinculados cuyo coste no está publicado o no confirma los costes de entrada, "
+            "Si la nueva referencia exige vinculaciones cuyo coste/condición no está confirmado o no confirma los costes de entrada, "
             "no se afirma que sea mejor aunque su TIN sea inferior. Los costes de cancelar seguros actuales solo se aplican "
             "cuando se compara un cambio de paquete completo, no al escenario de cambiar únicamente la hipoteca. "
             "Una FEIN/oferta personalizada sigue siendo necesaria para cerrar la decisión."
