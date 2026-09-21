@@ -341,7 +341,7 @@ test('Documentos permite subir y procesar un archivo desde la aplicación',async
 
   page.once('dialog',dialog=>dialog.accept());
   await page.getByRole('button',{name:'Eliminar documento'}).click();
-  await expect(page.getByText('e2e-upload-policy.txt',{exact:true})).not.toBeVisible();
+  await expect(page.getByRole('button',{name:/e2e-upload-policy\.txt/})).toHaveCount(0);
 });
 
 test('Vault indexa evidencia y conserva cita navegable',async({page})=>{
