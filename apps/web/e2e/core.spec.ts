@@ -48,7 +48,7 @@ test('cuenta e importación de extracto funcionan de extremo a extremo',async({p
   await page.getByLabel('Nombre').fill('Cuenta E2E');
   await page.getByLabel('Saldo actual').fill('1000');
   await page.getByRole('button',{name:'Guardar cuenta'}).click();
-  await expect(page.getByText('Cuenta E2E')).toBeVisible();
+  await expect(page.getByText('Cuenta E2E',{exact:true})).toBeVisible();
 
   await page.goto('/transactions/');
   await page.getByRole('combobox',{name:'Cuenta destino'}).selectOption({label:'Cuenta E2E'});
