@@ -972,3 +972,13 @@ En **Casa > Capital pendiente**, cuando consta el capital inicial, se muestra el
 - **Documentación** permite eliminar un archivo desde la biblioteca general y desde el modal de documentación de una hipoteca o seguro. El borrado elimina el archivo físico del Vault cuando está dentro del Vault gestionado, sus hechos extraídos, chunks RAG, referencias vectoriales/FTS, acciones de revisión, coberturas originadas exclusivamente en ese documento y vínculos de evidencia. La ficha de hipoteca o seguro asociada no se borra por eliminar únicamente el documento.
 - **Seguros** pueden eliminarse desde Seguros y coberturas y directamente desde **Patrimonio > Casa > Seguros relacionados con la vivienda**. Al borrar una póliza se eliminan sus coberturas, vínculos con hipotecas y contrato asegurador huérfano.
 - Los archivos que pertenecían al seguro se conservan al borrar solo la póliza. Si eran documentos de seguro puros pasan a `unknown` y su evidencia material queda `superseded`, evitando que la sincronización automática recree inmediatamente la póliza. Un reprocesado explícito del documento puede volver a extraerla si el usuario lo desea.
+
+
+## Vinculación de pagos con seguros
+
+- Cada cargo bancario puede vincularse explícitamente a una única póliza desde **Movimientos**. La relación se persiste como `EntityLink(transaction -> insurance_policy, relation_type=payment_for)` y puede cambiarse o eliminarse sin modificar el movimiento original.
+- Vincular un pago no crea un segundo gasto ni cambia por sí mismo su importe o su categoría; únicamente identifica qué póliza ha generado ese cargo.
+- El detalle de cada seguro muestra sus pagos vinculados con fecha, concepto/comercio, importe y cuenta de origen, además del total pagado durante los últimos 365 días. Desde el propio detalle se puede desvincular un pago.
+- El coste observado de seguros se calcula a partir de pagos explícitamente vinculados. Los movimientos negativos categorizados como seguro que todavía no tienen póliza asociada se consideran pendientes accionables.
+- El antiguo bloque permanente **Conciliación con tus movimientos** deja de mostrarse. Solo aparece **Pagos de seguros por revisar** cuando quedan cargos de seguro sin vincular o, con histórico anual suficiente, una diferencia material (>15 %) entre la prima documentada de una póliza y la suma de sus pagos vinculados.
+- Al eliminar una póliza también se eliminan sus vínculos `payment_for`; los movimientos bancarios permanecen intactos.

@@ -13,11 +13,13 @@ import {EntityDocumentsModal} from '@/components/entity-documents-modal';
 type CoverageRequirement={id:string;insurance_type:string|null;coverage_type:string;minimum_limit:string|null;currency:string;notes:string|null;enabled:boolean};
 type InsuranceProfile={id:string;insurance_type:string;annual_premium:string;deductible:string|null;currency:string;policy_number_masked?:string|null;contract_id:string|null;provider_name?:string|null;renewal_date?:string|null;cancellation_notice_days?:number|null;early_exit_penalty?:string|null;document_count?:number;source_document_ids?:string[];linked_mortgage_ids?:string[]};
 type MortgageRef={id:string;lender:string;remaining_principal:string;currency:string};
+type InsurancePayment={transaction_id:string;booking_date:string;description:string;merchant:string|null;amount:string;currency:string;account_id:string;account_name:string|null;institution_name:string|null};
 type Policy={
   id:string;insurance_type:string;annual_premium:string;monthly_equivalent:string;deductible:string|null;
   policy_number_masked?:string|null;insured_object?:any;
   source_document_id:string|null;source_document_name:string|null;
   source_document_ids?:string[];source_documents?:{id:string;file_name:string}[];linked_mortgage_ids?:string[];
+  linked_payments:InsurancePayment[];linked_payment_count:number;linked_payments_last_365_total:string;
   contract:null|{
     provider_name:string;start_date?:string|null;renewal_date:string|null;cancellation_notice_days:number|null;
     permanence_end_date?:string|null;early_exit_penalty:string|null;annual_cost?:string|null;currency?:string;evidence_status:string
@@ -32,7 +34,12 @@ type Verdict={
   status:'insufficient_data'|'review_required'|'partial'|'consistent';summary:string;source_of_truth:string;
   policies:Policy[];
   coverage:{verified:number;requirements:number;gaps:{requirement_id:string;coverage_type:string;insurance_type:string|null;reason:string;minimum_limit:string|null;best_verified_limit?:string}[];covered:any[];overlaps:{id:string;coverage_type:string;left_id:string;right_id:string;overlap_type:string;confidence:string}[]};
-  finances:{income_last_365_days:string;expenses_last_365_days:string;savings_last_365_days:string;documented_annual_premiums:string;premium_share_of_income:string|null;spend_reconciliation:{period_start:string;period_end:string;data_coverage_days:number;observed_insurance_spend:string;documented_annual_premiums:string;difference:string|null;comparison_reliable:boolean;by_merchant:{merchant:string;amount:string}[]}};
+  finances:{income_last_365_days:string;expenses_last_365_days:string;savings_last_365_days:string;documented_annual_premiums:string;premium_share_of_income:string|null;spend_reconciliation:{
+    period_start:string;period_end:string;data_coverage_days:number;observed_insurance_spend:string;documented_annual_premiums:string;difference:string|null;comparison_reliable:boolean;
+    linked_payment_count:number;unlinked_candidate_count:number;needs_attention:boolean;by_merchant:{merchant:string;amount:string}[];
+    unlinked_transactions:{transaction_id:string;booking_date:string;description:string;merchant:string|null;amount:string;currency:string}[];
+    policy_differences:{policy_id:string;insurance_type:string;provider:string|null;documented_annual_premium:string;linked_payments_total:string;difference:string;linked_payment_count:number}[]
+  }};
   linked_products:{document_id:string;document_name:string|null;key:string;value:any;page:number|null}[];
   pending_review:PendingEvidence[];missing_information:Missing[];issues:Issue[];
   ai:null|{plain_summary?:string;priorities?:string[];questions?:string[];model?:string;error?:string};
@@ -133,6 +140,10 @@ export default function InsurancePage(){
     mutationFn:({policyId,mortgageId,linked}:{policyId:string;mortgageId:string;linked:boolean})=>
       apiMutate('/api/v1/mortgages/'+mortgageId+'/insurance/'+policyId,linked?'PUT':'DELETE'),
     onSuccess:()=>{refreshInsurance();qc.invalidateQueries({queryKey:['mortgages']})},
+  });
+  const unlinkPayment=useMutation({
+    mutationFn:(transactionId:string)=>apiMutate('/api/v1/transactions/'+transactionId+'/insurance','DELETE'),
+    onSuccess:()=>{refreshInsurance();qc.invalidateQueries({queryKey:['transactions']})},
   });
   const saveMissingPolicy=useMutation({
     mutationFn:({missing,value}:{missing:Missing;value:string})=>{
@@ -260,16 +271,25 @@ export default function InsurancePage(){
           </div>):<EmptyState>Crea tu primer seguro y después asocia su documentación desde la propia póliza.</EmptyState>}</div>
         </Card>
 
-      <Card className="mt-4">
-        <h2 className="font-bold">Conciliación con tus movimientos</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">Compara lo que dicen las pólizas con lo que realmente aparece cargado en tus cuentas. Una diferencia no se interpreta automáticamente como error: puede ser una prima fraccionada, un cambio de precio o un movimiento mal categorizado.</p>
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
-          <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Primas documentadas</div><strong><Money value={data.finances.spend_reconciliation.documented_annual_premiums}/></strong></div>
-          <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Pagos observados</div><strong><Money value={data.finances.spend_reconciliation.observed_insurance_spend}/></strong></div>
-          <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Diferencia comparable</div><strong><Money value={data.finances.spend_reconciliation.difference}/></strong><div className="text-[11px] text-[var(--muted)]">{data.finances.spend_reconciliation.comparison_reliable?'Histórico suficiente para conciliación anual':'Aún no hay 330 días de movimientos; no se fuerza una comparación anual'}</div></div>
-        </div>
-        {data.finances.spend_reconciliation.by_merchant.length>0&&<div className="mt-4 grid gap-2 md:grid-cols-2">{data.finances.spend_reconciliation.by_merchant.slice(0,8).map(x=><div key={x.merchant} className="flex justify-between rounded-xl bg-[var(--surface-2)] p-3 text-sm"><span>{x.merchant}</span><strong><Money value={x.amount}/></strong></div>)}</div>}
-      </Card>
+      {data.finances.spend_reconciliation.needs_attention&&<Card className="mt-4">
+        <h2 className="font-bold">Pagos de seguros por revisar</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">Este bloque solo aparece cuando queda algo accionable: un cargo clasificado como seguro sin póliza asociada o una diferencia relevante entre la prima documentada y los pagos que has vinculado.</p>
+        {data.finances.spend_reconciliation.unlinked_transactions.length>0&&<div className="mt-4">
+          <h3 className="text-sm font-semibold">Movimientos sin vincular</h3>
+          <div className="mt-2 space-y-2">{data.finances.spend_reconciliation.unlinked_transactions.map(tx=><div key={tx.transaction_id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm">
+            <div><strong>{tx.merchant||tx.description}</strong><div className="text-xs text-[var(--muted)]">{new Date(tx.booking_date).toLocaleDateString('es-ES')} · {tx.description}</div></div>
+            <div className="flex items-center gap-3"><strong><Money value={tx.amount} currency={tx.currency}/></strong><Link className="text-xs underline" href={'/transactions/?q='+encodeURIComponent(tx.description)}>Vincular</Link></div>
+          </div>)}</div>
+        </div>}
+        {data.finances.spend_reconciliation.policy_differences.length>0&&<div className="mt-4">
+          <h3 className="text-sm font-semibold">Pólizas con diferencia</h3>
+          <div className="mt-2 grid gap-2 md:grid-cols-2">{data.finances.spend_reconciliation.policy_differences.map(item=><button key={item.policy_id} type="button" onClick={()=>setSelectedPolicyId(item.policy_id)} className="rounded-xl bg-[var(--surface-2)] p-3 text-left text-sm">
+            <strong>{item.provider||insuranceLabel[item.insurance_type]||item.insurance_type}</strong>
+            <div className="mt-1 text-xs">Prima: <Money value={item.documented_annual_premium}/> · pagos vinculados: <Money value={item.linked_payments_total}/></div>
+            <div className="mt-1 text-xs text-[var(--muted)]">Diferencia: <Money value={item.difference}/> · {item.linked_payment_count} pago(s)</div>
+          </button>)}</div>
+        </div>}
+      </Card>}
 
       {data.pending_review?.length>0&&<Card className="mt-4">
         <div><h2 className="font-bold">Datos encontrados pendientes de validar</h2><p className="mt-1 text-sm text-[var(--muted)]">La IA local o el extractor ya han localizado estos datos. No hace falta volver a introducirlos: entra en la documentación de la póliza indicada y confirma la evidencia.</p></div>
@@ -311,7 +331,16 @@ export default function InsurancePage(){
               <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Prima anual</div><strong><Money value={selectedPolicy.annual_premium}/></strong></div>
               <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Equivalente mensual</div><strong><Money value={selectedPolicy.monthly_equivalent}/></strong></div>
               <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Franquicia general</div><strong><Money value={selectedPolicy.deductible}/></strong></div>
-              <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Evidencia</div><strong>{selectedPolicy.contract?.evidence_status||'Sin contrato consolidado'}</strong></div>
+              <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Pagado últimos 365 días</div><strong><Money value={selectedPolicy.linked_payments_last_365_total}/></strong><div className="text-[11px] text-[var(--muted)]">{selectedPolicy.linked_payment_count} pago(s) vinculados</div></div>
+            </div>
+
+            <div className="mt-5 rounded-xl border border-[var(--border)] p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold">Pagos vinculados</h3><p className="mt-1 text-xs text-[var(--muted)]">Son movimientos que has asociado explícitamente a esta póliza. Se usan para comprobar el coste real sin contar dos veces el gasto.</p></div><Link className="text-xs underline" href="/transactions/">Ir a Movimientos</Link></div>
+              <div className="mt-3 space-y-2">{selectedPolicy.linked_payments.length?selectedPolicy.linked_payments.map(payment=><div key={payment.transaction_id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-[var(--surface-2)] p-3 text-sm">
+                <div><strong>{payment.merchant||payment.description}</strong><div className="mt-0.5 text-xs text-[var(--muted)]">{new Date(payment.booking_date).toLocaleDateString('es-ES')} · {payment.description}{payment.account_name?' · '+payment.account_name:''}{payment.institution_name?' · '+payment.institution_name:''}</div></div>
+                <div className="text-right"><strong><Money value={payment.amount} currency={payment.currency}/></strong><div><button className="mt-1 text-xs underline" type="button" disabled={unlinkPayment.isPending} onClick={()=>unlinkPayment.mutate(payment.transaction_id)}>Desvincular</button></div></div>
+              </div>):<EmptyState>No hay pagos vinculados todavía. En Movimientos puedes seleccionar esta póliza en cualquier cargo de seguro.</EmptyState>}</div>
+              {unlinkPayment.error&&<div className="mt-3"><ErrorState error={unlinkPayment.error}/></div>}
             </div>
 
             <div className="mt-5 rounded-xl border border-[var(--border)] p-4">

@@ -1,13 +1,15 @@
 from datetime import date
 from decimal import Decimal
+from uuid import uuid4
 
 from sqlalchemy import delete,select
 
 from financito.db import SessionLocal
-from financito.models import Contract,Document,ExtractedFact,Mortgage
+from financito.models import Account,Contract,Document,ExtractedFact,Mortgage,Transaction
 from financito.models_analytics import EntityLink,EntitySnapshot,LinkedProduct
 from financito.models_extended import Asset,CoverageFact,InsurancePolicy,Liability
 from financito.routes_extended import delete_insurance,delete_liability,link_mortgage_insurance,unlink_mortgage_insurance,wealth_details,wealth_home
+from financito.routes_transactions import link_transaction_insurance,transaction_page,unlink_transaction_insurance
 from financito.services.evidence import synchronize_all_document_evidence
 from financito.services.insurance_analysis import insurance_verdict
 from financito.services.snapshots import record_snapshot
@@ -196,3 +198,62 @@ def test_deleted_insurance_does_not_reappear_from_retained_document():
 
         db.delete(retained)
         db.commit()
+
+
+
+def test_insurance_payment_can_be_linked_shown_and_unlinked():
+    suffix=uuid4().hex[:8]
+    with SessionLocal() as db:
+        account=Account(
+            name=f"Cuenta seguro {suffix}",institution_name="Banco prueba",
+            account_type="checking",currency="EUR",
+        )
+        contract=Contract(
+            provider_name=f"Aseguradora pagos {suffix}",contract_type="insurance",
+            annual_cost=Decimal("120"),currency="EUR",evidence_status="manual",
+        )
+        db.add_all([account,contract]);db.flush()
+        policy=InsurancePolicy(
+            contract_id=contract.id,insurance_type="home",annual_premium=Decimal("120"),
+            currency="EUR",insured_object_json="{}",
+        )
+        db.add(policy);db.flush()
+        tx=Transaction(
+            account_id=account.id,booking_date=date.today(),amount=Decimal("-120"),
+            currency="EUR",base_amount=Decimal("-120"),base_currency="EUR",
+            description_raw=f"RECIBO SEGURO {suffix}",description_normalized=f"recibo seguro {suffix}",
+            merchant_raw=f"Aseguradora pagos {suffix}",merchant_normalized=f"aseguradora pagos {suffix}",
+            category_id=None,categorization_method="manual",categorization_confidence=Decimal("1"),
+            user_verified=True,is_internal_transfer=False,is_recurring=False,is_extraordinary=False,
+            duplicate_fingerprint=uuid4().hex,source="test",
+        )
+        db.add(tx);db.flush()
+        policy_id=policy.id;tx_id=tx.id;account_id=account.id;contract_id=contract.id
+
+        linked=link_transaction_insurance(tx_id,policy_id,db)
+        assert linked["linked"] is True
+
+        page=transaction_page(
+            q=f"RECIBO SEGURO {suffix}",category_id=None,start=None,end=None,
+            page=1,page_size=50,db=db,
+        )
+        item=next(row for row in page["items"] if row["id"]==tx_id)
+        assert item["linked_insurance_policy_id"]==policy_id
+
+        verdict=insurance_verdict(db,use_ai=False)
+        policy_row=next(row for row in verdict["policies"] if row["id"]==policy_id)
+        assert policy_row["linked_payment_count"]==1
+        assert Decimal(policy_row["linked_payments_last_365_total"])==Decimal("120.00")
+        payment=policy_row["linked_payments"][0]
+        assert payment["transaction_id"]==tx_id
+        assert Decimal(payment["amount"])==Decimal("120.00")
+        assert payment["account_name"]==f"Cuenta seguro {suffix}"
+        assert payment["institution_name"]=="Banco prueba"
+
+        unlinked=unlink_transaction_insurance(tx_id,db)
+        assert unlinked["linked"] is False
+        verdict=insurance_verdict(db,use_ai=False)
+        policy_row=next(row for row in verdict["policies"] if row["id"]==policy_id)
+        assert policy_row["linked_payment_count"]==0
+
+        db.delete(tx);db.delete(policy);db.delete(contract);db.delete(account);db.commit()

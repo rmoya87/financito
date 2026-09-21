@@ -7,7 +7,7 @@ import json
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import Category,Contract,Document,ExtractedFact,Transaction
+from ..models import Account,Category,Contract,Document,ExtractedFact,Transaction
 from ..models_analytics import CoverageRequirement,EntityLink,LinkedProduct
 from ..models_extended import CoverageFact,CoverageOverlap,InsurancePolicy
 from .contracts import scan_coverage_overlaps
@@ -107,24 +107,81 @@ def insurance_verdict(session:Session,use_ai:bool=True)->dict:
     gaps,covered=_coverage_gaps(session,policies)
 
     today=date.today();start=today-timedelta(days=364)
+    first_tx=session.scalar(select(Transaction.booking_date).order_by(Transaction.booking_date.asc()).limit(1))
+    coverage_days=365
+    if first_tx:
+        coverage_days=max(1,min(365,(today-first_tx).days+1))
+
+    payment_links=[] if not policies_list else session.scalars(select(EntityLink).where(
+        EntityLink.from_type=="transaction",
+        EntityLink.relation_type=="payment_for",
+        EntityLink.to_type=="insurance_policy",
+        EntityLink.to_id.in_([p.id for p in policies_list]),
+    )).all()
+    payment_tx_ids={link.from_id for link in payment_links}
+    payment_txs=[] if not payment_tx_ids else session.scalars(select(Transaction).where(
+        Transaction.id.in_(payment_tx_ids),
+    )).all()
+    payment_tx_by_id={tx.id:tx for tx in payment_txs}
+    account_ids={tx.account_id for tx in payment_txs}
+    accounts={} if not account_ids else {
+        account.id:account for account in session.scalars(select(Account).where(Account.id.in_(account_ids))).all()
+    }
+    payments_by_policy:dict[str,list[Transaction]]={}
+    for link in payment_links:
+        tx=payment_tx_by_id.get(link.from_id)
+        if tx is not None:
+            payments_by_policy.setdefault(link.to_id,[]).append(tx)
+    for rows in payments_by_policy.values():
+        rows.sort(key=lambda tx:(tx.booking_date,tx.created_at),reverse=True)
+
+    def payment_row(tx:Transaction)->dict:
+        account=accounts.get(tx.account_id)
+        return {
+            "transaction_id":tx.id,
+            "booking_date":str(tx.booking_date),
+            "description":tx.description_raw,
+            "merchant":tx.merchant_raw,
+            "amount":str(abs(tx.amount).quantize(Decimal("0.01"))),
+            "currency":tx.currency,
+            "account_id":tx.account_id,
+            "account_name":None if account is None else account.name,
+            "institution_name":None if account is None else account.institution_name,
+        }
+
+    linked_period_txs=[
+        tx for tx in payment_txs
+        if tx.amount<0 and not tx.is_internal_transfer and start<=tx.booking_date<=today
+    ]
+    observed_spend=sum((-tx.amount for tx in linked_period_txs),Decimal("0"))
+    policy_payment_totals={
+        policy.id:sum(
+            (-tx.amount for tx in payments_by_policy.get(policy.id,[])
+             if tx.amount<0 and not tx.is_internal_transfer and start<=tx.booking_date<=today),
+            Decimal("0"),
+        )
+        for policy in policies_list
+    }
+
     insurance_cat=session.scalar(select(Category).where(Category.system_key=="insurance"))
-    txs=[]
+    insurance_txs=[]
     if insurance_cat:
-        txs=session.scalars(select(Transaction).where(
+        insurance_txs=session.scalars(select(Transaction).where(
             Transaction.category_id==insurance_cat.id,
             Transaction.amount<0,
             Transaction.is_internal_transfer.is_(False),
             Transaction.booking_date>=start,
             Transaction.booking_date<=today,
         ).order_by(Transaction.booking_date.desc())).all()
-    observed_spend=sum((-t.amount for t in txs),Decimal("0"))
+    unlinked_insurance_txs=[tx for tx in insurance_txs if tx.id not in payment_tx_ids]
+
     flow=cash_flow(session,start,today)
     income=flow["income"];expenses=flow["expenses"]
     premiums=sum((p.annual_premium for p in policies_list),Decimal("0"))
     premium_share=None if income<=0 else premiums/income
 
     by_merchant={}
-    for tx in txs:
+    for tx in linked_period_txs:
         merchant=tx.merchant_raw or tx.description_raw or "Sin comercio"
         by_merchant[merchant]=by_merchant.get(merchant,Decimal("0"))+(-tx.amount)
 
@@ -177,6 +234,9 @@ def insurance_verdict(session:Session,use_ai:bool=True)->dict:
             "source_documents":[{"id":doc_id,"file_name":documents[doc_id].file_name} for doc_id in document_ids if doc_id in documents],
             "document_count":len(document_ids),
             "linked_mortgage_ids":linked_mortgage_ids,
+            "linked_payments":[payment_row(tx) for tx in payments_by_policy.get(policy.id,[])],
+            "linked_payment_count":len(payments_by_policy.get(policy.id,[])),
+            "linked_payments_last_365_total":str(policy_payment_totals.get(policy.id,Decimal("0")).quantize(Decimal("0.01"))),
             "policy_number_masked":policy.policy_number_masked,
             "insured_object":_payload_like_json(policy.insured_object_json),
             "contract":None if contract is None else {
@@ -280,29 +340,67 @@ def insurance_verdict(session:Session,use_ai:bool=True)->dict:
     if missing:issues.append({"code":"missing_evidence","severity":"medium","title":"Faltan datos contractuales para cerrar el análisis","detail":f"{len(missing)} campo(s) todavía no se han localizado con evidencia suficiente."})
     if linked:issues.append({"code":"linked_products","severity":"info","title":"Hay productos vinculados que afectan a otras decisiones","detail":"No conviene cancelar una póliza vinculada sin comprobar el efecto sobre hipoteca u otros contratos."})
 
-    coverage_days=365
-    first_tx=session.scalar(select(Transaction.booking_date).order_by(Transaction.booking_date.asc()).limit(1))
-    if first_tx:
-        coverage_days=max(1,min(365,(today-first_tx).days+1))
+    policy_differences=[]
+    if coverage_days>=330:
+        for policy in policies_list:
+            observed=policy_payment_totals.get(policy.id,Decimal("0"))
+            expected=policy.annual_premium
+            if expected<=0:
+                continue
+            difference=observed-expected
+            if abs(difference)/expected>Decimal("0.15"):
+                contract=contracts.get(policy.contract_id or "")
+                policy_differences.append({
+                    "policy_id":policy.id,
+                    "insurance_type":policy.insurance_type,
+                    "provider":None if contract is None else contract.provider_name,
+                    "documented_annual_premium":str(expected.quantize(Decimal("0.01"))),
+                    "linked_payments_total":str(observed.quantize(Decimal("0.01"))),
+                    "difference":str(difference.quantize(Decimal("0.01"))),
+                    "linked_payment_count":len(payments_by_policy.get(policy.id,[])),
+                })
+
+    unlinked_rows=[{
+        "transaction_id":tx.id,
+        "booking_date":str(tx.booking_date),
+        "description":tx.description_raw,
+        "merchant":tx.merchant_raw,
+        "amount":str(abs(tx.amount).quantize(Decimal("0.01"))),
+        "currency":tx.currency,
+    } for tx in unlinked_insurance_txs[:30]]
+    needs_payment_attention=bool(unlinked_rows or policy_differences)
     spend_reconciliation={
         "period_start":str(start),"period_end":str(today),"data_coverage_days":coverage_days,
         "observed_insurance_spend":str(observed_spend.quantize(Decimal("0.01"))),
         "documented_annual_premiums":str(premiums.quantize(Decimal("0.01"))),
         "difference":str((observed_spend-premiums).quantize(Decimal("0.01"))) if coverage_days>=330 else None,
         "comparison_reliable":coverage_days>=330,
+        "linked_payment_count":len(linked_period_txs),
+        "unlinked_candidate_count":len(unlinked_insurance_txs),
+        "unlinked_transactions":unlinked_rows,
+        "policy_differences":policy_differences,
+        "needs_attention":needs_payment_attention,
         "by_merchant":[{"merchant":k,"amount":str(v.quantize(Decimal("0.01")))} for k,v in sorted(by_merchant.items(),key=lambda item:item[1],reverse=True)],
     }
-    if coverage_days>=330 and premiums>0:
-        delta=abs(observed_spend-premiums)/premiums
-        if delta>Decimal("0.15"):
-            issues.append({"code":"spend_mismatch","severity":"medium","title":"Lo pagado no cuadra con las primas documentadas","detail":"Revisa si falta categorizar algún recibo, ha cambiado una prima o existe una póliza/documento pendiente."})
+    if unlinked_rows:
+        issues.append({
+            "code":"unlinked_insurance_payments","severity":"medium",
+            "title":"Hay pagos de seguros sin vincular a una póliza",
+            "detail":f"{len(unlinked_insurance_txs)} movimiento(s) clasificado(s) como seguro todavía no están asociados a su póliza.",
+        })
+    if policy_differences:
+        issues.append({
+            "code":"spend_mismatch","severity":"medium",
+            "title":"Alguna póliza no cuadra con sus pagos vinculados",
+            "detail":"Revisa los pagos vinculados o si la prima documentada ha cambiado.",
+        })
 
     if not policies_list:
         status="insufficient_data";summary="No hay pólizas documentadas y confirmadas suficientes para emitir un veredicto."
     elif gaps:
         status="review_required";summary="Hay al menos una cobertura requerida sin acreditar; conviene resolver esos huecos antes de valorar cambios de póliza."
-    elif overlaps or any(x["code"]=="spend_mismatch" for x in issues):
-        status="review_required";summary="Las pólizas están estructuradas, pero hay duplicidades o diferencias de coste que conviene conciliar antes de decidir."
+    elif overlaps or any(x["code"] in {"spend_mismatch","unlinked_insurance_payments"} for x in issues):
+        status="review_required";summary="Las pólizas están estructuradas, pero quedan coberturas duplicadas o pagos concretos por vincular/revisar antes de decidir."
     elif pending_review or missing or requirements_count==0:
         status="partial";summary="Los datos disponibles son útiles, pero quedan hechos por validar, campos realmente ausentes o criterios de cobertura antes de cerrar un veredicto completo."
     else:

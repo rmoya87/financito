@@ -15,9 +15,11 @@ type AIResult={
 };
 type Account={id:string;name:string};
 type Category={id:string;name:string;system_key:string};
+type InsuranceRef={id:string;insurance_type:string;provider_name:string|null;policy_number_masked?:string|null;annual_premium:string};
 type Tx={
   id:string;booking_date:string;amount:string;currency:string;description_raw:string;merchant_raw:string|null;
-  category_id:string|null;categorization_method:string;categorization_confidence:string;user_verified:boolean;is_internal_transfer:boolean
+  category_id:string|null;categorization_method:string;categorization_confidence:string;user_verified:boolean;is_internal_transfer:boolean;
+  linked_insurance_policy_id:string|null
 };
 type TxPage={items:Tx[];total:number;page:number;page_size:number;pages:number};
 type Rule={id:string;matcher_type:string;matcher_value:string;category_id:string;priority:number;enabled:boolean};
@@ -27,6 +29,8 @@ type ImportResult={
   duplicates_similar?:number;detected_inflows?:number;detected_outflows?:number;detected_inflow_amount?:string;
   detected_outflow_amount?:string;transfer_pairs?:number;refunds?:number
 };
+
+const insuranceLabel:Record<string,string>={home:'Hogar',car:'Coche',life:'Vida',health:'Salud',pet:'Mascota',travel:'Viaje',other:'Otro',unknown:'Seguro'};
 
 const specialHelp:Record<string,string>={
   internal_transfer:'No cuenta como ingreso ni como gasto: solo mueve dinero entre tus propias cuentas.',
@@ -60,6 +64,7 @@ export default function TransactionsPage(){
 
   const accounts=useQuery({queryKey:['accounts'],queryFn:()=>apiGet<Account[]>('/api/v1/accounts')});
   const cats=useQuery({queryKey:['categories'],queryFn:()=>apiGet<Category[]>('/api/v1/categories')});
+  const insurance=useQuery({queryKey:['insurance'],queryFn:()=>apiGet<InsuranceRef[]>('/api/v1/insurance')});
   const txs=useQuery({
     queryKey:['transactions',deferredSearch,categoryFilter,dates.start,dates.end,page,pageSize],
     queryFn:()=>{
@@ -76,6 +81,12 @@ export default function TransactionsPage(){
   const invalidateTransactions=()=>{
     ['transactions','dashboard','analytics-overview','month-end-forecast','cost-centers'].forEach(k=>qc.invalidateQueries({queryKey:[k]}));
   };
+  const invalidateInsurancePayments=()=>{
+    invalidateTransactions();
+    qc.invalidateQueries({queryKey:['insurance-verdict']});
+    qc.invalidateQueries({queryKey:['wealth-details']});
+    qc.invalidateQueries({queryKey:['wealth-home']});
+  };
 
   const upload=useMutation({
     mutationFn:async()=>{
@@ -88,6 +99,12 @@ export default function TransactionsPage(){
   const categoryMutation=useMutation({
     mutationFn:({id,category_id}:{id:string;category_id:string})=>apiMutate<{id:string;reclassified:number}>('/api/v1/transactions/'+id+'/review','POST',{category_id,create_rule:true,apply_to_existing:true}),
     onSuccess:()=>{invalidateTransactions();qc.invalidateQueries({queryKey:['transaction-rules']})},
+  });
+  const insuranceLink=useMutation({
+    mutationFn:({transactionId,policyId}:{transactionId:string;policyId:string})=>policyId
+      ?apiMutate('/api/v1/transactions/'+transactionId+'/insurance/'+policyId,'PUT')
+      :apiMutate('/api/v1/transactions/'+transactionId+'/insurance','DELETE'),
+    onSuccess:invalidateInsurancePayments,
   });
   const addRule=useMutation({
     mutationFn:()=>apiMutate<{id:string;reclassified:number}>('/api/v1/transaction-rules','POST',{...rule,enabled:true}),
@@ -199,6 +216,7 @@ export default function TransactionsPage(){
       {aiCategorize.error&&<div className="mt-3"><ErrorState error={aiCategorize.error}/></div>}
       {categoryMutation.data&&<div className="mt-3 rounded-xl bg-[var(--brand-soft)] p-3 text-sm">Categoría aplicada al concepto. {categoryMutation.data.reclassified} movimiento(s) histórico(s) actualizado(s); los futuros con el mismo concepto usarán esta categoría automáticamente.</div>}
       {categoryMutation.error&&<div className="mt-3"><ErrorState error={categoryMutation.error}/></div>}
+      {insuranceLink.error&&<div className="mt-3"><ErrorState error={insuranceLink.error}/></div>}
     </Card>
 
     <Card className="mt-4 overflow-x-auto">
@@ -220,7 +238,7 @@ export default function TransactionsPage(){
       {txs.isLoading?<Loading/>:txs.error?<ErrorState error={txs.error}/>:rows.length?
         <table className="w-full min-w-[1050px] text-sm">
           <thead className="text-left text-xs uppercase text-[var(--muted)]">
-            <tr><th className="pb-3">Fecha</th><th>Concepto</th><th>Categoría</th><th>Tratamiento</th><th>Acciones</th><th className="text-right">Importe</th></tr>
+            <tr><th className="pb-3">Fecha</th><th>Concepto</th><th>Categoría</th><th>Seguro</th><th>Tratamiento</th><th>Acciones</th><th className="text-right">Importe</th></tr>
           </thead>
           <tbody>{rows.map(t=>{
             const category=categoryById.get(t.category_id||'');
@@ -236,6 +254,21 @@ export default function TransactionsPage(){
                   <option value="" disabled>Sin categoría</option>
                   {cats.data?.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
+              </td>
+              <td className="min-w-[220px] py-3">
+                {Number(t.amount)<0&&!t.is_internal_transfer?<div>
+                  <select
+                    className="max-w-[240px] rounded-lg border border-[var(--border)] bg-white px-2 py-1 text-xs"
+                    aria-label={'Seguro para '+t.description_raw}
+                    value={t.linked_insurance_policy_id||''}
+                    disabled={insuranceLink.isPending}
+                    onChange={e=>insuranceLink.mutate({transactionId:t.id,policyId:e.target.value})}
+                  >
+                    <option value="">Sin vincular a seguro</option>
+                    {insurance.data?.map(p=><option key={p.id} value={p.id}>{p.provider_name||insuranceLabel[p.insurance_type]||'Seguro'} · {insuranceLabel[p.insurance_type]||p.insurance_type}{p.policy_number_masked?' · '+p.policy_number_masked:''}</option>)}
+                  </select>
+                  {t.linked_insurance_policy_id&&<div className="mt-1 text-[11px] font-medium text-[var(--brand)]">Pago vinculado</div>}
+                </div>:<span className="text-xs text-[var(--muted)]">—</span>}
               </td>
               <td className="max-w-[260px] py-3 text-xs text-[var(--muted)]">
                 {semantic||(

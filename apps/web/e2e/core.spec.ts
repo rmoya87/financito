@@ -220,6 +220,47 @@ test('al pulsar un seguro se abre su ficha completa',async({page})=>{
   await expect(dialog).not.toBeVisible();
 });
 
+test('Movimientos permite vincular un pago a un seguro y verlo en su detalle',async({page})=>{
+  await page.goto('/accounts/');
+  await page.getByLabel('Nombre').fill('Cuenta Pago Seguro E2E');
+  await page.getByLabel('Saldo actual').fill('1000');
+  await page.getByRole('button',{name:'Guardar cuenta'}).click();
+  await expect(page.getByText('Cuenta Pago Seguro E2E',{exact:true})).toBeVisible();
+
+  await page.goto('/insurance/');
+  await page.getByRole('button',{name:'Nuevo seguro'}).click();
+  await page.getByPlaceholder('Aseguradora').fill('Aseguradora Pagos E2E');
+  await page.getByPlaceholder('Prima anual (€)').fill('123.45');
+  await page.getByRole('button',{name:'Crear seguro'}).click();
+  await expect(page.getByText('Aseguradora Pagos E2E',{exact:true})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Conciliación con tus movimientos'})).toHaveCount(0);
+
+  await page.goto('/transactions/');
+  await page.getByRole('combobox',{name:'Cuenta destino'}).selectOption({label:'Cuenta Pago Seguro E2E'});
+  await page.locator('input[type="file"]').first().setInputFiles({
+    name:'seguro-pago-e2e.csv',
+    mimeType:'text/csv',
+    buffer:Buffer.from('Fecha;Concepto;Importe;Moneda;Comercio\n21/09/2026;Pago Seguro Vinculado E2E;-123,45;EUR;Aseguradora Pagos E2E\n'),
+  });
+  await page.getByRole('button',{name:'Importar extracto'}).click();
+  await expect(page.getByText('Pago Seguro Vinculado E2E',{exact:true})).toBeVisible();
+
+  const policySelect=page.getByRole('combobox',{name:'Seguro para Pago Seguro Vinculado E2E'});
+  await policySelect.selectOption({label:/Aseguradora Pagos E2E/});
+  await expect(page.getByText('Pago vinculado',{exact:true})).toBeVisible();
+
+  await page.goto('/insurance/');
+  await page.getByText('Aseguradora Pagos E2E',{exact:true}).click();
+  const detail=page.getByRole('dialog',{name:'Detalle del seguro'});
+  await expect(detail.getByRole('heading',{name:'Pagos vinculados'})).toBeVisible();
+  await expect(detail.getByText(/Pago Seguro Vinculado E2E/)).toBeVisible();
+  await expect(detail.getByText(/Cuenta Pago Seguro E2E/)).toBeVisible();
+  await expect(detail.getByText(/123,45/).first()).toBeVisible();
+  await expectAccessible(page);
+  await detail.getByRole('button',{name:'Cerrar'}).click();
+});
+
+
 test('Inicio muestra gastos recurrentes validados en Próximamente',async({page})=>{
   await page.route('**/api/v1/dashboard?**',route=>route.fulfill({
     status:200,

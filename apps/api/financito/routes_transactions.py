@@ -3,15 +3,16 @@ from datetime import date
 from decimal import Decimal
 from pydantic import BaseModel,Field
 from fastapi import APIRouter,Depends,HTTPException,Query
-from sqlalchemy import String,cast,func,or_,select
+from sqlalchemy import String,cast,delete,func,or_,select
 from sqlalchemy.orm import Session
 from .db import SessionLocal
-from .models_analytics import TransactionRule,TransactionSplit
+from .models_analytics import EntityLink,TransactionRule,TransactionSplit
 from .services.transaction_ops import apply_category_semantics,apply_rules_to_unverified,detect_internal_transfers,detect_refunds,pair_internal_transfer_counterpart,set_category_for_same_concept,set_splits
 from .services.forecast_accuracy import evaluate as forecast_evaluate
 from .services.financial_analytics import overview as analytics_overview
 from .services.ai_categorization import improve_categorization
 from .models import CategorizationAudit,Category,Transaction
+from .models_extended import InsurancePolicy
 from .services.categorization import normalize_text,propagate_verified_merchant
 router=APIRouter(prefix="/api/v1")
 def dbdep():
@@ -71,6 +72,39 @@ def review_transaction(transaction_id:str,p:ReviewDecisionIn,db:Session=Depends(
     learned=0
     db.commit()
     return {"id":tx.id,"rule_id":rule_id,"learned":learned,"reclassified":reclassified,"concept_rule_available":bool(concept)}
+@router.put("/transactions/{transaction_id}/insurance/{policy_id}")
+def link_transaction_insurance(transaction_id:str,policy_id:str,db:Session=Depends(dbdep)):
+    tx=db.get(Transaction,transaction_id)
+    if not tx:raise HTTPException(404,"Transaction not found")
+    if not db.get(InsurancePolicy,policy_id):raise HTTPException(404,"Insurance policy not found")
+    if tx.is_internal_transfer or tx.amount>=0:
+        raise HTTPException(400,"Solo se pueden vincular cargos de gasto a una póliza")
+    db.execute(delete(EntityLink).where(
+        EntityLink.from_type=="transaction",
+        EntityLink.from_id==transaction_id,
+        EntityLink.relation_type=="payment_for",
+        EntityLink.to_type=="insurance_policy",
+    ))
+    db.add(EntityLink(
+        from_type="transaction",from_id=transaction_id,relation_type="payment_for",
+        to_type="insurance_policy",to_id=policy_id,confidence=Decimal("1"),
+        source_type="user",source_ref=transaction_id,
+    ))
+    db.commit()
+    return {"transaction_id":transaction_id,"insurance_policy_id":policy_id,"linked":True}
+
+@router.delete("/transactions/{transaction_id}/insurance")
+def unlink_transaction_insurance(transaction_id:str,db:Session=Depends(dbdep)):
+    if not db.get(Transaction,transaction_id):raise HTTPException(404,"Transaction not found")
+    deleted=db.execute(delete(EntityLink).where(
+        EntityLink.from_type=="transaction",
+        EntityLink.from_id==transaction_id,
+        EntityLink.relation_type=="payment_for",
+        EntityLink.to_type=="insurance_policy",
+    )).rowcount or 0
+    db.commit()
+    return {"transaction_id":transaction_id,"insurance_policy_id":None,"linked":False,"deleted":deleted}
+
 @router.post("/transactions/detect-transfers")
 def transfers(db:Session=Depends(dbdep)):n=detect_internal_transfers(db);db.commit();return {"matched_pairs":n}
 @router.get("/transactions/{transaction_id}/splits")
@@ -93,7 +127,7 @@ def refunds(db:Session=Depends(dbdep)):
 def ai_categorize(p:AICategorizeIn,db:Session=Depends(dbdep)):
     result=improve_categorization(db,p.limit,p.llm_limit);db.commit();return result
 
-def _transaction_payload(row:Transaction)->dict:
+def _transaction_payload(row:Transaction,insurance_policy_id:str|None=None)->dict:
     return {
         "id":row.id,
         "account_id":row.account_id,
@@ -107,6 +141,7 @@ def _transaction_payload(row:Transaction)->dict:
         "categorization_confidence":str(row.categorization_confidence),
         "user_verified":row.user_verified,
         "is_internal_transfer":row.is_internal_transfer,
+        "linked_insurance_policy_id":insurance_policy_id,
     }
 
 @router.get("/transactions/page")
@@ -158,8 +193,16 @@ def transaction_page(
         .offset((effective_page-1)*page_size)
         .limit(page_size)
     ).all()
+    row_ids=[row.id for row in rows]
+    payment_links=[] if not row_ids else db.scalars(select(EntityLink).where(
+        EntityLink.from_type=="transaction",
+        EntityLink.from_id.in_(row_ids),
+        EntityLink.relation_type=="payment_for",
+        EntityLink.to_type=="insurance_policy",
+    )).all()
+    insurance_by_transaction={link.from_id:link.to_id for link in payment_links}
     return {
-        "items":[_transaction_payload(row) for row in rows],
+        "items":[_transaction_payload(row,insurance_by_transaction.get(row.id)) for row in rows],
         "total":total,
         "page":effective_page,
         "page_size":page_size,

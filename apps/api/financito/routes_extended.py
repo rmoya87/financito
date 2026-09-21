@@ -960,6 +960,13 @@ def delete_insurance(policy_id:str,db:Session=Depends(dbdep)):
         LinkedProduct.linked_product_id==policy_id,
     )).all():
         db.delete(linked)
+    for payment_link in db.scalars(select(EntityLink).where(
+        EntityLink.from_type=="transaction",
+        EntityLink.relation_type=="payment_for",
+        EntityLink.to_type=="insurance_policy",
+        EntityLink.to_id==policy_id,
+    )).all():
+        db.delete(payment_link)
     db.delete(row);db.flush()
     if contract_id:
         contract=db.get(Contract,contract_id)
