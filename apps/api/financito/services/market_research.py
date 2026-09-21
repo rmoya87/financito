@@ -509,7 +509,10 @@ def scan_public_market(session: Session, mortgage_id: str | None = None) -> dict
             elif net_known is not None and net_known<=0:
                 reason="El ahorro de intereses conocido no supera la penalización de salida."
             elif priced_link_unknown:
-                reason="La oferta pública incluye una vinculación que debe valorarse con una oferta personalizada antes de afirmar que compensa."
+                if any(claim in source["claims"] for claim in ("linked_home_insurance","linked_life_insurance")):
+                    reason="La oferta exige seguro vinculado y hace falta una oferta personalizada para valorar su coste y cobertura."
+                else:
+                    reason="La oferta pública incluye una vinculación que debe valorarse con una oferta personalizada antes de afirmar que compensa."
             elif unpriced_entry_costs:
                 reason="Faltan costes de entrada de la nueva hipoteca; no se presuponen 0 € aunque el TIN sea inferior."
             scenario={
