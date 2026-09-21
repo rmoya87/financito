@@ -20,6 +20,18 @@ CADENCE_RANGES={
     "quarterly":(75,105),
     "annual":(330,400),
 }
+RECURRING_STALE_GRACE_DAYS={
+    "weekly":7,
+    "monthly":21,
+    "quarterly":45,
+    "annual":90,
+}
+
+
+def recurring_is_current(row:RecurringSeries,today:date|None=None)->bool:
+    today=today or date.today()
+    grace=RECURRING_STALE_GRACE_DAYS.get(row.cadence,30)
+    return today<=row.next_expected_date+timedelta(days=grace)
 
 
 def _infer_cadence(items:list[Transaction])->tuple[str|None,float]:
@@ -84,7 +96,7 @@ def _create_series(session:Session,label:str,items:list[Transaction],confidence:
     # A historical pattern is not automatically a current recurring expense.
     # Once an expected occurrence has been missed for a cadence-aware grace
     # period, stop projecting it until a new real transaction revives it.
-    stale_grace_days={"weekly":14,"monthly":45,"quarterly":120,"annual":180}[cadence]
+    stale_grace_days=RECURRING_STALE_GRACE_DAYS[cadence]
     if date.today()>next_expected+timedelta(days=stale_grace_days):
         return None
     amounts=[-item.amount for item in ordered if item.amount<0]
