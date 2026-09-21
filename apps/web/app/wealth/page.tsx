@@ -33,7 +33,7 @@ type HomeData={
   source_documents:{id:string;name:string}[];insurance:{id:string;insurance_type:string;annual_premium:string;provider:string|null;renewal_date:string|null;linked_to_mortgage?:boolean}[];
   equity:string|null;ltv:string|null;
   current_apr_estimate:null|{rate:string|null;status:string;monthly_payment:string;known_linked_annual_cost:string;known_linked_monthly_cost:string;basis:string};
-  rate_review_automation:{status:string;automatic:boolean;missing:string[];reference_index?:string|null;differential_rate?:string|null;rate_review_months?:number|null;next_review_date?:string|null;reference_index_lag_months?:number|null;rule?:string};
+  rate_review_automation:{status:string;automatic:boolean;missing:string[];reference_index?:string|null;differential_rate?:string|null;rate_review_months?:number|null;next_review_date?:string|null;reference_index_lag_months?:number|null;rule?:string;message?:string|null;estimate?:null|{review_date:string;reference_month:string;reference_index_value_percent:string;reference_source:string;reference_series:string;reference_period:string;estimated_nominal_rate:string;estimated_monthly_payment:string;estimated_remaining_interest:string;estimated_current_apr:string|null;known_linked_annual_cost:string;confirmation_required:boolean;notice:string}};
   pending_review:{key:string;label:string;reason:string;value:any;unit:string|null;document_id:string|null;page:number|null;source:string|null;status:string}[];
   missing:{key:string;label:string;reason:string}[];
 };
@@ -265,6 +265,17 @@ export default function WealthPage(){
             <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold">Revisión automática del tipo</h3><p className="mt-1 text-xs text-[var(--muted)]">{home.data.rate_review_automation.automatic?'La regla contractual necesaria está completa para automatizar el cálculo de la próxima revisión.':'Todavía no se debe actualizar el tipo automáticamente porque falta evidencia contractual.'}</p></div><span className="rounded-full bg-[var(--brand-soft)] px-2 py-1 text-[10px] font-semibold text-[var(--brand)]">{home.data.rate_review_automation.automatic?'Preparada':'Pendiente'}</span></div>
             {!home.data.rate_review_automation.automatic&&home.data.rate_review_automation.missing.length>0&&<div className="mt-2 text-xs"><strong>Falta:</strong> {home.data.rate_review_automation.missing.map(key=>key==='reference_index_lag_months'?'mes/publicación del índice que usa el contrato':key.replaceAll('_',' ')).join(' · ')}</div>}
             {home.data.rate_review_automation.rule&&<div className="mt-2 text-[11px] text-[var(--muted)]">{home.data.rate_review_automation.rule}</div>}
+            {home.data.rate_review_automation.estimate&&<div className="mt-3 rounded-xl bg-[var(--brand-soft)] p-3">
+              <div className="font-semibold">Cálculo automático de la revisión</div>
+              <div className="mt-2 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4">
+                <div><span className="text-[var(--muted)]">Índice oficial usado</span><div className="font-semibold">{Number(home.data.rate_review_automation.estimate.reference_index_value_percent).toLocaleString('es-ES',{maximumFractionDigits:4})}% · {home.data.rate_review_automation.estimate.reference_period}</div></div>
+                <div><span className="text-[var(--muted)]">TIN estimado</span><div className="font-semibold">{(Number(home.data.rate_review_automation.estimate.estimated_nominal_rate)*100).toLocaleString('es-ES',{maximumFractionDigits:4})}%</div></div>
+                <div><span className="text-[var(--muted)]">Nueva cuota estimada</span><div className="font-semibold"><Money value={home.data.rate_review_automation.estimate.estimated_monthly_payment}/></div></div>
+                <div><span className="text-[var(--muted)]">TAE estimada tras revisión</span><div className="font-semibold">{home.data.rate_review_automation.estimate.estimated_current_apr?(Number(home.data.rate_review_automation.estimate.estimated_current_apr)*100).toLocaleString('es-ES',{maximumFractionDigits:3})+'%':'—'}</div></div>
+              </div>
+              <div className="mt-2 text-[11px] text-[var(--muted)]">{home.data.rate_review_automation.estimate.notice} Fuente: {home.data.rate_review_automation.estimate.reference_source} · {home.data.rate_review_automation.estimate.reference_series}.</div>
+            </div>}
+            {home.data.rate_review_automation.message&&<div className="mt-2 text-xs text-[var(--muted)]">{home.data.rate_review_automation.message}</div>}
             {home.data.current_apr_estimate?.basis&&<div className="mt-2 text-[11px] text-[var(--muted)]">{home.data.current_apr_estimate.basis}</div>}
           </div>}
 
