@@ -8,6 +8,7 @@ import {PageHeader} from '@/components/page-header';
 import {Card} from '@/components/ui/card';
 import {Money} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
+import {MetricTile,SectionIntro,VisualPanel} from '@/components/finance-ui';
 
 type MortgageProfile={
   id:string;lender:string;remaining_principal:string;currency:string;interest_type:string;
@@ -114,14 +115,16 @@ export default function ToolsPage(){
   return <>
     <PageHeader title="Laboratorio de decisiones" description="Los cálculos parten de tus datos guardados en Financito. Las variables futuras —como una senda de tipos o una nueva oferta— se muestran como supuestos explícitos, nunca como datos reales."/>
 
-    <Card>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="font-bold">Datos reales utilizados</h2>
-          <p className="mt-1 text-sm text-[var(--muted)]">Hipoteca, ingresos, gastos, ahorro, contratos, liquidez, patrimonio e inversiones se leen de tu base local. No se cargan ejemplos por defecto.</p>
-        </div>
-        {context.data&&<div className="text-right text-xs text-[var(--muted)]">Contexto actualizado<br/>{new Date(context.data.generated_at).toLocaleString()}</div>}
-      </div>
+    <SectionIntro eyebrow="Lectura rápida" title="Punto de partida de las simulaciones" description="Antes de probar escenarios, revisa qué datos reales está utilizando Financito."/>
+    {context.data&&<div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <MetricTile label="Liquidez" value={<Money value={context.data.liquidity}/>} detail="Saldo real consolidado" status="Real" statusTone="confirmed"/>
+      <MetricTile label="Ingresos mes" value={<Money value={context.data.cash_flow_current_month?.income||'0'}/>} detail="Movimientos observados"/>
+      <MetricTile label="Gastos mes" value={<Money value={context.data.cash_flow_current_month?.expenses||'0'}/>} detail="Movimientos observados"/>
+      <MetricTile label="Ahorro medio 90 días" value={<Money value={context.data.cash_flow_last_90_days?.average_monthly_savings||'0'}/>} detail="Referencia para estrés y decisiones" emphasis/>
+    </div>}
+
+    <VisualPanel title="Datos reales utilizados" description="Hipoteca, ingresos, gastos, ahorro, contratos, liquidez, patrimonio e inversiones se leen de tu base local. No se cargan ejemplos por defecto." status="Datos reales" statusTone="confirmed">
+      {context.data&&<div className="mb-3 text-right text-xs text-[var(--muted)]">Contexto actualizado · {new Date(context.data.generated_at).toLocaleString()}</div>}
       {context.isLoading?<div className="mt-3"><Loading/></div>:context.error?<div className="mt-3"><ErrorState error={context.error}/></div>:context.data?<div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5 text-sm">
         <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Liquidez acumulada</div><div className="mt-1 font-bold"><Money value={context.data.liquidity}/></div><div className="mt-1 text-[11px] text-[var(--muted)]">Saldo real de cuentas; no se presupone que todo sea amortizable.</div></div>
         <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Ingresos mes actual</div><div className="mt-1 font-bold"><Money value={context.data.cash_flow_current_month?.income||'0'}/></div></div>
@@ -129,8 +132,9 @@ export default function ToolsPage(){
         <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Ahorro mes actual</div><div className="mt-1 font-bold"><Money value={context.data.cash_flow_current_month?.savings||'0'}/></div></div>
         <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Ingreso medio mensual 90 días</div><div className="mt-1 font-bold"><Money value={context.data.cash_flow_last_90_days?.average_monthly_income||'0'}/></div></div>
       </div>:null}
-    </Card>
+    </VisualPanel>
 
+    <div className="mt-6"><SectionIntro eyebrow="Escenarios" title="Prueba cambios sin tocar tus datos reales" description="Los resultados se muestran separados de los hechos confirmados para que sepas siempre qué es dato y qué es hipótesis."/></div>
     <Card className="mt-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div><h2 className="font-bold">Escenario global</h2><p className="mt-1 text-sm text-[var(--muted)]">Combina liquidez, ingresos/gastos observados y cartera real para probar una caída de ingresos, un gasto extraordinario y una caída hipotética de inversiones en un mismo escenario.</p></div>
@@ -152,6 +156,7 @@ export default function ToolsPage(){
       </div>}
     </Card>
 
+    <div className="mt-6"><SectionIntro eyebrow="Decisiones específicas" title="Hipoteca, mercado y contratos" description="Cada bloque parte del mismo contexto confirmado y explicita qué dato falta antes de poder comparar."/></div>
     <div className="mt-4 grid gap-4 xl:grid-cols-2">
       <Card className="xl:col-span-2">
         <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Conclusiones de tu documentación hipotecaria</h2><p className="mt-1 text-sm text-[var(--muted)]">La IA local interpreta cláusulas y relaciones entre hipoteca, seguros y vinculaciones. Los cálculos siguen usando únicamente hechos confirmados y datos reales.</p></div><a className="text-xs underline" href="/documents/">Añadir o revisar documentos</a></div>
