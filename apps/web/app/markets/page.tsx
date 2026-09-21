@@ -216,17 +216,17 @@ export default function MarketsPage(){
           <div className="mt-3 text-xs text-[var(--muted)]">{a.price_provider?(a.price_provider+' · '+(a.price_as_of?new Date(a.price_as_of).toLocaleString('es-ES'):'fecha no informada')+(a.price_stale?' · precio desactualizado':'')):'Aún no hay un precio de mercado guardado.'}</div>
         </div>):<EmptyState>No has guardado activos todavía.</EmptyState>}
       </div>
-    {simulations.length>0&&<Card className="mt-5">
+    {simulations.length>0&&<div className="mt-5 rounded-xl border border-[var(--border)] p-4">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Cartera simulada</h2><p className="mt-1 text-sm text-[var(--muted)]">Agrupa todas tus compras hipotéticas guardadas. Cada activo conserva su fecha y precio real de entrada.</p></div><div className="text-xs text-[var(--muted)]">{simulations.length} activo(s) simulados</div></div>
       <div className="mt-4 grid gap-3 sm:grid-cols-3"><div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Invertido hipotético</div><strong><Money value={simulatedTotals.invested}/></strong></div><div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Valor actual</div><strong><Money value={simulatedTotals.current}/></strong></div><div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Resultado</div><strong><Money value={simulatedTotals.pnl}/></strong></div></div>
-    </Card>}
+    </div>}
 
-    {historySeries.length>0&&<Card className="mt-5">
+    {historySeries.length>0&&<div className="mt-5 rounded-xl border border-[var(--border)] p-4">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Evolución de los valores que sigues</h2><p className="mt-1 text-sm text-[var(--muted)]">Compara el cambio porcentual de cada activo durante los últimos 12 meses desde su primer precio disponible. Se normaliza a 0% para que activos con precios y divisas distintas sean comparables.</p></div><div className="text-xs text-[var(--muted)]">{historySeries.length} serie(s)</div></div>
       {trackedChart.length>1?<div className="mt-4 h-80"><ResponsiveContainer width="100%" height="100%"><LineChart data={trackedChart}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date" tickFormatter={v=>new Date(String(v)+'T00:00:00').toLocaleDateString('es-ES',{month:'short',year:'2-digit'})}/><YAxis tickFormatter={v=>Number(v).toLocaleString('es-ES',{maximumFractionDigits:0})+'%'}/><Tooltip labelFormatter={v=>new Date(String(v)+'T00:00:00').toLocaleDateString('es-ES')} formatter={(v,name)=>[Number(v).toLocaleString('es-ES',{maximumFractionDigits:2})+'%',historySeries.find(x=>x.security_id===String(name))?.name||String(name)]}/>{historySeries.map(asset=><Line key={asset.security_id} type="monotone" dataKey={asset.security_id} name={asset.security_id} stroke={seriesColor(asset.security_id)} strokeWidth={2.5} dot={false} connectNulls/>)}</LineChart></ResponsiveContainer></div>:<EmptyState>Aún no hay dos fechas de precio suficientes para dibujar la evolución.</EmptyState>}
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs">{historySeries.map(asset=><div key={asset.security_id} className="flex items-center gap-2"><span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-full" style={{background:seriesColor(asset.security_id)}}></span><span>{asset.name} · {asset.identifier||'sin ticker'}</span></div>)}</div>
       <div className="mt-3 overflow-auto"><table className="w-full min-w-[520px] text-xs"><thead><tr className="text-left text-[var(--muted)]"><th className="p-2">Activo</th><th className="p-2">Primer dato</th><th className="p-2">Último dato</th><th className="p-2">Fuente última</th></tr></thead><tbody>{historySeries.map(asset=><tr key={asset.security_id} className="border-t border-[var(--border)]"><td className="p-2 font-medium">{asset.name}</td><td className="p-2">{new Date(asset.rows[0].timestamp).toLocaleDateString('es-ES')}</td><td className="p-2">{new Date(asset.rows[asset.rows.length-1].timestamp).toLocaleDateString('es-ES')}</td><td className="p-2">{asset.rows[asset.rows.length-1].provider}</td></tr>)}</tbody></table></div>
-    </Card>}
+    </div>}
 
     </Card>
 
