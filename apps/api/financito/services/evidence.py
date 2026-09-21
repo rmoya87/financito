@@ -647,6 +647,7 @@ MORTGAGE_VALUE_KEYS = {
     "start_date",
     "maturity_date",
     "default_interest_rate_percent",
+    "reference_index_lag_months",
     "apr_rate",
     "reference_index",
     "differential_rate",
