@@ -53,17 +53,56 @@ export function writeFinancialFilters(value:FinancialFilters){
   if(typeof window!=='undefined')window.localStorage.setItem(STORAGE_KEY,JSON.stringify(value));
 }
 
+function isOneOf(pathname:string,targets:string[]){
+  return targets.some(target=>pathname===target||pathname.startsWith(target+'/'));
+}
+
 export function filteredApiPath(path:string):string{
   if(typeof window==='undefined'||!path.startsWith('/api/v1/'))return path;
-  const filters=readFinancialFilters();
-  const dates=resolveGlobalDateRange(filters.range,filters.customStart,filters.customEnd);
+
   const url=new URL(path,window.location.origin);
-  if(dates.start&&!url.searchParams.has('start'))url.searchParams.set('start',dates.start);
-  if(dates.end&&!url.searchParams.has('end'))url.searchParams.set('end',dates.end);
-  if(filters.accountScope.startsWith('account:')&&!url.searchParams.has('account_id')){
-    url.searchParams.set('account_id',filters.accountScope.slice('account:'.length));
-  }else if(filters.accountScope.startsWith('type:')&&!url.searchParams.has('account_type')){
-    url.searchParams.set('account_type',filters.accountScope.slice('type:'.length));
+  const pathname=url.pathname;
+  const dateScoped=isOneOf(pathname,[
+    '/api/v1/dashboard',
+    '/api/v1/transactions/page',
+    '/api/v1/analytics/overview',
+    '/api/v1/anomalies',
+    '/api/v1/insurance/verdict',
+    '/api/v1/chat',
+    '/api/v1/search',
+    '/api/v1/stress',
+  ]);
+  const accountScoped=isOneOf(pathname,[
+    '/api/v1/dashboard',
+    '/api/v1/transactions/page',
+    '/api/v1/analytics/overview',
+    '/api/v1/anomalies',
+    '/api/v1/wealth',
+    '/api/v1/mortgages',
+    '/api/v1/insurance',
+    '/api/v1/goals',
+    '/api/v1/portfolios',
+    '/api/v1/commitments',
+    '/api/v1/forecast',
+    '/api/v1/chat',
+    '/api/v1/search',
+    '/api/v1/stress',
+  ]);
+
+  if(!dateScoped&&!accountScoped)return path;
+
+  const filters=readFinancialFilters();
+  if(dateScoped){
+    const dates=resolveGlobalDateRange(filters.range,filters.customStart,filters.customEnd);
+    if(dates.start&&!url.searchParams.has('start'))url.searchParams.set('start',dates.start);
+    if(dates.end&&!url.searchParams.has('end'))url.searchParams.set('end',dates.end);
+  }
+  if(accountScoped){
+    if(filters.accountScope.startsWith('account:')&&!url.searchParams.has('account_id')){
+      url.searchParams.set('account_id',filters.accountScope.slice('account:'.length));
+    }else if(filters.accountScope.startsWith('type:')&&!url.searchParams.has('account_type')){
+      url.searchParams.set('account_type',filters.accountScope.slice('type:'.length));
+    }
   }
   return url.pathname+(url.search?'?'+url.searchParams.toString():'');
 }
