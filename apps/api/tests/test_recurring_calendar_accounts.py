@@ -182,3 +182,25 @@ def test_account_delete_removes_only_selected_account_and_transactions():
 
         db.execute(delete(Transaction).where(Transaction.account_id==survivor.id))
         db.delete(survivor);db.commit()
+
+
+
+def test_old_recurring_pattern_is_not_kept_active():
+    merchant="stale-recurring-test"
+    with SessionLocal() as db:
+        account=Account(name="Stale recurring account",current_balance=Decimal("1000"),source="manual")
+        db.add(account);db.flush()
+        for when in (date(2025,1,5),date(2025,2,5),date(2025,3,5),date(2025,4,5)):
+            _tx(db,account.id,when,"-25","Suscripción antigua "+when.isoformat(),merchant)
+        db.commit()
+
+        rows=detect_recurring(db,use_ai=False)
+        db.commit()
+        assert not any(row.merchant_normalized==merchant for row in rows)
+        assert not any(item["merchant"]==merchant for item in route_recurring(db))
+        forecast=events(db,date(2026,9,21),date(2026,10,21))
+        assert not any(item["type"]=="recurring" and merchant in item["title"] for item in forecast)
+
+        db.execute(delete(Transaction).where(Transaction.account_id==account.id))
+        db.execute(delete(RecurringSeries).where(RecurringSeries.merchant_normalized==merchant))
+        db.delete(account);db.commit()
