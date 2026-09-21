@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .db import SessionLocal
 from .migrations import migrate,MIGRATION_VERSION
+from .domain.analytics import detect_recurring
 from .domain.engines import MortgageEngine, MortgagePrepaymentEngine, MortgageRatePathEngine, OptimizationEngine
 from .services.financial_analytics import cash_flow,category_spending
 from .models import Account, ActionItem, AuditEvent, Budget, CategorizationAudit, Category, Commitment, Contract, Document, ExtractedFact, Mortgage, Transaction
@@ -173,6 +174,8 @@ def delete_account(account_id:str,db:Session=Depends(get_db)):
     db.execute(delete(BankingAccountLink).where(BankingAccountLink.local_account_id==account_id))
     db.execute(delete(Transaction).where(Transaction.account_id==account_id))
     db.execute(delete(Account).where(Account.id==account_id))
+    db.flush()
+    metadata["recurring_series_after_delete"]=len(detect_recurring(db,use_ai=False))
     db.add(AuditEvent(event_type="account_deleted",entity_type="account",entity_id=account_id,metadata_json=json.dumps(metadata)))
     db.commit()
     return {"deleted":account_id,**metadata}
