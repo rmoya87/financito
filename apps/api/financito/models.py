@@ -92,6 +92,7 @@ class Budget(Base, TimestampMixin):
     __tablename__ = "budget"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     category_id: Mapped[str] = mapped_column(ForeignKey("category.id"))
+    account_id: Mapped[str | None] = mapped_column(ForeignKey("account.id", ondelete="CASCADE"), nullable=True, index=True)
     period_type: Mapped[str] = mapped_column(String(20), default="monthly")
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 4))
     currency: Mapped[str] = mapped_column(String(3), default="EUR")
@@ -231,6 +232,8 @@ class FinancialGoal(Base, TimestampMixin):
     target_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     priority: Mapped[str] = mapped_column(String(20), default="medium")
     planned_monthly_contribution: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal("0"))
+    allocated_amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal("0"))
+    emergency_months_target: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="active")
 
 

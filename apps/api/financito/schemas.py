@@ -74,10 +74,19 @@ class CommitmentCreate(BaseModel):
 
 class BudgetCreate(BaseModel):
     category_id: str
-    amount: Decimal
+    account_id: str | None = None
+    amount: Decimal = Field(gt=0)
     currency: str = "EUR"
-    period_type: str = "monthly"
-    alert_threshold: Decimal = Decimal("0.8")
+    period_type: str = Field(default="monthly", pattern="^(monthly|annual)$")
+    alert_threshold: Decimal = Field(default=Decimal("0.8"), gt=0, le=1)
+
+
+class BudgetUpdate(BaseModel):
+    category_id: str | None = None
+    account_id: str | None = None
+    amount: Decimal | None = Field(default=None, gt=0)
+    period_type: str | None = Field(default=None, pattern="^(monthly|annual)$")
+    alert_threshold: Decimal | None = Field(default=None, gt=0, le=1)
 
 
 class DocumentIndexRequest(BaseModel):

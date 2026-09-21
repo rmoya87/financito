@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import Account, Budget, Category, Transaction
-from ..models_analytics import EntityLink
+from ..models_analytics import EntityLink,RecurringPreference
 
 CENT = Decimal("0.01")
 ESSENTIAL = {
@@ -179,6 +179,50 @@ def essential_discretionary(session: Session, start: date, end: date, account_id
     }
 
 
+def spending_structure(session: Session, start: date, end: date, account_id: str | None = None, account_type: str | None = None) -> dict:
+    """Four mutually-exclusive buckets. Their sum is the real expense total."""
+    txs,categories=_period_transactions(session,start,end,account_id,account_type)
+    prefs={p.merchant_key.lower():p for p in session.scalars(select(RecurringPreference)).all()}
+    totals={
+        "fixed_essential":Decimal("0"),
+        "fixed_optional":Decimal("0"),
+        "variable_essential":Decimal("0"),
+        "discretionary":Decimal("0"),
+    }
+    for tx in txs:
+        if tx.amount>=0:
+            continue
+        category=categories.get(tx.category_id or "")
+        essential=bool(category and category.system_key in ESSENTIAL)
+        pref=prefs.get((tx.merchant_normalized or "").lower())
+        recurring=bool(tx.is_recurring)
+        if pref:
+            if pref.essential_override is not None:
+                essential=bool(pref.essential_override)
+            if pref.action=="not_subscription":
+                recurring=False
+        key=(
+            "fixed_essential" if recurring and essential else
+            "fixed_optional" if recurring else
+            "variable_essential" if essential else
+            "discretionary"
+        )
+        totals[key]+=-tx.amount
+    total=sum(totals.values(),Decimal("0"))
+    return {
+        "total":str(total.quantize(CENT)),
+        **{key:str(value.quantize(CENT)) for key,value in totals.items()},
+    }
+
+
+def essential_monthly_average(session:Session,as_of:date|None=None,account_id:str|None=None,account_type:str|None=None)->Decimal:
+    as_of=as_of or date.today()
+    start=as_of-timedelta(days=89)
+    structure=spending_structure(session,start,as_of,account_id,account_type)
+    essential=Decimal(structure["fixed_essential"])+Decimal(structure["variable_essential"])
+    return (essential/Decimal("3")).quantize(CENT)
+
+
 def monthly_cashflow(session: Session, start: date, end: date, account_id: str | None = None, account_type: str | None = None) -> list[dict]:
     txs, categories = _period_transactions(session, start, end, account_id, account_type)
     refund_ids = set(_refund_links(session, [t.id for t in txs]))
@@ -260,6 +304,7 @@ def overview(session: Session, start: date, end: date, account_id: str | None = 
         "essential_discretionary": {
             k: str(v) for k, v in essential_discretionary(session, start, end, account_id, account_type).items()
         },
+        "spending_structure": spending_structure(session,start,end,account_id,account_type),
         "monthly": monthly_cashflow(session, start, end, account_id, account_type),
         "daily": daily_cashflow(session,start,end,account_id,account_type) if (end-start).days<=45 else [],
         "budget_vs_actual": budget_vs_actual(session, start, end, account_id, account_type),

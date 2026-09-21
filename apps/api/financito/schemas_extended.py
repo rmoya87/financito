@@ -10,7 +10,16 @@ class LiabilityCreate(BaseModel):
 class ContractCreate(BaseModel):
     provider_name:str; contract_type:str; start_date:date|None=None; renewal_date:date|None=None; cancellation_notice_days:int|None=None; permanence_end_date:date|None=None; early_exit_penalty:Decimal|None=None; annual_cost:Decimal|None=None; currency:str="EUR"; evidence_status:str="needs_more_data"
 class GoalCreate(BaseModel):
-    goal_type:str; name:str; target_amount:Decimal; account_id:str|None=None; current_amount:Decimal=Decimal("0"); target_date:date|None=None; priority:str="medium"; planned_monthly_contribution:Decimal=Decimal("0")
+    goal_type:str
+    name:str
+    target_amount:Decimal=Field(default=Decimal("0"),ge=0)
+    account_id:str|None=None
+    current_amount:Decimal=Field(default=Decimal("0"),ge=0)
+    allocated_amount:Decimal=Field(default=Decimal("0"),ge=0)
+    emergency_months_target:int|None=Field(default=None,ge=3,le=12)
+    target_date:date|None=None
+    priority:str="medium"
+    planned_monthly_contribution:Decimal=Field(default=Decimal("0"),ge=0)
 class PortfolioCreate(BaseModel):
     name:str; base_currency:str="EUR"; account_id:str|None=None
 class SecurityCreate(BaseModel):
@@ -36,6 +45,8 @@ class CoverageCreate(BaseModel):
     coverage_type:str; contract_id:str|None=None; insurance_policy_id:str|None=None; limit_amount:Decimal|None=None; deductible:Decimal|None=None; effective_from:date|None=None; effective_to:date|None=None; confidence:Decimal=Decimal("1"); user_verified:bool=True
 class GoalProgressUpdate(BaseModel):
     current_amount:Decimal|None=Field(default=None,ge=0)
+    allocated_amount:Decimal|None=Field(default=None,ge=0)
+    emergency_months_target:int|None=Field(default=None,ge=3,le=12)
     planned_monthly_contribution:Decimal|None=Field(default=None,ge=0)
     account_id:str|None=None
 class StressRequest(BaseModel):

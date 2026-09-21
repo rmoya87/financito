@@ -1,7 +1,7 @@
 from __future__ import annotations
 from sqlalchemy import inspect,text
 from .db import Base,engine
-MIGRATION_VERSION=14
+MIGRATION_VERSION=15
 
 def _fts(conn):
     conn.execute(text("""CREATE VIRTUAL TABLE IF NOT EXISTS document_chunk_fts USING fts5(chunk_id UNINDEXED, document_id UNINDEXED, text, heading, section, tokenize='unicode61 remove_diacritics 2')"""))
@@ -26,6 +26,10 @@ def migrate()->int:
             raise RuntimeError(f"Database schema {current} is newer than application schema {MIGRATION_VERSION}")
         Base.metadata.create_all(bind=conn)
         _account_link_columns(conn)
+        _add_nullable_column(conn,"budget","account_id","VARCHAR(36)")
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_budget_account_id ON budget (account_id)"))
+        _add_nullable_column(conn,"financial_goal","allocated_amount","NUMERIC(18,4) NOT NULL DEFAULT 0")
+        _add_nullable_column(conn,"financial_goal","emergency_months_target","INTEGER")
         _fts(conn)
         current=int(current or 0)
         if current<MIGRATION_VERSION:

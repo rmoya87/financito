@@ -17,6 +17,15 @@ class RecurringSeries(Base,TimestampMixin):
     next_expected_date:Mapped[date]=mapped_column(Date,index=True)
     confidence:Mapped[Decimal]=mapped_column(Numeric(5,4))
     status:Mapped[str]=mapped_column(String(30),default="active")
+class RecurringPreference(Base,TimestampMixin):
+    __tablename__="recurring_preference"
+    __table_args__=(UniqueConstraint("merchant_key",name="uq_recurring_preference_merchant"),)
+    id:Mapped[str]=mapped_column(String(36),primary_key=True,default=uuid_str)
+    merchant_key:Mapped[str]=mapped_column(String(240),index=True)
+    action:Mapped[str]=mapped_column(String(30),default="keep")
+    essential_override:Mapped[bool|None]=mapped_column(Boolean,nullable=True)
+    contract_id:Mapped[str|None]=mapped_column(ForeignKey("contract.id",ondelete="SET NULL"),nullable=True,index=True)
+
 class TransactionRule(Base,TimestampMixin):
     __tablename__="transaction_rule"
     id:Mapped[str]=mapped_column(String(36),primary_key=True,default=uuid_str)
