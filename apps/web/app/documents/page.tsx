@@ -18,6 +18,7 @@ type Fact={id:string;fact_type:string;key:string;value:{value:string;unit?:strin
 type EvidenceGroup={entity_type:'insurance_policy'|'contract'|'mortgage';entity_id:string;kind:string;label:string;provider:string;document_count:number;documents:{id:string;file_name:string}[]};
 type ActionItem={id:string;title:string;action_type:string;status:string;notes:string|null;related_entity_type:string|null;related_entity_id:string|null};
 type BulkConfirmResult={documents:number;confirmed:number;conflicts:number};
+type MortgageCreated={id:string;lender:string;remaining_principal:string;currency:string;interest_type:string;nominal_rate:string;monthly_payment:string;remaining_months:number;early_repayment_fee:string|null};
 
 const MATERIAL_FACT_TYPES=new Set(['contract_term','mortgage_term','linked_product','coverage_fact','investment_term']);
 
@@ -28,6 +29,7 @@ export default function DocumentsPage(){
   const [actionId,setActionId]=useState<string|null>(null);
   const [dragging,setDragging]=useState(false);
   const [manualFact,setManualFact]=useState({fact_type:'contract_term',key:'',value:'',unit:'',coverage_type:'',limit_amount:'',deductible:'',conditions:'',exclusions:'',source_page:''});
+  const [mortgageDraft,setMortgageDraft]=useState({lender:'',remaining_principal:'',interest_type:'fixed',nominal_rate_pct:'',monthly_payment:'',remaining_months:'',early_repayment_fee:''});
   const fileInput=useRef<HTMLInputElement|null>(null);
 
   useEffect(()=>{
@@ -130,6 +132,23 @@ export default function DocumentsPage(){
     mutationFn:(documentId:string)=>apiMutate<{entity_type:'contract';entity_id:string}>('/api/v1/documents/'+documentId+'/evidence-group','POST'),
     onSuccess:invalidateEvidence,
   });
+  const createMortgage=useMutation({
+    mutationFn:async(documentId:string)=>{
+      const mortgage=await apiMutate<MortgageCreated>('/api/v1/mortgages','POST',{
+        lender:mortgageDraft.lender.trim(),
+        remaining_principal:mortgageDraft.remaining_principal,
+        currency:'EUR',
+        interest_type:mortgageDraft.interest_type,
+        nominal_rate:String(Number(mortgageDraft.nominal_rate_pct)/100),
+        monthly_payment:mortgageDraft.monthly_payment,
+        remaining_months:Number(mortgageDraft.remaining_months),
+        early_repayment_fee:mortgageDraft.early_repayment_fee||null,
+      });
+      await apiMutate('/api/v1/documents/'+documentId+'/entity-link','PUT',{entity_type:'mortgage',entity_id:mortgage.id});
+      return mortgage;
+    },
+    onSuccess:()=>{setMortgageDraft({lender:'',remaining_principal:'',interest_type:'fixed',nominal_rate_pct:'',monthly_payment:'',remaining_months:'',early_repayment_fee:''});invalidateEvidence()},
+  });
   const confirmCoherent=useMutation({
     mutationFn:({documentId,group}:{documentId:string;group:EvidenceGroup|null})=>
       group
@@ -188,23 +207,38 @@ export default function DocumentsPage(){
 
   const selectedDoc=docs.data?.find(d=>d.id===selected);
   const currentAction=actions.data?.find(a=>a.id===actionId);
+  const visibleFacts=facts.data?.filter(f=>f.fact_type!=='ai_insight')||[];
+  const materialFacts=visibleFacts.filter(f=>MATERIAL_FACT_TYPES.has(f.fact_type));
+  const looksMortgage=selectedDoc?.document_type==='mortgage'||materialFacts.some(f=>f.fact_type==='mortgage_term');
   const currentLink=selectedDoc?.evidence_links?.find(link=>
     selectedDoc.document_type==='insurance'?link.entity_type==='insurance_policy':
-    selectedDoc.document_type==='mortgage'?link.entity_type==='mortgage':
+    looksMortgage?link.entity_type==='mortgage':
     link.entity_type==='contract'
   )||selectedDoc?.evidence_links?.find(link=>['insurance_policy','mortgage','contract'].includes(link.entity_type));
   const currentGroup=groups.data?.find(g=>g.entity_type===currentLink?.entity_type&&g.entity_id===currentLink?.entity_id)||null;
   const compatibleGroups=(groups.data||[]).filter(g=>
     selectedDoc?.document_type==='insurance'?(g.entity_type==='insurance_policy'||g.kind==='insurance_pending'):
-    selectedDoc?.document_type==='mortgage'?g.entity_type==='mortgage':
+    looksMortgage?g.entity_type==='mortgage':
     ['contract','loan','energy','telecom'].includes(selectedDoc?.document_type||'')?g.entity_type==='contract':
     true
   );
-  const visibleFacts=facts.data?.filter(f=>f.fact_type!=='ai_insight')||[];
-  const materialFacts=visibleFacts.filter(f=>MATERIAL_FACT_TYPES.has(f.fact_type));
   const pending=materialFacts.filter(f=>!f.user_verified&&['inferred','ambiguous','conflicting'].includes(f.status)).length;
   const confirmed=materialFacts.filter(f=>f.user_verified&&f.status==='confirmed').length;
   const ambiguous=materialFacts.filter(f=>f.status==='ambiguous'||f.status==='conflicting').length;
+  const factText=(key:string)=>String(materialFacts.find(f=>f.key===key&&f.user_verified&&f.status==='confirmed')?.value?.value||'');
+  const prefillMortgage=()=>{
+    const termYears=factText('mortgage_term_years');
+    const kind=factText('interest_type').toLowerCase();
+    setMortgageDraft({
+      lender:factText('provider_name')||mortgageDraft.lender,
+      remaining_principal:factText('remaining_principal')||mortgageDraft.remaining_principal,
+      interest_type:kind.includes('variable')?'variable':kind.includes('mixt')?'mixed':kind.includes('fij')||kind.includes('fixed')?'fixed':mortgageDraft.interest_type,
+      nominal_rate_pct:factText('nominal_rate')||mortgageDraft.nominal_rate_pct,
+      monthly_payment:factText('monthly_payment')||mortgageDraft.monthly_payment,
+      remaining_months:factText('remaining_months')||(termYears?String(Math.round(Number(termYears)*12)):mortgageDraft.remaining_months),
+      early_repayment_fee:factText('early_repayment_fee')||mortgageDraft.early_repayment_fee,
+    });
+  };
 
   return <>
     <PageHeader
@@ -343,7 +377,7 @@ export default function DocumentsPage(){
             value={currentGroup?currentGroup.entity_type+':'+currentGroup.entity_id:''}
             onChange={e=>{
               const raw=e.target.value;
-              const defaultType:'insurance_policy'|'contract'|'mortgage'=selectedDoc.document_type==='insurance'?'insurance_policy':selectedDoc.document_type==='mortgage'?'mortgage':'contract';
+              const defaultType:'insurance_policy'|'contract'|'mortgage'=selectedDoc.document_type==='insurance'?'insurance_policy':looksMortgage?'mortgage':'contract';
               const unlinkType=(currentGroup?.entity_type||defaultType) as 'insurance_policy'|'contract'|'mortgage';
               if(!raw){linkEntity.mutate({documentId:selectedDoc.id,entityType:unlinkType,entityId:null});return}
               const [entityType,entityId]=raw.split(':');
@@ -356,6 +390,23 @@ export default function DocumentsPage(){
             <strong>{currentGroup.label}</strong>
             <div className="mt-1 text-[var(--muted)]">{currentGroup.document_count} documento(s) forman esta única ficha.</div>
             {currentGroup.documents.length>1&&<div className="mt-2">{currentGroup.documents.map(d=><div key={d.id}>• {d.file_name}</div>)}</div>}
+          </div>}
+          {looksMortgage&&!currentGroup&&<div className="mt-3 rounded-xl bg-[var(--surface-2)] p-3">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div><strong className="text-sm">Vincular este documento a una hipoteca</strong><p className="mt-1 text-xs text-[var(--muted)]">Si arriba no aparece una hipoteca existente, crea aquí el perfil inicial. Los hechos que confirmes en este documento serán la fuente canónica y actualizarán después capital, TIN, cuota, plazo y comisiones compatibles.</p></div>
+              <button type="button" className="text-xs underline" onClick={prefillMortgage}>Rellenar con datos confirmados</button>
+            </div>
+            <form className="mt-3 grid gap-2 sm:grid-cols-2" onSubmit={e=>{e.preventDefault();createMortgage.mutate(selectedDoc.id)}}>
+              <input className="fin-input sm:col-span-2" placeholder="Entidad de la hipoteca" value={mortgageDraft.lender} onChange={e=>setMortgageDraft({...mortgageDraft,lender:e.target.value})} required/>
+              <input className="fin-input" type="number" min="0.01" step=".01" placeholder="Capital pendiente (€)" value={mortgageDraft.remaining_principal} onChange={e=>setMortgageDraft({...mortgageDraft,remaining_principal:e.target.value})} required/>
+              <input className="fin-input" type="number" min="0" step=".001" placeholder="TIN actual (%)" value={mortgageDraft.nominal_rate_pct} onChange={e=>setMortgageDraft({...mortgageDraft,nominal_rate_pct:e.target.value})} required/>
+              <input className="fin-input" type="number" min="0.01" step=".01" placeholder="Cuota mensual (€)" value={mortgageDraft.monthly_payment} onChange={e=>setMortgageDraft({...mortgageDraft,monthly_payment:e.target.value})} required/>
+              <input className="fin-input" type="number" min="1" step="1" placeholder="Meses pendientes" value={mortgageDraft.remaining_months} onChange={e=>setMortgageDraft({...mortgageDraft,remaining_months:e.target.value})} required/>
+              <select className="fin-input" aria-label="Tipo de interés de la hipoteca" value={mortgageDraft.interest_type} onChange={e=>setMortgageDraft({...mortgageDraft,interest_type:e.target.value})}><option value="fixed">Fijo</option><option value="variable">Variable</option><option value="mixed">Mixto</option></select>
+              <input className="fin-input" type="number" min="0" step=".01" placeholder="Comisión fija amortización (€), si consta" value={mortgageDraft.early_repayment_fee} onChange={e=>setMortgageDraft({...mortgageDraft,early_repayment_fee:e.target.value})}/>
+              <button className="fin-button sm:col-span-2" disabled={createMortgage.isPending}>{createMortgage.isPending?'Creando y vinculando…':'Crear hipoteca y vincular este documento'}</button>
+            </form>
+            {createMortgage.error&&<div className="mt-3"><ErrorState error={createMortgage.error}/></div>}
           </div>}
           {!currentGroup&&selectedDoc.document_type==='insurance'&&<div className="mt-2 text-xs text-[var(--muted)]">Si la póliza contiene un número identificador claro, Financito crea una agrupación provisional y reúne automáticamente los siguientes documentos que compartan ese número, aunque todavía falte confirmar la prima.</div>}
           {!currentGroup&&['insurance','contract','loan','energy','telecom'].includes(selectedDoc.document_type)&&<button className="fin-button secondary mt-3 py-1.5 text-xs" onClick={()=>createGroup.mutate(selectedDoc.id)} disabled={createGroup.isPending}>
