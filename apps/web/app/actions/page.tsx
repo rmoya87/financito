@@ -7,6 +7,7 @@ import {PageHeader} from '@/components/page-header';
 import {Card} from '@/components/ui/card';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
 import {Money} from '@/components/ui/money';
+import {MetricTile,SectionIntro,VisualPanel} from '@/components/finance-ui';
 
 type Action={id:string;title:string;action_type:string;priority:string;status:string;due_date:string|null;notes:string|null;related_entity_type:string|null;related_entity_id:string|null};
 type Contract={id:string;provider_name:string;contract_type:string;renewal_date:string|null;cancellation_notice_days:number|null;early_exit_penalty:string|null;annual_cost:string|null;evidence_status:string;source_document_id:string|null};
@@ -35,10 +36,20 @@ export default function ActionsPage(){
   });
 
   const active=(q.data||[]).filter(a=>a.status==="pending"||a.status==="in_progress");
+  const priorityActions=active.filter(a=>a.priority==="critical"||a.priority==="high").length;
 
   return <>
     <PageHeader title="Para ti" description="Alertas, oportunidades y próximos pasos construidos a partir de tus datos, contratos y objetivos."/>
 
+    <SectionIntro eyebrow="Lectura rápida" title="Qué merece tu atención" description="Primero lo accionable; después el contexto de contratos y seguros que explica por qué."/>
+    <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <MetricTile label="Pendientes" value={active.length} detail="Acciones que todavía no has resuelto" status={active.length?'Revisar':'Al día'} statusTone={active.length?'pending':'confirmed'} emphasis={priorityActions>0}/>
+      <MetricTile label="Alta prioridad" value={priorityActions} detail="Urgentes o con prioridad alta"/>
+      <MetricTile label="Contratos" value={contracts.data?.length??0} detail="Con condiciones estructuradas"/>
+      <MetricTile label="Seguros" value={insurance.data?.length??0} detail="Pólizas con datos guardados"/>
+    </div>
+
+    <SectionIntro eyebrow="Accesos" title="Ir directamente a lo que necesitas" description="Previsión, contratos y seguros comparten el mismo contexto financiero."/>
     <div className="mb-5 grid gap-3 md:grid-cols-3">
       <Link href="/forecast/" className="fin-card flex items-center gap-4 p-4 hover:border-[var(--brand)]">
         <div className="grid size-10 place-items-center rounded-xl bg-[var(--brand-soft)] text-[var(--brand)]"><CalendarClock size={20}/></div>
@@ -54,11 +65,7 @@ export default function ActionsPage(){
       </Link>
     </div>
 
-    <Card>
-      <div className="mb-4">
-        <h2 className="font-bold">Pendiente de ti</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">Financito propone y organiza; las acciones externas siguen bajo tu control.</p>
-      </div>
+    <VisualPanel title="Pendiente de ti" description="Financito propone y organiza; las acciones externas siguen bajo tu control." status={active.length?active.length+' pendientes':'Sin pendientes'} statusTone={active.length?'pending':'confirmed'}>
       {q.isLoading?<Loading/>:q.error?<ErrorState error={q.error}/>:active.length?
         <div className="flex flex-col gap-3">{active.map(a=>{const destination=actionDestination(a);return <div key={a.id} className="flex flex-col gap-3 rounded-xl bg-[var(--surface-2)] p-4 md:flex-row md:items-center md:justify-between">
           <div>
@@ -74,17 +81,17 @@ export default function ActionsPage(){
           </div>
         </div>})}</div>:
         <EmptyState>No hay acciones pendientes.</EmptyState>}
-    </Card>
+    </VisualPanel>
 
+    <div className="mt-6"><SectionIntro eyebrow="Contexto" title="Por qué aparecen estas recomendaciones" description="Condiciones de contratos y coberturas que Financito utiliza para generar avisos y siguientes pasos."/></div>
     <div className="mt-4 grid gap-4 xl:grid-cols-2">
-      <Card>
-        <div className="flex items-start justify-between gap-3"><div><h2 className="font-bold">Contratos extraídos de tus documentos</h2><p className="mt-1 text-sm text-[var(--muted)]">Coste, renovación, preaviso y penalizaciones confirmadas o pendientes de confirmar.</p></div><Link className="text-xs underline" href="/contracts/">Ver todos</Link></div>
+      <VisualPanel title="Contratos extraídos de tus documentos" description="Coste, renovación, preaviso y penalizaciones confirmadas o pendientes de confirmar." action={<Link className="text-xs underline" href="/contracts/">Ver todos</Link>}>
+        <div className="text-xs text-[var(--muted)]">La evidencia contractual es la fuente de verdad.</div>
         <div className="mt-4 space-y-3">{contracts.data?.length?contracts.data.map(x=><div key={x.id} className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="flex items-start justify-between gap-3"><div><strong>{x.provider_name}</strong><div className="text-xs text-[var(--muted)]">{x.contract_type}</div></div>{x.annual_cost!==null&&<strong><Money value={x.annual_cost}/>/año</strong>}</div><div className="mt-2 grid gap-1 text-xs text-[var(--muted)]">{x.renewal_date&&<div>Renovación: {new Date(x.renewal_date).toLocaleDateString('es-ES')}</div>}{x.cancellation_notice_days!==null&&<div>Preaviso de cancelación: {x.cancellation_notice_days} días</div>}<div>Penalización de salida: {x.early_exit_penalty===null?'pendiente de confirmar':<Money value={x.early_exit_penalty}/>}</div><div>Evidencia: {x.evidence_status==='confirmed'?'confirmada':'requiere revisión'}</div></div>{x.source_document_id&&<Link className="mt-2 inline-block text-xs underline" href={'/documents/?document='+encodeURIComponent(x.source_document_id)}>Ver evidencia</Link>}</div>):<EmptyState>Aún no hay contratos estructurados. Añade sus documentos para que Financito extraiga sus condiciones.</EmptyState>}</div>
-      </Card>
-      <Card>
-        <div className="flex items-start justify-between gap-3"><div><h2 className="font-bold">Seguros y coberturas</h2><p className="mt-1 text-sm text-[var(--muted)]">Prima, franquicia y coberturas estructuradas a partir de tus pólizas.</p></div><Link className="text-xs underline" href="/insurance/">Ver todos</Link></div>
+      </VisualPanel>
+      <VisualPanel title="Seguros y coberturas" description="Prima, franquicia y coberturas estructuradas a partir de tus pólizas." action={<Link className="text-xs underline" href="/insurance/">Ver todos</Link>}>
         <div className="mt-4 space-y-3">{insurance.data?.length?insurance.data.map(x=>{const cov=(coverage.data||[]).filter(c=>c.insurance_policy_id===x.id);return <div key={x.id} className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="flex items-start justify-between gap-3"><strong>{x.insurance_type}</strong><strong><Money value={x.annual_premium}/>/año</strong></div><div className="mt-1 text-xs text-[var(--muted)]">Franquicia: {x.deductible===null?'sin dato':<Money value={x.deductible}/>}</div>{cov.length>0&&<div className="mt-2 flex flex-wrap gap-1">{cov.map(c=><span key={c.id} className="rounded-full bg-white px-2 py-1 text-[11px]">{c.coverage_type}{c.limit_amount?' · '+new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(Number(c.limit_amount)):''}{c.user_verified?'':' · por verificar'}</span>)}</div>}{x.source_document_id&&<Link className="mt-2 inline-block text-xs underline" href={'/documents/?document='+encodeURIComponent(x.source_document_id)}>Ver póliza</Link>}</div>}):<EmptyState>Aún no hay pólizas estructuradas. Añade la documentación para ver coberturas y condiciones aquí.</EmptyState>}</div>
-      </Card>
+      </VisualPanel>
     </div>
   </>;
 }
