@@ -4,6 +4,7 @@ import {FormEvent,useDeferredValue,useEffect,useMemo,useState} from 'react';
 import {useMutation,useQuery,useQueryClient} from '@tanstack/react-query';
 import {apiGet,apiMutate,apiUpload} from '@/lib/api';
 import {PageHeader} from '@/components/page-header';
+import {DateRangeSelector,DateRangeKey,resolveDateRange} from '@/components/date-range-selector';
 import {Card} from '@/components/ui/card';
 import {Money} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
@@ -40,8 +41,11 @@ export default function TransactionsPage(){
   const [file,setFile]=useState<File|null>(null);
   const [search,setSearch]=useState('');
   const [categoryFilter,setCategoryFilter]=useState('');
-  const [fromDate,setFromDate]=useState('');
-  const [toDate,setToDate]=useState('');
+  const defaults=resolveDateRange('month');
+  const [range,setRange]=useState<DateRangeKey>('month');
+  const [customStart,setCustomStart]=useState(defaults.start);
+  const [customEnd,setCustomEnd]=useState(defaults.end);
+  const dates=resolveDateRange(range,customStart,customEnd);
   const [page,setPage]=useState(1);
   const [pageSize,setPageSize]=useState(50);
   const deferredSearch=useDeferredValue(search);
@@ -57,13 +61,13 @@ export default function TransactionsPage(){
   const accounts=useQuery({queryKey:['accounts'],queryFn:()=>apiGet<Account[]>('/api/v1/accounts')});
   const cats=useQuery({queryKey:['categories'],queryFn:()=>apiGet<Category[]>('/api/v1/categories')});
   const txs=useQuery({
-    queryKey:['transactions',deferredSearch,categoryFilter,fromDate,toDate,page,pageSize],
+    queryKey:['transactions',deferredSearch,categoryFilter,dates.start,dates.end,page,pageSize],
     queryFn:()=>{
       const params=new URLSearchParams({page:String(page),page_size:String(pageSize)});
       if(deferredSearch.trim())params.set('q',deferredSearch.trim());
       if(categoryFilter)params.set('category_id',categoryFilter);
-      if(fromDate)params.set('start',fromDate);
-      if(toDate)params.set('end',toDate);
+      if(dates.start)params.set('start',dates.start);
+      if(dates.end)params.set('end',dates.end);
       return apiGet<TxPage>('/api/v1/transactions/page?'+params.toString());
     },
   });
@@ -123,7 +127,7 @@ export default function TransactionsPage(){
 
   useEffect(()=>{
     setPage(1);
-  },[deferredSearch,categoryFilter,fromDate,toDate,pageSize]);
+  },[deferredSearch,categoryFilter,dates.start,dates.end,pageSize]);
 
   useEffect(()=>{
     if(txs.data&&page!==txs.data.page)setPage(txs.data.page);
@@ -150,6 +154,15 @@ export default function TransactionsPage(){
     <PageHeader
       title="Movimientos"
       description="Todos tus movimientos en un único sitio. Si cambias una categoría, Financito aplica esa corrección a todo el histórico con el mismo concepto y crea una regla para los futuros movimientos iguales."
+      action={<DateRangeSelector
+        range={range}
+        customStart={customStart}
+        customEnd={customEnd}
+        onRangeChange={setRange}
+        onCustomStartChange={setCustomStart}
+        onCustomEndChange={setCustomEnd}
+        ariaLabel="Periodo de Movimientos"
+      />}
     />
 
     <Card>
@@ -194,14 +207,12 @@ export default function TransactionsPage(){
           <h2 className="font-bold">Todos los movimientos</h2>
           <p className="mt-1 text-sm text-[var(--muted)]">{total?`Mostrando ${rangeStart}–${rangeEnd} de ${total}`:'Sin movimientos para estos filtros'}.</p>
         </div>
-        <div className="grid w-full gap-2 xl:w-auto xl:grid-cols-[minmax(260px,1fr)_210px_150px_150px_130px]">
+        <div className="grid w-full gap-2 xl:w-auto xl:grid-cols-[minmax(260px,1fr)_210px_130px]">
           <input className="fin-input" type="search" aria-label="Buscar movimientos" placeholder="Buscar concepto, comercio, categoría o importe…" value={search} onChange={e=>setSearch(e.target.value)}/>
           <select className="fin-input" aria-label="Filtrar por categoría" value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}>
             <option value="">Todas las categorías</option>
             {cats.data?.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <label className="text-xs text-[var(--muted)]">Desde<input className="fin-input mt-1" type="date" aria-label="Fecha inicial" value={fromDate} max={toDate||undefined} onChange={e=>setFromDate(e.target.value)}/></label>
-          <label className="text-xs text-[var(--muted)]">Hasta<input className="fin-input mt-1" type="date" aria-label="Fecha final" value={toDate} min={fromDate||undefined} onChange={e=>setToDate(e.target.value)}/></label>
           <label className="text-xs text-[var(--muted)]">Por página<select className="fin-input mt-1" aria-label="Movimientos por página" value={pageSize} onChange={e=>setPageSize(Number(e.target.value))}><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select></label>
         </div>
       </div>

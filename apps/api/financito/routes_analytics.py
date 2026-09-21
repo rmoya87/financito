@@ -4,7 +4,7 @@ from datetime import date,timedelta
 from decimal import Decimal
 from fastapi import APIRouter,Depends,HTTPException,Response
 from pydantic import BaseModel,Field
-from sqlalchemy import select
+from sqlalchemy import exists,select
 from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .domain.analytics import detect_anomalies,detect_recurring
@@ -25,15 +25,31 @@ def dbdep():
 def refresh(db:Session=Depends(dbdep)):
     recurring=detect_recurring(db);anomalies=detect_anomalies(db);db.commit();return {"recurring_series":len(recurring),"anomalies":len(anomalies)}
 @router.get("/recurring")
-def recurring(db:Session=Depends(dbdep)):return [{"id":r.id,"merchant":r.merchant_normalized,"cadence":r.cadence,"expected_amount":str(r.expected_amount),"next_expected_date":r.next_expected_date,"confidence":str(r.confidence)} for r in db.scalars(select(RecurringSeries)).all()]
+def recurring(start:date|None=None,end:date|None=None,db:Session=Depends(dbdep)):
+    if start and end and end<start:raise HTTPException(400,"La fecha final debe ser igual o posterior a la inicial.")
+    stmt=select(RecurringSeries)
+    if start or end:
+        tx_filters=[
+            Transaction.amount<0,
+            Transaction.is_internal_transfer.is_(False),
+            Transaction.merchant_normalized==RecurringSeries.merchant_normalized,
+        ]
+        if start:tx_filters.append(Transaction.booking_date>=start)
+        if end:tx_filters.append(Transaction.booking_date<=end)
+        stmt=stmt.where(exists(select(Transaction.id).where(*tx_filters)))
+    return [{"id":r.id,"merchant":r.merchant_normalized,"cadence":r.cadence,"expected_amount":str(r.expected_amount),"next_expected_date":r.next_expected_date,"confidence":str(r.confidence)} for r in db.scalars(stmt).all()]
 class AnomalyStatusIn(BaseModel):
     status:str=Field(pattern="^(open|normal|ignored|resolved)$")
 
 @router.get("/anomalies")
-def anomalies(db:Session=Depends(dbdep)):
+def anomalies(start:date|None=None,end:date|None=None,db:Session=Depends(dbdep)):
+    if start and end and end<start:raise HTTPException(400,"La fecha final debe ser igual o posterior a la inicial.")
     out=[]
     for a in db.scalars(select(Anomaly).where(Anomaly.status=="open").order_by(Anomaly.created_at.desc())).all():
         tx=db.get(Transaction,a.transaction_id)
+        if tx is None:continue
+        if start and tx.booking_date<start:continue
+        if end and tx.booking_date>end:continue
         baseline=json.loads(a.baseline_json or "{}");observed=json.loads(a.observed_json or "{}")
         median=Decimal(str(baseline.get("median","0")));amount=Decimal(str(observed.get("amount","0")))
         delta=max(Decimal("0"),amount-median)
