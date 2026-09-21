@@ -203,3 +203,132 @@ def test_market_scan_calculates_comparable_payment_without_network(monkeypatch):
         assert Decimal(lead["scenario"]["monthly_payment_difference"])>0
         assert Decimal(lead["scenario"]["known_exit_penalty"])==Decimal("600.00")
         assert lead["scenario"]["break_even_months_known_penalty_only"] is not None
+
+
+def test_confirmed_mortgage_document_projects_extended_profile_fields():
+    with SessionLocal() as db:
+        mortgage=Mortgage(
+            lender=f"Banco Evidencia {uuid4().hex[:6]}",
+            remaining_principal=Decimal("110000"),
+            currency="EUR",
+            interest_type="variable",
+            nominal_rate=Decimal("0.031"),
+            monthly_payment=Decimal("650"),
+            remaining_months=220,
+        )
+        db.add(mortgage);db.flush()
+        document=_doc(db,"hipoteca-variable.pdf")
+        document.document_type="mortgage"
+        db.add(EntityLink(
+            from_type="document",from_id=document.id,relation_type="evidence_for",
+            to_type="mortgage",to_id=mortgage.id,confidence=Decimal("1"),
+            source_type="user",source_ref=document.id,
+        ))
+        values={
+            "apr_rate":"3.45",
+            "reference_index":"Euríbor 12 meses",
+            "differential_rate":"0.75",
+            "mortgage_term_years":"30",
+            "rate_review_months":"12",
+            "next_review_date":"15/02/2027",
+            "opening_fee_percent":"0.10",
+            "early_repayment_fee_percent":"0.25",
+            "subrogation_fee_percent":"0.50",
+            "cancellation_fee_percent":"0.40",
+        }
+        for key,value in values.items():
+            fact=_fact(db,document,key,value)
+            fact.status="confirmed"
+            fact.user_verified=True
+        db.flush()
+
+        synchronize_document_evidence(db,document)
+        extra=db.scalar(select(MortgageProfileExtra).where(MortgageProfileExtra.mortgage_id==mortgage.id))
+        assert extra is not None
+        assert extra.apr_rate==Decimal("0.0345")
+        assert extra.reference_index=="Euríbor 12 meses"
+        assert extra.differential_rate==Decimal("0.0075")
+        assert extra.original_term_months==360
+        assert extra.rate_review_months==12
+        assert str(extra.next_review_date)=="2027-02-15"
+        assert extra.opening_fee_percent==Decimal("0.10")
+        assert extra.early_repayment_fee_percent==Decimal("0.25")
+        assert extra.subrogation_fee_percent==Decimal("0.50")
+        assert extra.cancellation_fee_percent==Decimal("0.40")
+
+
+def test_mortgage_context_keeps_found_unverified_fact_out_of_missing_truth():
+    from financito.services.contractual_costs import mortgage_contract_context
+
+    with SessionLocal() as db:
+        mortgage=Mortgage(
+            lender=f"Banco Pendiente {uuid4().hex[:6]}",
+            remaining_principal=Decimal("90000"),
+            currency="EUR",
+            interest_type="variable",
+            nominal_rate=Decimal("0.029"),
+            monthly_payment=Decimal("550"),
+            remaining_months=180,
+        )
+        db.add(mortgage);db.flush()
+        document=_doc(db,"hipoteca-pendiente.pdf")
+        document.document_type="mortgage"
+        db.add(EntityLink(
+            from_type="document",from_id=document.id,relation_type="evidence_for",
+            to_type="mortgage",to_id=mortgage.id,confidence=Decimal("1"),
+            source_type="user",source_ref=document.id,
+        ))
+        fact=_fact(db,document,"differential_rate","0.60")
+        fact.value_json=json.dumps({"value":"0.60","unit":"percent","source":"local_ai_proposal"})
+        db.flush()
+
+        context=mortgage_contract_context(db,mortgage.id)
+        assert "differential_rate" not in context["by_key"]
+        assert context["pending_by_key"]["differential_rate"]["value"]=="0.60"
+        assert context["pending_by_key"]["differential_rate"]["source"]=="local_ai_proposal"
+
+
+def test_insurance_verdict_surfaces_ai_found_terms_as_pending_review():
+    from financito.services.insurance_analysis import insurance_verdict
+
+    with SessionLocal() as db:
+        contract=Contract(
+            provider_name=f"Seguro IA {uuid4().hex[:6]}",
+            contract_type="insurance",
+            annual_cost=Decimal("480"),
+            evidence_status="needs_more_data",
+        )
+        db.add(contract);db.flush()
+        policy=InsurancePolicy(
+            contract_id=contract.id,
+            insurance_type="home",
+            annual_premium=Decimal("480"),
+            deductible=None,
+            currency="EUR",
+            insured_object_json="{}",
+        )
+        db.add(policy);db.flush()
+        document=_doc(db,"seguro-ia.pdf")
+        for target_type,target_id in (("contract",contract.id),("insurance_policy",policy.id)):
+            db.add(EntityLink(
+                from_type="document",from_id=document.id,relation_type="evidence_for",
+                to_type=target_type,to_id=target_id,confidence=Decimal("1"),
+                source_type="user",source_ref=document.id,
+            ))
+        for key,value,unit in (
+            ("deductible","150","EUR"),
+            ("renewal_date","01/06/2027","date"),
+            ("cancellation_notice_days","30","days"),
+            ("early_exit_penalty","0","EUR"),
+        ):
+            fact=_fact(db,document,key,value)
+            fact.value_json=json.dumps({"value":value,"unit":unit,"source":"local_ai_proposal"})
+        db.flush()
+
+        result=insurance_verdict(db,use_ai=False)
+        pending=[x for x in result["pending_review"] if x.get("policy_id")==policy.id]
+        fields={x["field"] for x in pending}
+        assert {"deductible","renewal_date","cancellation_notice_days","early_exit_penalty"} <= fields
+        missing_fields={x["field"] for x in result["missing_information"] if x.get("policy_id")==policy.id}
+        assert "deductible" not in missing_fields
+        assert "renewal_date" not in missing_fields
