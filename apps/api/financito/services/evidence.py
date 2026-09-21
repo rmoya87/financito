@@ -1374,7 +1374,7 @@ def _ensure_coverage_projection(
     contract: Contract | None,
     policy: InsurancePolicy | None,
 ) -> int:
-    if policy is None:
+    if contract is None and policy is None:
         return 0
 
     rows = session.scalars(
