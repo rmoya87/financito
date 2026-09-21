@@ -3,12 +3,12 @@
 import Link from 'next/link';
 import {FormEvent,useMemo,useState} from 'react';
 import {useMutation,useQuery,useQueryClient} from '@tanstack/react-query';
-import {Bar,BarChart,CartesianGrid,Cell,Legend,Line,LineChart,ResponsiveContainer,Tooltip,XAxis,YAxis} from 'recharts';
+import {Bar,BarChart,CartesianGrid,Cell,Legend,Line,LineChart,Pie,PieChart,ResponsiveContainer,Tooltip,XAxis,YAxis} from 'recharts';
 import {apiGet,apiMutate} from '@/lib/api';
 import {PageHeader} from '@/components/page-header';
 import {DateRangeSelector,DateRangeKey,isoDate,resolveDateRange} from '@/components/date-range-selector';
 import {Card} from '@/components/ui/card';
-import {Money,formatNumber} from '@/components/ui/money';
+import {Money,formatMoney,formatNumber} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
 
 type Rec={id:string;merchant:string;cadence:string;expected_amount:string;next_expected_date:string;confidence:string};
@@ -25,9 +25,11 @@ type Overview={
   cash_flow?:{income:string;expenses:string;savings:string;savings_rate:string|null};
   by_category?:{category:string;amount:string}[];
   by_merchant?:{merchant:string;amount:string}[];
+  merchant_spending_total?:string;
   fixed_variable?:{fixed:string;variable:string};
   essential_discretionary?:{essential:string;discretionary:string};
   monthly?:{period:string;income:string;expenses:string;savings:string}[];
+  daily?:{period:string;income:string;expenses:string;savings:string}[];
   budget_vs_actual?:{category:string;budget:string;actual:string;variance:string}[]
 };
 type MonthEndAccount={id:string;name:string;institution_name:string;currency:string;current_balance:string;projected_change:string;projected_closing_balance:string;method:string};
@@ -54,13 +56,12 @@ export default function AnalyticsPage(){
   const dates=resolveDateRange(range,customStart,customEnd);
   const periodReady=Boolean(dates.start&&dates.end);
   const forecastStart=periodReady?shiftDate(dates.end,1):'';
-  const forecastEnd=periodReady?shiftDate(dates.end,90):'';
+  const forecastEnd=periodReady?shiftDate(dates.end,30):'';
   const periodParams=periodReady?'?start='+dates.start+'&end='+dates.end:'';
 
   const recurring=useQuery({
-    queryKey:['recurring',dates.start,dates.end],
-    queryFn:()=>apiGet<Rec[]>('/api/v1/recurring'+periodParams),
-    enabled:periodReady,
+    queryKey:['recurring'],
+    queryFn:()=>apiGet<Rec[]>('/api/v1/recurring'),
   });
   const anomalies=useQuery({
     queryKey:['anomalies',dates.start,dates.end],
@@ -98,6 +99,11 @@ export default function AnalyticsPage(){
   const monthly=useMemo(()=>Array.isArray(overview.data?.monthly)?overview.data!.monthly!.map(x=>({
     ...x,income:Number(x.income||0),expenses:Number(x.expenses||0),savings:Number(x.savings||0),
   })):[],[overview.data]);
+  const daily=useMemo(()=>Array.isArray(overview.data?.daily)?overview.data!.daily!.map(x=>({
+    ...x,income:Number(x.income||0),expenses:Number(x.expenses||0),savings:Number(x.savings||0),
+  })):[],[overview.data]);
+  const trendData=range==='month'?daily:monthly;
+  const [merchantView,setMerchantView]=useState<'chart'|'list'>('chart');
   const mix=useMemo(()=>{
     const fixed=overview.data?.fixed_variable;
     const essential=overview.data?.essential_discretionary;
@@ -111,6 +117,15 @@ export default function AnalyticsPage(){
   },[overview.data]);
 
   const merchants=Array.isArray(overview.data?.by_merchant)?overview.data!.by_merchant!:[];
+  const merchantTotal=Math.max(0,Number(overview.data?.merchant_spending_total||0));
+  const merchantChartData=useMemo(()=>{
+    if(!merchants.length||merchantTotal<=0)return [];
+    const top=merchants.slice(0,9).map(row=>({name:row.merchant,amount:Number(row.amount||0)}));
+    const visible=top.reduce((sum,row)=>sum+row.amount,0);
+    const other=Math.max(0,merchantTotal-visible);
+    const rows=other>0?[...top,{name:'Otros',amount:other}]:top;
+    return rows.map(row=>({...row,percent:merchantTotal>0?row.amount/merchantTotal*100:0}));
+  },[merchants,merchantTotal]);
   const recurringRows=Array.isArray(recurring.data)?recurring.data:[];
   const anomalyRows=Array.isArray(anomalies.data)?anomalies.data:[];
   const issues=Array.isArray(recon.data?.issues)?recon.data!.issues!:[];
@@ -150,8 +165,8 @@ export default function AnalyticsPage(){
     <div className="grid gap-4 xl:grid-cols-2">
       <Card className="xl:col-span-2">
         <h2 className="font-bold">Ingresos, gasto y ahorro</h2>
-        {overview.isLoading?<div className="mt-4"><Loading/></div>:overview.error?<div className="mt-4"><ErrorState error={overview.error}/></div>:monthly.length?
-          <div className="mt-4 h-72"><ResponsiveContainer width="100%" height="100%"><LineChart data={monthly}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="period"/><YAxis tickFormatter={(value)=>formatNumber(value,0,0)}/><Tooltip/><Legend/><Line type="monotone" dataKey="income" name="Ingresos" stroke="var(--chart-income)" strokeWidth={3} dot={false}/><Line type="monotone" dataKey="expenses" name="Gastos" stroke="var(--chart-expenses)" strokeWidth={3} dot={false}/><Line type="monotone" dataKey="savings" name="Ahorro" stroke="var(--chart-savings)" strokeWidth={3} dot={false}/></LineChart></ResponsiveContainer></div>:
+        {overview.isLoading?<div className="mt-4"><Loading/></div>:overview.error?<div className="mt-4"><ErrorState error={overview.error}/></div>:trendData.length?
+          <div className="mt-4 h-72"><ResponsiveContainer width="100%" height="100%"><LineChart data={trendData}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="period" tickFormatter={value=>range==='month'?String(value).slice(8,10):String(value)}/><YAxis tickFormatter={(value)=>formatNumber(value,0,0)}/><Tooltip formatter={value=>formatMoney(Number(value||0))}/><Legend/><Line type="monotone" dataKey="income" name="Ingresos" stroke="var(--chart-income)" strokeWidth={3} dot={range==='month'}/><Line type="monotone" dataKey="expenses" name="Gastos" stroke="var(--chart-expenses)" strokeWidth={3} dot={range==='month'}/><Line type="monotone" dataKey="savings" name="Ahorro" stroke="var(--chart-savings)" strokeWidth={3} dot={range==='month'}/></LineChart></ResponsiveContainer></div>:
           <EmptyState>Importa histórico para ver la evolución.</EmptyState>}
       </Card>
 
@@ -178,15 +193,23 @@ export default function AnalyticsPage(){
       </Card>
 
       <Card>
-        <h2 className="font-bold">Principales comercios</h2>
-        <div className="mt-3 space-y-2">{merchants.length?merchants.slice(0,10).map(row=><div key={row.merchant} className="flex justify-between rounded-xl bg-[var(--surface-2)] p-3 text-sm"><span>{row.merchant}</span><strong><Money value={row.amount}/></strong></div>):<EmptyState>Sin gasto por comercio.</EmptyState>}</div>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div><h2 className="font-bold">Principales comercios</h2><p className="mt-1 text-sm text-[var(--muted)]">Peso de cada comercio sobre el gasto total del periodo.</p></div>
+          <div className="flex rounded-xl border border-[var(--border)] p-1" role="group" aria-label="Vista de principales comercios">
+            <button className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${merchantView==='chart'?'bg-[var(--brand-soft)] text-[var(--brand)]':''}`} onClick={()=>setMerchantView('chart')} aria-pressed={merchantView==='chart'}>Gráfica</button>
+            <button className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${merchantView==='list'?'bg-[var(--brand-soft)] text-[var(--brand)]':''}`} onClick={()=>setMerchantView('list')} aria-pressed={merchantView==='list'}>Listado</button>
+          </div>
+        </div>
+        {!merchants.length?<div className="mt-3"><EmptyState>Sin gasto por comercio.</EmptyState></div>:merchantView==='chart'?
+          <div className="mt-3 h-80"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={merchantChartData} dataKey="amount" nameKey="name" innerRadius={55} outerRadius={105} paddingAngle={2} label={({percent})=>percent>=0.05?`${(percent*100).toFixed(1)}%`:''}>{merchantChartData.map((row,i)=><Cell key={row.name} fill={['var(--chart-income)','var(--chart-expenses)','var(--chart-savings)','var(--chart-fixed)','var(--chart-variable)','var(--chart-essential)','var(--chart-discretionary)','var(--brand)','var(--muted)','var(--surface-3)'][i%10]}/>)}</Pie><Tooltip formatter={(value)=>formatMoney(Number(value||0))}/><Legend/></PieChart></ResponsiveContainer></div>:
+          <div className="mt-3 space-y-2">{merchants.slice(0,10).map(row=>{const pct=merchantTotal>0?Number(row.amount||0)/merchantTotal*100:0;return <div key={row.merchant} className="flex items-center justify-between gap-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm"><span>{row.merchant}</span><div className="text-right"><strong><Money value={row.amount}/></strong><div className="text-xs text-[var(--muted)]">{formatNumber(pct,1,1)}%</div></div></div>})}</div>}
       </Card>
 
-      <Card>
+      {(recurring.isLoading||recurring.error||recurringRows.length>0)&&<Card>
         <h2 className="font-bold">Recurrentes</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">Muestra patrones recurrentes presentes en el periodo seleccionado. El recálculo completo usa además la IA local para unir conceptos que cambian de referencia o comercio y después valida matemáticamente el patrón.</p>
-        {recurring.error?<div className="mt-3"><ErrorState error={recurring.error}/></div>:<div className="mt-3 space-y-2">{recurringRows.length?recurringRows.map(row=><div key={row.id} className="flex justify-between gap-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div><strong>{row.merchant}</strong><div className="text-xs text-[var(--muted)]">{cadenceLabel(row.cadence)} · próxima {row.next_expected_date} · confianza {Math.round(Number(row.confidence||0)*100)}%</div></div><strong><Money value={row.expected_amount}/></strong></div>):<EmptyState>No se han validado patrones recurrentes todavía. Importa histórico suficiente o pulsa “Recalcular patrones”.</EmptyState>}</div>}
-      </Card>
+        <p className="mt-1 text-sm text-[var(--muted)]">Patrones validados usando el histórico completo. El recálculo puede usar IA local para unir referencias distintas, pero importe, cadencia y próxima fecha se validan de forma determinista.</p>
+        {recurring.isLoading?<div className="mt-3"><Loading/></div>:recurring.error?<div className="mt-3"><ErrorState error={recurring.error}/></div>:<div className="mt-3 space-y-2">{recurringRows.map(row=><div key={row.id} className="flex justify-between gap-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div><strong>{row.merchant}</strong><div className="text-xs text-[var(--muted)]">{cadenceLabel(row.cadence)} · próxima {row.next_expected_date} · confianza {Math.round(Number(row.confidence||0)*100)}%</div></div><strong><Money value={row.expected_amount}/></strong></div>)}</div>}
+      </Card>}
 
       <Card>
         <h2 className="font-bold">Movimientos fuera de tu patrón habitual</h2>
@@ -210,9 +233,9 @@ export default function AnalyticsPage(){
       </Card>
 
       <Card>
-        <h2 className="font-bold">Próximos 90 días</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">Incluye los 90 días posteriores al final del periodo seleccionado ({forecastStart||'—'}): obligaciones conocidas, recurrencias y estimaciones de categorías previsibles como alimentación, colegio, suministros, transporte o suscripciones.</p>
-        {calendar.error?<div className="mt-3"><ErrorState error={calendar.error}/></div>:<div className="mt-3 max-h-[560px] space-y-2 overflow-y-auto pr-1" tabIndex={0} role="region" aria-label="Previsión de los próximos 90 días">{events.length?events.slice(0,30).map(e=><div key={e.type+e.entity_id+e.date} className="flex justify-between gap-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div><strong>{e.title}</strong><div className="text-xs text-[var(--muted)]">{e.date} · {eventTypeLabel(e.type)}{e.confidence?' · '+Math.round(Number(e.confidence)*100)+'% confianza':''}</div>{e.basis&&<div className="mt-1 text-[11px] text-[var(--muted)]">{e.basis}</div>}</div>{e.amount&&<strong><Money value={e.amount}/></strong>}</div>):<EmptyState>No hay histórico suficiente ni compromisos registrados para proyectar los próximos 90 días.</EmptyState>}</div>}
+        <h2 className="font-bold">Próximos 30 días</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">Incluye los 30 días posteriores al final del periodo seleccionado ({forecastStart||'—'}): obligaciones conocidas, recurrencias y estimaciones de categorías previsibles como alimentación, colegio, suministros, transporte o suscripciones.</p>
+        {calendar.error?<div className="mt-3"><ErrorState error={calendar.error}/></div>:<div className="mt-3 max-h-[560px] space-y-2 overflow-y-auto pr-1" tabIndex={0} role="region" aria-label="Previsión de los próximos 30 días">{events.length?events.slice(0,30).map(e=><div key={e.type+e.entity_id+e.date} className="flex justify-between gap-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div><strong>{e.title}</strong><div className="text-xs text-[var(--muted)]">{e.date} · {eventTypeLabel(e.type)}{e.confidence?' · '+Math.round(Number(e.confidence)*100)+'% confianza':''}</div>{e.basis&&<div className="mt-1 text-[11px] text-[var(--muted)]">{e.basis}</div>}</div>{e.amount&&<strong><Money value={e.amount}/></strong>}</div>):<EmptyState>No hay histórico suficiente ni compromisos registrados para proyectar los próximos 30 días.</EmptyState>}</div>}
       </Card>
 
       <Card className="xl:col-span-2">
