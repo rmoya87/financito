@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .models import Account,Contract,ExtractedFact,FinancialGoal,Mortgage,Portfolio,Security
 from .models_extended import Asset,BackupRecord,CoverageFact,InsurancePolicy,Liability,MortgageProfileExtra,RepairIssue,Trade,TrackedAsset
-from .models_analytics import EntityLink
+from .models_analytics import EntityLink,EntitySnapshot
 from .schemas_extended import AssetCreate,AssetSimulationStart,BackupCreate,BackupRestore,ChatRequest,ContractCreate,CoverageCompareRequest,CoverageCreate,CorporateActionCreate,GoalCreate,GoalProgressUpdate,InsuranceCreate,InsuranceUpdate,LiabilityCreate,MortgageExtraUpdate,MortgageProfileCreate,MortgageProfileUpdate,PortfolioCreate,RagSearchRequest,SecurityCreate,StoredMortgagePrepaymentRequest,StoredMortgageRatePathRequest,StoredMortgageScenarioRequest,StressRequest,TaxEstimateRequest,TaxProfileUpdate,TrackedAssetCreate,TradeCreate
 from .domain.portfolio import apply_trade,portfolio_summary
 from .domain.engines import MortgageEngine,MortgagePrepaymentEngine,MortgageRatePathEngine
@@ -510,17 +510,42 @@ def wealth_details(db:Session=Depends(dbdep)):
         "currency":row.currency,
         "balance":str(row.current_balance),
     } for row in db.scalars(select(Account).order_by(Account.name)).all()]
-    assets=[{
-        "id":row.id,
-        "type":row.asset_type,
-        "name":row.name,
-        "value":str(row.current_value),
-        "currency":row.currency,
-        "valuation_date":row.valuation_date,
-        "valuation_source":row.valuation_source,
-        "ownership_type":row.ownership_type,
-        "ownership_percentage":str(row.ownership_percentage),
-    } for row in db.scalars(select(Asset).order_by(Asset.asset_type,Asset.name)).all()]
+    assets=[]
+    for row in db.scalars(select(Asset).order_by(Asset.asset_type,Asset.name)).all():
+        snapshots=db.scalars(select(EntitySnapshot).where(
+            EntitySnapshot.entity_type=="asset",
+            EntitySnapshot.entity_id==row.id,
+        ).order_by(EntitySnapshot.as_of_date.desc())).all()
+        previous_value=None;previous_date=None
+        for snapshot in snapshots:
+            if snapshot.as_of_date>=row.valuation_date:
+                continue
+            try:
+                values=json.loads(snapshot.values_json or "{}")
+                candidate=Decimal(str(values.get("value")))
+            except Exception:
+                continue
+            previous_value=candidate;previous_date=snapshot.as_of_date;break
+        change_amount=None;change_pct=None
+        if previous_value is not None:
+            change_amount=(row.current_value-previous_value).quantize(Decimal("0.01"))
+            if previous_value!=0:
+                change_pct=(change_amount/previous_value*Decimal("100")).quantize(Decimal("0.01"))
+        assets.append({
+            "id":row.id,
+            "type":row.asset_type,
+            "name":row.name,
+            "value":str(row.current_value),
+            "currency":row.currency,
+            "valuation_date":row.valuation_date,
+            "valuation_source":row.valuation_source,
+            "ownership_type":row.ownership_type,
+            "ownership_percentage":str(row.ownership_percentage),
+            "previous_value":None if previous_value is None else str(previous_value),
+            "previous_valuation_date":previous_date,
+            "change_amount":None if change_amount is None else str(change_amount),
+            "change_pct":None if change_pct is None else str(change_pct),
+        })
     liabilities=[{
         "id":row.id,
         "type":row.liability_type,
@@ -601,6 +626,19 @@ def add_liability(p:LiabilityCreate,db:Session=Depends(dbdep)):
     r=Liability(**p.model_dump());db.add(r);db.flush()
     record_snapshot(db,"liability",r.id,{"outstanding_amount":str(r.outstanding_amount),"ownership_percentage":str(r.ownership_percentage),"currency":r.currency},source="liability_created")
     db.commit();return {"id":r.id}
+
+@router.delete("/liabilities/{liability_id}")
+def delete_liability(liability_id:str,db:Session=Depends(dbdep)):
+    row=db.get(Liability,liability_id)
+    if not row:raise HTTPException(404,"Liability not found")
+    record_snapshot(db,"liability",row.id,{
+        "outstanding_amount":str(row.outstanding_amount),
+        "ownership_percentage":str(row.ownership_percentage),
+        "currency":row.currency,
+        "deleted":True,
+    },source="liability_deleted")
+    db.delete(row);db.commit()
+    return {"id":liability_id,"deleted":True}
 
 @router.get("/contracts")
 def contracts(db:Session=Depends(dbdep)):
