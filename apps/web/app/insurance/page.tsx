@@ -117,13 +117,14 @@ export default function InsurancePage(){
     onSuccess:(_,vars)=>{setManualMissing(prev=>({...prev,[vars.missing.policy_id+':'+vars.missing.field]:''}));refreshInsurance()},
   });
   const editPolicy=(p:Policy)=>{
+    const profile=profiles.data?.find(x=>x.id===p.id);
     setEditingPolicyId(p.id);setShowPolicyForm(true);
     setPolicyForm({
-      provider_name:p.contract?.provider_name||'',
+      provider_name:p.contract?.provider_name||profile?.provider_name||'',
       insurance_type:p.insurance_type,
       annual_premium:p.annual_premium,
       deductible:p.deductible||'',
-      policy_number_masked:'',
+      policy_number_masked:profile?.policy_number_masked||'',
       renewal_date:p.contract?.renewal_date||'',
       cancellation_notice_days:p.contract?.cancellation_notice_days===null||p.contract?.cancellation_notice_days===undefined?'':String(p.contract.cancellation_notice_days),
       early_exit_penalty:p.contract?.early_exit_penalty||'',
