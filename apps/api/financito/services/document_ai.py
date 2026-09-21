@@ -29,7 +29,7 @@ CONTRACT_FACT_KEYS = {
 MORTGAGE_FACT_KEYS = {
     "nominal_rate","apr_rate","reference_index","interest_type","differential_rate",
     "start_date","maturity_date","mortgage_term_years","rate_review_months","next_review_date",
-    "default_interest_rate_percent","opening_fee_percent",
+    "reference_index_lag_months","default_interest_rate_percent","opening_fee_percent",
     "early_repayment_fee_percent","subrogation_fee_percent","cancellation_fee_percent",
     "remaining_principal","monthly_payment","remaining_months",
 }
@@ -529,6 +529,7 @@ REGLAS OBLIGATORIAS:
 - En penalties incluye SOLO penalizaciones/comisiones reales de salida, cancelación, amortización anticipada, subrogación o novación expresamente descritas. Intereses de demora y costas de ejecución deben ir a risks/obligations y deben llamarse claramente responsabilidad o condición por incumplimiento, nunca coste de salida.
 - Si el documento dice un porcentaje máximo registral de demora, puedes proponer default_interest_rate_percent solo cuando el porcentaje aplicable/máximo esté explícito; nunca conviertas el importe de responsabilidad por intereses en una tasa.
 - Si aparece una fecha de vencimiento contractual explícita, propón maturity_date. Si aparece duración explícita, propón mortgage_term_years solo si el texto ya expresa años o la conversión desde meses es exacta e inequívoca.
+- Si el contrato especifica qué mes/publicación del índice se usa antes de la revisión (por ejemplo, el Euríbor publicado dos meses antes), propón reference_index_lag_months con ese número de meses. No lo deduzcas por práctica bancaria general.
 - No infieras TAE, diferencial, índice de referencia, comisión de amortización o subrogación a partir de una nota simple cuando no consten expresamente: deben quedar en missing_information.
 - En coverage_facts incluye SOLO coberturas explícitas del seguro, con página concreta. No inventes límites, franquicias, condiciones ni exclusiones ausentes.
 - Devuelve SOLO JSON válido.
