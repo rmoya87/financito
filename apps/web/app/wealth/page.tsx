@@ -9,6 +9,7 @@ import {Card} from '@/components/ui/card';
 import {Money,formatNumber} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
 import {EntityDocumentsModal} from '@/components/entity-documents-modal';
+import {DataStatus} from '@/components/data-status';
 
 type WealthSummary={
   accounts:string;manual_assets:string;investments:string;liabilities:string;mortgages:string;
@@ -266,6 +267,7 @@ export function WealthPage({mode='home'}:{mode?:'home'|'mortgage'}={}){
   if(mode==='home'){
     return <>
       <PageHeader title="Casa" description="Resumen de tu vivienda, hipoteca y seguros. Entra en cada apartado solo cuando necesites ver o modificar el detalle."/>
+      {home.data&&<div className="mb-4"><DataStatus label="Resumen calculado" detail="vivienda, hipoteca y seguros guardados" tone="calculated"/></div>}
       {details.isLoading||home.isLoading?<Loading/>:details.error?<ErrorState error={details.error}/>:home.error?<ErrorState error={home.error}/>:d&&home.data&&<>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <Metric label="Valor vivienda" value={home.data.property?.value||'0'} detail={home.data.property?'Última valoración guardada':'Sin valoración guardada'}/>
@@ -310,6 +312,11 @@ export function WealthPage({mode='home'}:{mode?:'home'|'mortgage'}={}){
 
   return <>
     <PageHeader title="Hipoteca" description="Deuda, cuota, condiciones, documentación, seguros vinculados y comparación de mercado de tu hipoteca."/>
+    {home.data&&<div className="mb-4 flex flex-wrap gap-2">
+      <DataStatus label="Datos guardados" detail={home.data.mortgage?'hipoteca vinculada a movimientos y cuenta':'sin hipoteca registrada'} tone={home.data.mortgage?'confirmed':'neutral'}/>
+      <DataStatus label={home.data.pending_review?.length?'Pendiente de confirmar':'Evidencia contractual'} detail={home.data.pending_review?.length?home.data.pending_review.length+' dato(s) localizado(s) sin validar':home.data.source_documents.length?home.data.source_documents.length+' documento(s) vinculados':'sin documentación vinculada'} tone={home.data.pending_review?.length?'pending':home.data.source_documents.length?'confirmed':'neutral'}/>
+      <DataStatus label="Cálculos actuales" detail="cuota, capital y estimaciones con datos vigentes" tone="calculated"/>
+    </div>}
 
     {details.isLoading?<Loading/>:details.error?<ErrorState error={details.error}/>:d&&<>
       <Card>

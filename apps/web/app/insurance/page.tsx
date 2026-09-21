@@ -9,6 +9,7 @@ import {Card} from '@/components/ui/card';
 import {Money} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
 import {EntityDocumentsModal} from '@/components/entity-documents-modal';
+import {DataStatus} from '@/components/data-status';
 
 type CoverageRequirement={id:string;insurance_type:string|null;coverage_type:string;minimum_limit:string|null;currency:string;notes:string|null;enabled:boolean};
 type Account={id:string;name:string;institution_name:string;account_type:string;current_balance:string;available_balance:string|null};
@@ -229,6 +230,11 @@ export default function InsurancePage(){
 
   return <>
     <PageHeader title="Seguros y coberturas" description="La fuente de verdad son tus documentos confirmados. Financito los cruza con movimientos, ingresos, coste, coberturas, duplicidades y productos vinculados antes de darte una conclusión."/>
+    {data&&<div className="mb-4 flex flex-wrap gap-2">
+      <DataStatus label="Evidencia contractual" detail={data.policies.length+' póliza(s) consolidadas'} tone={data.policies.length?'confirmed':'neutral'}/>
+      <DataStatus label={data.pending_review.length?'Pendiente de confirmar':'Sin pendientes materiales'} detail={data.pending_review.length?data.pending_review.length+' dato(s) encontrado(s) por validar':'evidencia material revisada'} tone={data.pending_review.length?'pending':'confirmed'}/>
+      <DataStatus label="Cruce calculado" detail="primas, movimientos, coberturas y vinculaciones" tone="calculated"/>
+    </div>}
 
     {verdict.isLoading?<Loading/>:verdict.error?<ErrorState error={verdict.error}/>:data&&<>
       <Card>
