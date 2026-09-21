@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from ..models import Transaction
 from .categorization import categorize_transaction, normalize_text
+from .payment_associations import apply_payment_rule_to_transaction
 
 
 @dataclass(frozen=True)
@@ -253,6 +254,7 @@ def import_csv(session: Session, account_id: str, content: bytes, source_ref: st
     occurrence_by_identity: dict[str, int] = defaultdict(int)
 
     inserted = duplicates = rejected = ignored = 0
+    inserted_transactions:list[Transaction]=[]
     duplicates_reference = duplicates_exact = duplicates_similar = 0
     detected_inflows = detected_outflows = 0
     detected_inflow_amount = Decimal("0")
@@ -357,9 +359,13 @@ def import_csv(session: Session, account_id: str, content: bytes, source_ref: st
             categorize_transaction(session, tx)
             session.add(tx)
             session.flush()
+            inserted_transactions.append(tx)
             inserted += 1
         except Exception:
             rejected += 1
+
+    for tx in sorted(inserted_transactions,key=lambda item:(item.booking_date,item.id)):
+        apply_payment_rule_to_transaction(session,tx)
 
     return ImportResult(
         inserted=inserted,

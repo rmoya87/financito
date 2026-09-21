@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date,timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -6,12 +6,13 @@ from sqlalchemy import delete,select
 
 from financito.db import SessionLocal
 from financito.models import Account,Contract,Document,ExtractedFact,Mortgage,Transaction
-from financito.models_analytics import EntityLink,EntitySnapshot,LinkedProduct
+from financito.models_analytics import EntityLink,EntitySnapshot,LinkedProduct,ProductPaymentRule
 from financito.models_extended import Asset,CoverageFact,InsurancePolicy,Liability,MortgagePaymentAllocation
 from financito.routes_extended import delete_insurance,delete_liability,link_mortgage_insurance,unlink_mortgage_insurance,wealth_details,wealth_home
 from financito.routes_transactions import link_transaction_insurance,link_transaction_mortgage,transaction_page,unlink_transaction_insurance,unlink_transaction_mortgage
 from financito.services.evidence import synchronize_all_document_evidence
 from financito.services.insurance_analysis import insurance_verdict
+from financito.services.imports import import_csv
 from financito.services.snapshots import record_snapshot
 
 
@@ -355,3 +356,167 @@ def test_manual_mortgage_balance_supersedes_previous_payment_adjustments_without
         assert db.get(Mortgage,mortgage.id).remaining_principal==Decimal("99550.0000")
 
         db.delete(tx);db.delete(mortgage);db.delete(account);db.commit()
+
+
+
+def test_insurance_payment_rule_backfills_same_concept_and_applies_future_imports():
+    suffix=uuid4().hex[:8]
+    concept=f"RECIBO SEGURO AUTO {suffix}"
+    normalized=concept.lower()
+    with SessionLocal() as db:
+        account=Account(
+            name=f"Cuenta seguro auto {suffix}",institution_name="Banco auto",
+            account_type="checking",currency="EUR",
+        )
+        contract=Contract(
+            provider_name=f"Aseguradora auto {suffix}",contract_type="insurance",
+            annual_cost=Decimal("360"),currency="EUR",evidence_status="manual",
+        )
+        db.add_all([account,contract]);db.flush()
+        policy=InsurancePolicy(
+            contract_id=contract.id,insurance_type="home",annual_premium=Decimal("360"),
+            currency="EUR",insured_object_json="{}",
+        )
+        db.add(policy);db.flush()
+        historical=Transaction(
+            account_id=account.id,booking_date=date.today()-timedelta(days=30),amount=Decimal("-120"),
+            currency="EUR",base_amount=Decimal("-120"),base_currency="EUR",
+            description_raw=concept,description_normalized=normalized,
+            merchant_raw=contract.provider_name,merchant_normalized=contract.provider_name.lower(),
+            category_id=None,categorization_method="manual",categorization_confidence=Decimal("1"),
+            user_verified=True,is_internal_transfer=False,is_recurring=True,is_extraordinary=False,
+            duplicate_fingerprint=uuid4().hex,source="test",
+        )
+        source=Transaction(
+            account_id=account.id,booking_date=date.today(),amount=Decimal("-120"),
+            currency="EUR",base_amount=Decimal("-120"),base_currency="EUR",
+            description_raw=concept,description_normalized=normalized,
+            merchant_raw=contract.provider_name,merchant_normalized=contract.provider_name.lower(),
+            category_id=None,categorization_method="manual",categorization_confidence=Decimal("1"),
+            user_verified=True,is_internal_transfer=False,is_recurring=True,is_extraordinary=False,
+            duplicate_fingerprint=uuid4().hex,source="test",
+        )
+        db.add_all([historical,source]);db.flush()
+
+        linked=link_transaction_insurance(source.id,policy.id,db)
+        assert linked["future_automatic"] is True
+        assert linked["linked_transactions"]==2
+        rule=db.scalar(select(ProductPaymentRule).where(
+            ProductPaymentRule.matcher_value==normalized
+        ))
+        assert rule is not None
+        assert rule.target_type=="insurance_policy"
+        assert rule.target_id==policy.id
+
+        verdict=insurance_verdict(db,use_ai=False)
+        policy_row=next(row for row in verdict["policies"] if row["id"]==policy.id)
+        assert policy_row["linked_payment_count"]==2
+
+        future_day=date.today()+timedelta(days=1)
+        csv=(
+            "Fecha;Concepto;Importe;Moneda;Comercio\n"
+            f"{future_day.isoformat()};{concept};-120;EUR;{contract.provider_name}\n"
+        ).encode()
+        imported=import_csv(db,account.id,csv,"auto-insurance-rule.csv")
+        assert imported.inserted==1
+        db.commit()
+
+        verdict=insurance_verdict(db,use_ai=False)
+        policy_row=next(row for row in verdict["policies"] if row["id"]==policy.id)
+        assert policy_row["linked_payment_count"]==3
+        assert Decimal(policy_row["linked_payments_last_365_total"])==Decimal("360.00")
+
+        tx_ids=db.scalars(select(Transaction.id).where(
+            Transaction.account_id==account.id,
+            Transaction.description_normalized==normalized,
+        )).all()
+        db.execute(delete(EntityLink).where(EntityLink.from_type=="transaction",EntityLink.from_id.in_(tx_ids)))
+        db.execute(delete(ProductPaymentRule).where(ProductPaymentRule.matcher_value==normalized))
+        db.execute(delete(Transaction).where(Transaction.id.in_(tx_ids)))
+        db.delete(policy);db.delete(contract);db.delete(account);db.commit()
+
+
+def test_mortgage_payment_rule_backfills_history_without_double_reducing_and_applies_future_imports():
+    suffix=uuid4().hex[:8]
+    concept=f"CUOTA HIPOTECA AUTO {suffix}"
+    normalized=concept.lower()
+    with SessionLocal() as db:
+        account=Account(
+            name=f"Cuenta hipoteca auto {suffix}",institution_name="Banco hipoteca auto",
+            account_type="checking",currency="EUR",
+        )
+        mortgage=Mortgage(
+            lender=f"Hipoteca auto {suffix}",remaining_principal=Decimal("100000"),
+            currency="EUR",interest_type="fixed",nominal_rate=Decimal("0.024"),
+            monthly_payment=Decimal("600"),remaining_months=240,
+        )
+        db.add_all([account,mortgage]);db.flush()
+        historical=Transaction(
+            account_id=account.id,booking_date=date.today()-timedelta(days=30),amount=Decimal("-600"),
+            currency="EUR",base_amount=Decimal("-600"),base_currency="EUR",
+            description_raw=concept,description_normalized=normalized,
+            merchant_raw=mortgage.lender,merchant_normalized=mortgage.lender.lower(),
+            category_id=None,categorization_method="manual",categorization_confidence=Decimal("1"),
+            user_verified=True,is_internal_transfer=False,is_recurring=True,is_extraordinary=False,
+            duplicate_fingerprint=uuid4().hex,source="test",
+        )
+        source=Transaction(
+            account_id=account.id,booking_date=date.today(),amount=Decimal("-600"),
+            currency="EUR",base_amount=Decimal("-600"),base_currency="EUR",
+            description_raw=concept,description_normalized=normalized,
+            merchant_raw=mortgage.lender,merchant_normalized=mortgage.lender.lower(),
+            category_id=None,categorization_method="manual",categorization_confidence=Decimal("1"),
+            user_verified=True,is_internal_transfer=False,is_recurring=True,is_extraordinary=False,
+            duplicate_fingerprint=uuid4().hex,source="test",
+        )
+        db.add_all([historical,source]);db.flush()
+
+        linked=link_transaction_mortgage(source.id,mortgage.id,db)
+        assert linked["future_automatic"] is True
+        assert linked["linked_transactions"]==2
+        assert linked["historical_transactions"]==1
+        assert db.get(Mortgage,mortgage.id).remaining_principal==Decimal("99600.0000")
+
+        allocations=db.scalars(select(MortgagePaymentAllocation).where(
+            MortgagePaymentAllocation.mortgage_id==mortgage.id
+        )).all()
+        assert len(allocations)==2
+        historical_allocation=next(row for row in allocations if row.transaction_id==historical.id)
+        source_allocation=next(row for row in allocations if row.transaction_id==source.id)
+        assert historical_allocation.applied_to_balance is False
+        assert source_allocation.applied_to_balance is True
+
+        future_day=date.today()+timedelta(days=1)
+        csv=(
+            "Fecha;Concepto;Importe;Moneda;Comercio\n"
+            f"{future_day.isoformat()};{concept};-600;EUR;{mortgage.lender}\n"
+        ).encode()
+        imported=import_csv(db,account.id,csv,"auto-mortgage-rule.csv")
+        assert imported.inserted==1
+        db.commit()
+
+        saved=db.get(Mortgage,mortgage.id)
+        assert saved.remaining_principal==Decimal("99199.2000")
+        future_tx=db.scalar(select(Transaction).where(
+            Transaction.account_id==account.id,
+            Transaction.booking_date==future_day,
+            Transaction.description_normalized==normalized,
+        ))
+        assert future_tx is not None
+        future_allocation=db.scalar(select(MortgagePaymentAllocation).where(
+            MortgagePaymentAllocation.transaction_id==future_tx.id
+        ))
+        assert future_allocation is not None
+        assert future_allocation.applied_to_balance is True
+        assert future_allocation.interest_amount==Decimal("199.2000")
+        assert future_allocation.principal_amount==Decimal("400.8000")
+
+        tx_ids=db.scalars(select(Transaction.id).where(
+            Transaction.account_id==account.id,
+            Transaction.description_normalized==normalized,
+        )).all()
+        db.execute(delete(MortgagePaymentAllocation).where(MortgagePaymentAllocation.transaction_id.in_(tx_ids)))
+        db.execute(delete(ProductPaymentRule).where(ProductPaymentRule.matcher_value==normalized))
+        db.execute(delete(EntitySnapshot).where(EntitySnapshot.entity_type=="mortgage",EntitySnapshot.entity_id==mortgage.id))
+        db.execute(delete(Transaction).where(Transaction.id.in_(tx_ids)))
+        db.delete(mortgage);db.delete(account);db.commit()

@@ -24,6 +24,7 @@ type Tx={
 };
 type TxPage={items:Tx[];total:number;page:number;page_size:number;pages:number};
 type Rule={id:string;matcher_type:string;matcher_value:string;category_id:string;priority:number;enabled:boolean};
+type PaymentRule={id:string;matcher_type:string;matcher_value:string;target_type:'insurance_policy'|'mortgage';target_id:string;enabled:boolean;source_transaction_id:string|null};
 type Split={amount:string;category_id:string;note:string};
 type ImportResult={
   inserted:number;duplicates:number;rejected:number;ignored?:number;duplicates_reference?:number;duplicates_exact?:number;
@@ -79,15 +80,18 @@ export default function TransactionsPage(){
     },
   });
   const rules=useQuery({queryKey:['transaction-rules'],queryFn:()=>apiGet<Rule[]>('/api/v1/transaction-rules')});
+  const paymentRules=useQuery({queryKey:['payment-association-rules'],queryFn:()=>apiGet<PaymentRule[]>('/api/v1/payment-association-rules')});
 
   const invalidateTransactions=()=>{
     ['transactions','dashboard','analytics-overview','month-end-forecast','cost-centers'].forEach(k=>qc.invalidateQueries({queryKey:[k]}));
   };
-  const invalidateInsurancePayments=()=>{
+  const invalidateProductPayments=()=>{
     invalidateTransactions();
     qc.invalidateQueries({queryKey:['insurance-verdict']});
     qc.invalidateQueries({queryKey:['wealth-details']});
     qc.invalidateQueries({queryKey:['wealth-home']});
+    qc.invalidateQueries({queryKey:['mortgages']});
+    qc.invalidateQueries({queryKey:['payment-association-rules']});
   };
 
   const upload=useMutation({
@@ -96,7 +100,7 @@ export default function TransactionsPage(){
       const form=new FormData();form.append('file',file);
       return apiUpload<ImportResult>('/api/v1/imports/statement?account_id='+encodeURIComponent(accountId),form);
     },
-    onSuccess:invalidateTransactions,
+    onSuccess:invalidateProductPayments,
   });
   const categoryMutation=useMutation({
     mutationFn:({id,category_id}:{id:string;category_id:string})=>apiMutate<{id:string;reclassified:number}>('/api/v1/transactions/'+id+'/review','POST',{category_id,create_rule:true,apply_to_existing:true}),
@@ -106,18 +110,13 @@ export default function TransactionsPage(){
     mutationFn:({transactionId,policyId}:{transactionId:string;policyId:string})=>policyId
       ?apiMutate('/api/v1/transactions/'+transactionId+'/insurance/'+policyId,'PUT')
       :apiMutate('/api/v1/transactions/'+transactionId+'/insurance','DELETE'),
-    onSuccess:invalidateInsurancePayments,
+    onSuccess:invalidateProductPayments,
   });
   const mortgageLink=useMutation({
     mutationFn:({transactionId,mortgageId}:{transactionId:string;mortgageId:string})=>mortgageId
       ?apiMutate('/api/v1/transactions/'+transactionId+'/mortgage/'+mortgageId,'PUT')
       :apiMutate('/api/v1/transactions/'+transactionId+'/mortgage','DELETE'),
-    onSuccess:()=>{
-      invalidateTransactions();
-      qc.invalidateQueries({queryKey:['mortgages']});
-      qc.invalidateQueries({queryKey:['wealth-home']});
-      qc.invalidateQueries({queryKey:['wealth-details']});
-    },
+    onSuccess:invalidateProductPayments,
   });
   const addRule=useMutation({
     mutationFn:()=>apiMutate<{id:string;reclassified:number}>('/api/v1/transaction-rules','POST',{...rule,enabled:true}),
@@ -134,6 +133,14 @@ export default function TransactionsPage(){
   const toggleRule=useMutation({
     mutationFn:(r:Rule)=>apiMutate('/api/v1/transaction-rules/'+r.id,'PATCH',{matcher_type:r.matcher_type,matcher_value:r.matcher_value,category_id:r.category_id,priority:r.priority,enabled:!r.enabled}),
     onSuccess:()=>{qc.invalidateQueries({queryKey:['transaction-rules']});invalidateTransactions()},
+  });
+  const delPaymentRule=useMutation({
+    mutationFn:(id:string)=>apiMutate('/api/v1/payment-association-rules/'+id,'DELETE'),
+    onSuccess:()=>qc.invalidateQueries({queryKey:['payment-association-rules']}),
+  });
+  const togglePaymentRule=useMutation({
+    mutationFn:(r:PaymentRule)=>apiMutate('/api/v1/payment-association-rules/'+r.id,'PATCH',{enabled:!r.enabled}),
+    onSuccess:()=>qc.invalidateQueries({queryKey:['payment-association-rules']}),
   });
   const aiCategorize=useMutation({
     mutationFn:()=>apiMutate<AIResult>('/api/v1/transactions/ai-categorize','POST',{limit:3000,llm_limit:80}),
@@ -217,7 +224,7 @@ export default function TransactionsPage(){
 
       <div className="mt-4 flex flex-wrap gap-2">
         <button className="fin-button secondary" onClick={()=>openRuleFor()}>Nueva regla</button>
-        <button className="fin-button secondary" onClick={()=>setRulesOpen(true)}>Ver reglas ({rules.data?.length??0})</button>
+        <button className="fin-button secondary" onClick={()=>setRulesOpen(true)}>Ver reglas ({(rules.data?.length??0)+(paymentRules.data?.length??0)})</button>
         <button className="fin-button secondary" onClick={()=>aiCategorize.mutate()} disabled={aiCategorize.isPending}>
           {aiCategorize.isPending?'Analizando con IA local…':'Mejorar categorización con IA local'}
         </button>
@@ -281,7 +288,7 @@ export default function TransactionsPage(){
                     <option value="">Sin vincular a seguro</option>
                     {insurance.data?.map(p=><option key={p.id} value={p.id}>{p.provider_name||insuranceLabel[p.insurance_type]||'Seguro'} · {insuranceLabel[p.insurance_type]||p.insurance_type}{p.policy_number_masked?' · '+p.policy_number_masked:''}</option>)}
                   </select>
-                  {t.linked_insurance_policy_id&&<div className="mt-1 text-[11px] font-medium text-[var(--brand)]">Pago vinculado</div>}
+                  {t.linked_insurance_policy_id&&<div className="mt-1 text-[11px] font-medium text-[var(--brand)]">Pago vinculado · mismo concepto automático</div>}
                 </div>:<span className="text-xs text-[var(--muted)]">—</span>}
               </td>
               <td className="min-w-[220px] py-3">
@@ -296,7 +303,7 @@ export default function TransactionsPage(){
                     <option value="">Sin vincular a hipoteca</option>
                     {mortgages.data?.map(m=><option key={m.id} value={m.id}>{m.lender} · {Number(m.remaining_principal).toLocaleString('es-ES')} {m.currency}</option>)}
                   </select>
-                  {t.linked_mortgage_id&&<div className="mt-1 text-[11px] font-medium text-[var(--brand)]">Cuota vinculada · capital actualizado</div>}
+                  {t.linked_mortgage_id&&<div className="mt-1 text-[11px] font-medium text-[var(--brand)]">Cuota vinculada · mismo concepto automático</div>}
                 </div>:<span className="text-xs text-[var(--muted)]">—</span>}
               </td>
               <td className="max-w-[260px] py-3 text-xs text-[var(--muted)]">
@@ -331,7 +338,7 @@ export default function TransactionsPage(){
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-bold">Reglas automáticas</h2>
-            <p className="mt-1 text-sm text-[var(--muted)]">Las reglas manuales se aplican a movimientos futuros. Cuando corriges una categoría desde la tabla, la regla de concepto exacto también actualiza todo el histórico con ese mismo concepto.</p>
+            <p className="mt-1 text-sm text-[var(--muted)]">Aquí puedes revisar tanto las reglas de categorización como las vinculaciones automáticas de pagos. Al asociar un concepto a un seguro o hipoteca, Financito aprende ese concepto para los movimientos futuros.</p>
           </div>
           <button className="text-sm underline" onClick={()=>setRulesOpen(false)}>Cerrar</button>
         </div>
@@ -355,7 +362,7 @@ export default function TransactionsPage(){
         {addRule.error&&<div className="mt-3"><ErrorState error={addRule.error}/></div>}
 
         <div className="mt-6 border-t border-[var(--border)] pt-4">
-          <h3 className="font-semibold">Reglas guardadas</h3>
+          <h3 className="font-semibold">Reglas de categorización</h3>
           <div className="mt-3 space-y-2">{rules.data?.length?rules.data.map(r=>{
             const category=categoryById.get(r.category_id);
             return <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm">
@@ -363,6 +370,23 @@ export default function TransactionsPage(){
               <div className="flex gap-3"><button className="text-xs underline" onClick={()=>toggleRule.mutate(r)}>{r.enabled?'Pausar':'Activar'}</button><button className="text-xs underline" onClick={()=>delRule.mutate(r.id)}>Eliminar</button></div>
             </div>
           }):<EmptyState>No hay reglas automáticas.</EmptyState>}</div>
+        </div>
+
+        <div className="mt-6 border-t border-[var(--border)] pt-4">
+          <h3 className="font-semibold">Vinculaciones automáticas de pagos</h3>
+          <p className="mt-1 text-xs text-[var(--muted)]">Se crean al vincular un movimiento a un seguro o una hipoteca. Pausar una regla detiene las vinculaciones futuras sin borrar las ya realizadas.</p>
+          <div className="mt-3 space-y-2">{paymentRules.data?.length?paymentRules.data.map(r=>{
+            const policy=insurance.data?.find(p=>p.id===r.target_id);
+            const mortgage=mortgages.data?.find(m=>m.id===r.target_id);
+            const target=r.target_type==='insurance_policy'
+              ?(policy?(policy.provider_name||insuranceLabel[policy.insurance_type]||'Seguro')+' · '+(insuranceLabel[policy.insurance_type]||policy.insurance_type):'Seguro eliminado')
+              :(mortgage?mortgage.lender:'Hipoteca eliminada');
+            return <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm">
+              <div><strong>{r.matcher_value}</strong><div className="text-xs text-[var(--muted)]">Concepto exacto → {target}</div></div>
+              <div className="flex gap-3"><button className="text-xs underline" onClick={()=>togglePaymentRule.mutate(r)}>{r.enabled?'Pausar':'Activar'}</button><button className="text-xs underline" onClick={()=>delPaymentRule.mutate(r.id)}>Eliminar regla</button></div>
+            </div>;
+          }):<EmptyState>No hay vinculaciones automáticas de pagos.</EmptyState>}</div>
+          {(delPaymentRule.error||togglePaymentRule.error)&&<div className="mt-3"><ErrorState error={(delPaymentRule.error||togglePaymentRule.error)!}/></div>}
         </div>
       </div>
     </div>}

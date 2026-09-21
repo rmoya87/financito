@@ -25,6 +25,17 @@ class TransactionRule(Base,TimestampMixin):
     matcher_value:Mapped[str]=mapped_column(String(255))
     category_id:Mapped[str]=mapped_column(ForeignKey("category.id"))
     enabled:Mapped[bool]=mapped_column(Boolean,default=True)
+class ProductPaymentRule(Base,TimestampMixin):
+    __tablename__="product_payment_rule"
+    __table_args__=(UniqueConstraint("matcher_type","matcher_value",name="uq_product_payment_rule_matcher"),)
+    id:Mapped[str]=mapped_column(String(36),primary_key=True,default=uuid_str)
+    matcher_type:Mapped[str]=mapped_column(String(30),default="description_exact")
+    matcher_value:Mapped[str]=mapped_column(String(255),index=True)
+    target_type:Mapped[str]=mapped_column(String(60),index=True)
+    target_id:Mapped[str]=mapped_column(String(36),index=True)
+    enabled:Mapped[bool]=mapped_column(Boolean,default=True)
+    source_transaction_id:Mapped[str|None]=mapped_column(ForeignKey("transaction.id",ondelete="SET NULL"),nullable=True,index=True)
+
 class TransactionSplit(Base,TimestampMixin):
     __tablename__="transaction_split"
     id:Mapped[str]=mapped_column(String(36),primary_key=True,default=uuid_str)

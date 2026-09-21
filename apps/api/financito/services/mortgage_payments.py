@@ -26,7 +26,7 @@ def reconcile_manual_balance(session:Session,mortgage_id:str)->int:
     return len(rows)
 
 
-def link_payment(session:Session,transaction_id:str,mortgage_id:str)->MortgagePaymentAllocation:
+def link_payment(session:Session,transaction_id:str,mortgage_id:str,apply_to_balance:bool=True)->MortgagePaymentAllocation:
     tx=session.get(Transaction,transaction_id)
     mortgage=session.get(Mortgage,mortgage_id)
     if tx is None:
@@ -40,7 +40,7 @@ def link_payment(session:Session,transaction_id:str,mortgage_id:str)->MortgagePa
         MortgagePaymentAllocation.transaction_id==transaction_id
     ))
     if existing is not None:
-        if existing.mortgage_id==mortgage_id:
+        if existing.mortgage_id==mortgage_id and existing.applied_to_balance==apply_to_balance:
             return existing
         unlink_payment(session,transaction_id)
         mortgage=session.get(Mortgage,mortgage_id)
@@ -53,7 +53,7 @@ def link_payment(session:Session,transaction_id:str,mortgage_id:str)->MortgagePa
     estimated_interest=_money(balance_before*rate/Decimal("12"))
     interest=_money(min(payment,estimated_interest))
     principal=_money(min(balance_before,max(Decimal("0"),payment-interest)))
-    balance_after=_money(max(Decimal("0"),balance_before-principal))
+    balance_after=_money(max(Decimal("0"),balance_before-principal)) if apply_to_balance else balance_before
 
     row=MortgagePaymentAllocation(
         mortgage_id=mortgage_id,
@@ -64,13 +64,15 @@ def link_payment(session:Session,transaction_id:str,mortgage_id:str)->MortgagePa
         currency=tx.currency,
         balance_before=balance_before,
         balance_after=balance_after,
-        applied_to_balance=True,
+        applied_to_balance=apply_to_balance,
         calculation_method="estimated_nominal_monthly_rate",
     )
     session.add(row)
-    mortgage.remaining_principal=balance_after
+    if apply_to_balance:
+        mortgage.remaining_principal=balance_after
     session.flush()
-    record_snapshot(session,"mortgage",mortgage.id,{
+    if apply_to_balance:
+        record_snapshot(session,"mortgage",mortgage.id,{
         "remaining_principal":str(mortgage.remaining_principal),
         "nominal_rate":str(mortgage.nominal_rate),
         "monthly_payment":str(mortgage.monthly_payment),
@@ -79,7 +81,7 @@ def link_payment(session:Session,transaction_id:str,mortgage_id:str)->MortgagePa
         "linked_transaction_id":transaction_id,
         "principal_component":str(principal),
         "interest_component":str(interest),
-    },as_of=tx.booking_date,source="mortgage_payment_linked")
+        },as_of=tx.booking_date,source="mortgage_payment_linked")
     return row
 
 

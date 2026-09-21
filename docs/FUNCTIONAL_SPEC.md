@@ -1000,3 +1000,19 @@ En **Casa > Capital pendiente**, cuando consta el capital inicial, se muestra el
 - La operación es reversible: al desvincular una cuota que todavía está aplicada al saldo, se repone únicamente el principal que había reducido la deuda.
 - Si el usuario corrige manualmente el capital pendiente, ese valor pasa a ser la nueva referencia. Las cuotas ya registradas se conservan como histórico, pero dejan de volver a alterar el saldo para evitar dobles descuentos.
 - El desglose de interés es una estimación basada en el TIN vigente guardado. Si el banco proporciona un reparto exacto capital/interés o el usuario corrige el saldo, prevalece la referencia confirmada.
+
+
+## Aprendizaje automático de pagos vinculados por concepto
+
+- Al vincular manualmente un movimiento a una **póliza** o **hipoteca**, Financito crea o actualiza una regla persistente por **concepto normalizado exacto** (`description_exact`).
+- En ese mismo momento se revisan los movimientos existentes con el mismo concepto:
+  - En seguros, todos los cargos equivalentes quedan asociados a la misma póliza.
+  - En hipotecas, los cargos históricos quedan asociados y visibles en **Transacciones**, pero no vuelven a reducir el capital pendiente ya informado. El movimiento elegido manualmente sí aplica su componente de principal.
+- En importaciones posteriores, cualquier cargo nuevo que coincida con la regla se vincula automáticamente al mismo producto.
+  - Seguro: aparece directamente como pago de la póliza.
+  - Hipoteca: se calcula cuota/interés/principal y solo el principal actualiza el saldo.
+- Un backfill cuya fecha sea anterior a la fecha de creación de la regla se vincula como histórico y no altera el saldo hipotecario; esto evita descontar dos veces cuotas que ya estaban reflejadas en el capital pendiente.
+- Una misma regla de concepto apunta a un único producto de pago. Si el usuario reasocia ese concepto a otra póliza o hipoteca, la regla se actualiza y las coincidencias existentes se realinean.
+- Desvincular un movimiento concreto no elimina la regla aprendida: ese movimiento queda como excepción manual y los futuros movimientos del mismo concepto siguen automatizados. Volver a vincular manualmente un movimiento de ese concepto reafirma la regla para las coincidencias existentes.
+- Las reglas aprendidas se muestran en **Movimientos > Ver reglas > Vinculaciones automáticas de pagos**. Se pueden pausar/activar o eliminar sin borrar las asociaciones históricas ya realizadas.
+- Al eliminar una póliza o hipoteca también se eliminan sus reglas automáticas de pago para evitar asociaciones futuras a productos inexistentes.

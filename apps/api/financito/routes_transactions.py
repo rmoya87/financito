@@ -6,7 +6,7 @@ from fastapi import APIRouter,Depends,HTTPException,Query
 from sqlalchemy import String,cast,delete,func,or_,select
 from sqlalchemy.orm import Session
 from .db import SessionLocal
-from .models_analytics import EntityLink,TransactionRule,TransactionSplit
+from .models_analytics import EntityLink,ProductPaymentRule,TransactionRule,TransactionSplit
 from .services.transaction_ops import apply_category_semantics,apply_rules_to_unverified,detect_internal_transfers,detect_refunds,pair_internal_transfer_counterpart,set_category_for_same_concept,set_splits
 from .services.forecast_accuracy import evaluate as forecast_evaluate
 from .services.financial_analytics import overview as analytics_overview
@@ -14,7 +14,8 @@ from .services.ai_categorization import improve_categorization
 from .models import CategorizationAudit,Category,Mortgage,Transaction
 from .models_extended import InsurancePolicy,MortgagePaymentAllocation
 from .services.categorization import normalize_text,propagate_verified_merchant
-from .services.mortgage_payments import link_payment as link_mortgage_payment,unlink_payment as unlink_mortgage_payment
+from .services.mortgage_payments import unlink_payment as unlink_mortgage_payment
+from .services.payment_associations import learn_and_apply_payment_rule,payment_rule_for_transaction
 router=APIRouter(prefix="/api/v1")
 def dbdep():
     s=SessionLocal()
@@ -22,6 +23,8 @@ def dbdep():
     finally:s.close()
 class RuleIn(BaseModel):
     matcher_type:str=Field(pattern="^(contains|merchant_exact|description_exact|regex)$");matcher_value:str=Field(min_length=1,max_length=255);category_id:str;priority:int=100;enabled:bool=True
+class PaymentRuleUpdate(BaseModel):
+    enabled:bool
 class ReviewDecisionIn(BaseModel):
     category_id:str
     create_rule:bool=True
@@ -73,69 +76,108 @@ def review_transaction(transaction_id:str,p:ReviewDecisionIn,db:Session=Depends(
     learned=0
     db.commit()
     return {"id":tx.id,"rule_id":rule_id,"learned":learned,"reclassified":reclassified,"concept_rule_available":bool(concept)}
+@router.get("/payment-association-rules")
+def payment_association_rules(db:Session=Depends(dbdep)):
+    return [{
+        "id":row.id,
+        "matcher_type":row.matcher_type,
+        "matcher_value":row.matcher_value,
+        "target_type":row.target_type,
+        "target_id":row.target_id,
+        "enabled":row.enabled,
+        "source_transaction_id":row.source_transaction_id,
+    } for row in db.scalars(select(ProductPaymentRule).order_by(ProductPaymentRule.created_at.desc())).all()]
+
+@router.patch("/payment-association-rules/{rule_id}")
+def update_payment_association_rule(rule_id:str,p:PaymentRuleUpdate,db:Session=Depends(dbdep)):
+    row=db.get(ProductPaymentRule,rule_id)
+    if not row:raise HTTPException(404,"Payment association rule not found")
+    row.enabled=p.enabled
+    db.commit()
+    return {"id":row.id,"enabled":row.enabled}
+
+@router.delete("/payment-association-rules/{rule_id}")
+def delete_payment_association_rule(rule_id:str,db:Session=Depends(dbdep)):
+    row=db.get(ProductPaymentRule,rule_id)
+    if not row:raise HTTPException(404,"Payment association rule not found")
+    db.delete(row);db.commit()
+    return {"id":rule_id,"deleted":True}
+
 @router.put("/transactions/{transaction_id}/insurance/{policy_id}")
 def link_transaction_insurance(transaction_id:str,policy_id:str,db:Session=Depends(dbdep)):
-    tx=db.get(Transaction,transaction_id)
-    if not tx:raise HTTPException(404,"Transaction not found")
-    if not db.get(InsurancePolicy,policy_id):raise HTTPException(404,"Insurance policy not found")
-    if tx.is_internal_transfer or tx.amount>=0:
-        raise HTTPException(400,"Solo se pueden vincular cargos de gasto a una póliza")
-    db.execute(delete(EntityLink).where(
-        EntityLink.from_type=="transaction",
-        EntityLink.from_id==transaction_id,
-        EntityLink.relation_type=="payment_for",
-        EntityLink.to_type=="insurance_policy",
-    ))
-    db.add(EntityLink(
-        from_type="transaction",from_id=transaction_id,relation_type="payment_for",
-        to_type="insurance_policy",to_id=policy_id,confidence=Decimal("1"),
-        source_type="user",source_ref=transaction_id,
-    ))
+    try:
+        result=learn_and_apply_payment_rule(db,transaction_id,"insurance_policy",policy_id)
+    except LookupError as exc:
+        db.rollback();raise HTTPException(404,str(exc))
+    except ValueError as exc:
+        db.rollback();raise HTTPException(400,str(exc))
     db.commit()
-    return {"transaction_id":transaction_id,"insurance_policy_id":policy_id,"linked":True}
+    return {
+        "transaction_id":transaction_id,
+        "insurance_policy_id":policy_id,
+        "linked":True,
+        **result,
+    }
 
 @router.delete("/transactions/{transaction_id}/insurance")
 def unlink_transaction_insurance(transaction_id:str,db:Session=Depends(dbdep)):
-    if not db.get(Transaction,transaction_id):raise HTTPException(404,"Transaction not found")
+    tx=db.get(Transaction,transaction_id)
+    if not tx:raise HTTPException(404,"Transaction not found")
     deleted=db.execute(delete(EntityLink).where(
         EntityLink.from_type=="transaction",
         EntityLink.from_id==transaction_id,
         EntityLink.relation_type=="payment_for",
         EntityLink.to_type=="insurance_policy",
     )).rowcount or 0
+    retained=payment_rule_for_transaction(db,tx)
     db.commit()
-    return {"transaction_id":transaction_id,"insurance_policy_id":None,"linked":False,"deleted":deleted}
+    return {
+        "transaction_id":transaction_id,
+        "insurance_policy_id":None,
+        "linked":False,
+        "deleted":deleted,
+        "future_rule_retained":retained is not None,
+        "rule_id":None if retained is None else retained.id,
+    }
 
 @router.put("/transactions/{transaction_id}/mortgage/{mortgage_id}")
 def link_transaction_mortgage(transaction_id:str,mortgage_id:str,db:Session=Depends(dbdep)):
-    if not db.get(Transaction,transaction_id):raise HTTPException(404,"Transaction not found")
-    if not db.get(Mortgage,mortgage_id):raise HTTPException(404,"Mortgage not found")
     try:
-        row=link_mortgage_payment(db,transaction_id,mortgage_id)
+        result=learn_and_apply_payment_rule(db,transaction_id,"mortgage",mortgage_id)
+    except LookupError as exc:
+        db.rollback();raise HTTPException(404,str(exc))
     except ValueError as exc:
         db.rollback();raise HTTPException(400,str(exc))
+    row=db.scalar(select(MortgagePaymentAllocation).where(
+        MortgagePaymentAllocation.transaction_id==transaction_id
+    ))
     db.commit()
     return {
         "transaction_id":transaction_id,
         "mortgage_id":mortgage_id,
         "linked":True,
-        "payment_amount":str(row.payment_amount),
-        "principal_amount":str(row.principal_amount),
-        "interest_amount":str(row.interest_amount),
-        "balance_after":str(row.balance_after),
-        "applied_to_balance":row.applied_to_balance,
+        "payment_amount":None if row is None else str(row.payment_amount),
+        "principal_amount":None if row is None else str(row.principal_amount),
+        "interest_amount":None if row is None else str(row.interest_amount),
+        "balance_after":None if row is None else str(row.balance_after),
+        "applied_to_balance":False if row is None else row.applied_to_balance,
+        **result,
     }
 
 @router.delete("/transactions/{transaction_id}/mortgage")
 def unlink_transaction_mortgage(transaction_id:str,db:Session=Depends(dbdep)):
-    if not db.get(Transaction,transaction_id):raise HTTPException(404,"Transaction not found")
+    tx=db.get(Transaction,transaction_id)
+    if not tx:raise HTTPException(404,"Transaction not found")
     row=unlink_mortgage_payment(db,transaction_id)
+    retained=payment_rule_for_transaction(db,tx)
     db.commit()
     return {
         "transaction_id":transaction_id,
         "mortgage_id":None if row is None else row.mortgage_id,
         "linked":False,
         "restored_principal":None if row is None or not row.applied_to_balance else str(row.principal_amount),
+        "future_rule_retained":retained is not None,
+        "rule_id":None if retained is None else retained.id,
     }
 
 @router.post("/transactions/detect-transfers")

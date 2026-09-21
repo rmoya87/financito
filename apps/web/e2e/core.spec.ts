@@ -200,7 +200,13 @@ test('Movimientos vincula una cuota hipotecaria y solo descuenta capital',async(
   const mortgageOptionValue=await mortgageSelect.locator('option').filter({hasText:'Hipoteca E2E'}).getAttribute('value');
   expect(mortgageOptionValue).toBeTruthy();
   await mortgageSelect.selectOption(mortgageOptionValue!);
-  await expect(page.getByText('Cuota vinculada · capital actualizado',{exact:true})).toBeVisible();
+  await expect(page.getByText('Cuota vinculada · mismo concepto automático',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:/Ver reglas/}).click();
+  const rulesDialog=page.getByRole('dialog',{name:'Reglas automáticas'});
+  await expect(rulesDialog.getByRole('heading',{name:'Vinculaciones automáticas de pagos'})).toBeVisible();
+  await expect(rulesDialog.getByText('cuota hipoteca vinculada e2e',{exact:true})).toBeVisible();
+  await expect(rulesDialog.getByText(/Concepto exacto → Hipoteca E2E/)).toBeVisible();
+  await rulesDialog.getByRole('button',{name:'Cerrar'}).click();
 
   await page.goto('/wealth/');
   const mortgagePicker=page.getByRole('combobox',{name:'Hipoteca seleccionada'});

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .models import Account,Contract,Document,ExtractedFact,FinancialGoal,Mortgage,Portfolio,Security
 from .models_extended import Asset,BackupRecord,CoverageFact,InsurancePolicy,Liability,MortgageProfileExtra,RepairIssue,Trade,TrackedAsset
-from .models_analytics import EntityLink,EntitySnapshot,LinkedProduct
+from .models_analytics import EntityLink,EntitySnapshot,LinkedProduct,ProductPaymentRule
 from .schemas_extended import AssetCreate,AssetSimulationStart,BackupCreate,BackupRestore,ChatRequest,ContractCreate,CoverageCompareRequest,CoverageCreate,CorporateActionCreate,GoalCreate,GoalProgressUpdate,InsuranceCreate,InsuranceUpdate,LiabilityCreate,MortgageExtraUpdate,MortgageProfileCreate,MortgageProfileUpdate,PortfolioCreate,RagSearchRequest,SecurityCreate,StoredMortgagePrepaymentRequest,StoredMortgageRatePathRequest,StoredMortgageScenarioRequest,StressRequest,TaxEstimateRequest,TaxProfileUpdate,TrackedAssetCreate,TradeCreate
 from .domain.portfolio import apply_trade,portfolio_summary
 from .domain.engines import MortgageEngine,MortgagePrepaymentEngine,MortgageRatePathEngine
@@ -182,6 +182,11 @@ def delete_mortgage(mortgage_id:str,db:Session=Depends(dbdep)):
         db.delete(link)
     extra=db.scalar(select(MortgageProfileExtra).where(MortgageProfileExtra.mortgage_id==mortgage_id))
     if extra is not None:db.delete(extra)
+    for payment_rule in db.scalars(select(ProductPaymentRule).where(
+        ProductPaymentRule.target_type=="mortgage",
+        ProductPaymentRule.target_id==mortgage_id,
+    )).all():
+        db.delete(payment_rule)
     record_snapshot(db,"mortgage",row.id,{
         "remaining_principal":str(row.remaining_principal),
         "nominal_rate":str(row.nominal_rate),
@@ -972,6 +977,11 @@ def delete_insurance(policy_id:str,db:Session=Depends(dbdep)):
         EntityLink.to_id==policy_id,
     )).all():
         db.delete(payment_link)
+    for payment_rule in db.scalars(select(ProductPaymentRule).where(
+        ProductPaymentRule.target_type=="insurance_policy",
+        ProductPaymentRule.target_id==policy_id,
+    )).all():
+        db.delete(payment_rule)
     db.delete(row);db.flush()
     if contract_id:
         contract=db.get(Contract,contract_id)
