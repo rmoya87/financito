@@ -125,3 +125,8 @@ Las pruebas cubren:
 - borrado de una hipoteca manteniendo intactos los documentos y eliminando únicamente sus vínculos;
 - alta, edición y borrado de pólizas con categoría y datos contractuales;
 - filtrado de documentos por entidad para que una hipoteca o seguro no muestre archivos de otro producto.
+
+
+## Recurrentes, previsión y cuentas locales
+
+La regresión incluye cobertura para detección determinista de una serie mensual con al menos tres cargos, expansión de recurrentes dentro del horizonte de 90 días, previsión mensual por categorías estables a partir de histórico real, modificación de un saldo manual (incluido un caso de 40.000 €) y bloqueo de la edición manual del saldo de una cuenta conectada, cuyo saldo debe seguir procediendo de PSD2.

@@ -7,7 +7,7 @@ import {Bar,BarChart,CartesianGrid,Cell,Legend,Line,LineChart,ResponsiveContaine
 import {apiGet,apiMutate} from '@/lib/api';
 import {PageHeader} from '@/components/page-header';
 import {Card} from '@/components/ui/card';
-import {Money} from '@/components/ui/money';
+import {Money,formatNumber} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
 
 type Rec={id:string;merchant:string;cadence:string;expected_amount:string;next_expected_date:string;confidence:string};
@@ -16,8 +16,8 @@ type Anom={
   transaction?:null|{booking_date:string;description:string;merchant:string|null;amount:string;currency:string;category_id:string|null};
   baseline?:{typical_amount?:string;difference?:string;difference_pct?:string|null}
 };
-type Recon={issues?:{type:string;count:number;severity:string}[]};
-type Cal={events?:{date:string;type:string;title:string;amount:string|null;entity_id:string}[]};
+type Recon={issues?:{type:string;label?:string;count:number;severity:string;detail?:string;action_href?:string}[]};
+type Cal={events?:{date:string;type:string;title:string;amount:string|null;entity_id:string;confidence?:string;basis?:string;category?:string}[]};
 type Stress={monthly_income_after_shock:string;monthly_net:string;ending_liquidity:string;cash_runway_months:string|null;portfolio_after_shock:string};
 type Overview={
   period?:{start:string;end:string};
@@ -83,6 +83,12 @@ export default function AnalyticsPage(){
   const accuracy=monthEnd.data?.accuracy;
   const forecastRemaining=monthEnd.data?.forecast_remaining;
 
+  const cadenceLabel=(value:string)=>({weekly:'semanal',monthly:'mensual',quarterly:'trimestral',annual:'anual'}[value]||value);
+  const eventTypeLabel=(value:string)=>({
+    commitment:'Compromiso conocido',renewal:'Renovación contractual',goal:'Objetivo',
+    recurring:'Recurrente detectado',historical_pattern:'Previsión por histórico',
+  }[value]||value);
+
   return <>
     <PageHeader title="Análisis y resiliencia" description="Ingresos, gasto, ahorro, previsiones y patrones. Si una fuente falla, el resto de la página sigue disponible."/>
 
@@ -96,7 +102,7 @@ export default function AnalyticsPage(){
       <Card className="xl:col-span-2">
         <h2 className="font-bold">Ingresos, gasto y ahorro</h2>
         {overview.isLoading?<div className="mt-4"><Loading/></div>:overview.error?<div className="mt-4"><ErrorState error={overview.error}/></div>:monthly.length?
-          <div className="mt-4 h-72"><ResponsiveContainer width="100%" height="100%"><LineChart data={monthly}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="period"/><YAxis/><Tooltip/><Legend/><Line type="monotone" dataKey="income" name="Ingresos" stroke="var(--chart-income)" strokeWidth={3} dot={false}/><Line type="monotone" dataKey="expenses" name="Gastos" stroke="var(--chart-expenses)" strokeWidth={3} dot={false}/><Line type="monotone" dataKey="savings" name="Ahorro" stroke="var(--chart-savings)" strokeWidth={3} dot={false}/></LineChart></ResponsiveContainer></div>:
+          <div className="mt-4 h-72"><ResponsiveContainer width="100%" height="100%"><LineChart data={monthly}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="period"/><YAxis tickFormatter={(value)=>formatNumber(value,0,0)}/><Tooltip/><Legend/><Line type="monotone" dataKey="income" name="Ingresos" stroke="var(--chart-income)" strokeWidth={3} dot={false}/><Line type="monotone" dataKey="expenses" name="Gastos" stroke="var(--chart-expenses)" strokeWidth={3} dot={false}/><Line type="monotone" dataKey="savings" name="Ahorro" stroke="var(--chart-savings)" strokeWidth={3} dot={false}/></LineChart></ResponsiveContainer></div>:
           <EmptyState>Importa histórico para ver la evolución.</EmptyState>}
       </Card>
 
@@ -119,7 +125,7 @@ export default function AnalyticsPage(){
 
       <Card>
         <h2 className="font-bold">Estructura del gasto</h2>
-        {mix.length?<div className="mt-4 h-64"><ResponsiveContainer width="100%" height="100%"><BarChart data={mix}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="name"/><YAxis/><Tooltip/><Bar dataKey="amount" name="€">{mix.map((x,i)=><Cell key={x.name} fill={['var(--chart-fixed)','var(--chart-variable)','var(--chart-essential)','var(--chart-discretionary)'][i%4]}/>)}</Bar></BarChart></ResponsiveContainer></div>:<EmptyState>Sin datos suficientes.</EmptyState>}
+        {mix.length?<div className="mt-4 h-64"><ResponsiveContainer width="100%" height="100%"><BarChart data={mix}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="name"/><YAxis tickFormatter={(value)=>formatNumber(value,0,0)}/><Tooltip/><Bar dataKey="amount" name="€">{mix.map((x,i)=><Cell key={x.name} fill={['var(--chart-fixed)','var(--chart-variable)','var(--chart-essential)','var(--chart-discretionary)'][i%4]}/>)}</Bar></BarChart></ResponsiveContainer></div>:<EmptyState>Sin datos suficientes.</EmptyState>}
       </Card>
 
       <Card>
@@ -129,7 +135,8 @@ export default function AnalyticsPage(){
 
       <Card>
         <h2 className="font-bold">Recurrentes</h2>
-        {recurring.error?<div className="mt-3"><ErrorState error={recurring.error}/></div>:<div className="mt-3 space-y-2">{recurringRows.length?recurringRows.map(row=><div key={row.id} className="flex justify-between rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div><strong>{row.merchant}</strong><div className="text-xs text-[var(--muted)]">{row.cadence} · próxima {row.next_expected_date}</div></div><Money value={row.expected_amount}/></div>):<EmptyState>Sin patrones recurrentes detectados.</EmptyState>}</div>}
+        <p className="mt-1 text-sm text-[var(--muted)]">Se detectan por fechas e importes repetidos. El recálculo completo usa además la IA local para unir conceptos que cambian de referencia o comercio y después valida matemáticamente el patrón.</p>
+        {recurring.error?<div className="mt-3"><ErrorState error={recurring.error}/></div>:<div className="mt-3 space-y-2">{recurringRows.length?recurringRows.map(row=><div key={row.id} className="flex justify-between gap-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div><strong>{row.merchant}</strong><div className="text-xs text-[var(--muted)]">{cadenceLabel(row.cadence)} · próxima {row.next_expected_date} · confianza {Math.round(Number(row.confidence||0)*100)}%</div></div><strong><Money value={row.expected_amount}/></strong></div>):<EmptyState>No se han validado patrones recurrentes todavía. Importa histórico suficiente o pulsa “Recalcular patrones”.</EmptyState>}</div>}
       </Card>
 
       <Card>
@@ -148,13 +155,15 @@ export default function AnalyticsPage(){
       </Card>
 
       <Card>
-        <h2 className="font-bold">Calidad y reconciliación</h2>
-        {recon.error?<div className="mt-3"><ErrorState error={recon.error}/></div>:<div className="mt-3 space-y-2">{issues.length?issues.map(issue=><div key={issue.type} className="flex justify-between rounded-xl bg-[var(--surface-2)] p-3 text-sm"><span>{issue.type.replaceAll('_',' ')}</span><strong>{issue.count}</strong></div>):<EmptyState>Sin problemas de calidad detectados.</EmptyState>}</div>}
+        <h2 className="font-bold">Calidad de los datos</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">Aquí no se analiza si gastas bien o mal: solo si faltan datos, hay clasificaciones dudosas, documentos conflictivos o cuentas bancarias sin actualizar.</p>
+        {recon.error?<div className="mt-3"><ErrorState error={recon.error}/></div>:<div className="mt-3 space-y-2">{issues.length?issues.map(issue=><div key={issue.type} className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="flex items-start justify-between gap-3"><strong>{issue.label||issue.type.replaceAll('_',' ')}</strong><strong>{formatNumber(issue.count,0,0)}</strong></div>{issue.detail&&<div className="mt-1 text-xs text-[var(--muted)]">{issue.detail}</div>}{issue.action_href&&<Link className="mt-2 inline-block text-xs underline" href={issue.action_href}>Revisar</Link>}</div>):<EmptyState>Los datos necesarios para los análisis principales están coherentes.</EmptyState>}</div>}
       </Card>
 
       <Card>
         <h2 className="font-bold">Próximos 90 días</h2>
-        {calendar.error?<div className="mt-3"><ErrorState error={calendar.error}/></div>:<div className="mt-3 space-y-2">{events.length?events.slice(0,12).map(e=><div key={e.type+e.entity_id+e.date} className="flex justify-between rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div><strong>{e.title}</strong><div className="text-xs text-[var(--muted)]">{e.date} · {e.type}</div></div>{e.amount&&<Money value={e.amount}/>}</div>):<EmptyState>No hay eventos registrados.</EmptyState>}</div>}
+        <p className="mt-1 text-sm text-[var(--muted)]">Incluye obligaciones conocidas, cada próxima ocurrencia de gastos recurrentes y estimaciones mensuales de categorías previsibles como alimentación, colegio, suministros, transporte o suscripciones.</p>
+        {calendar.error?<div className="mt-3"><ErrorState error={calendar.error}/></div>:<div className="mt-3 max-h-[560px] space-y-2 overflow-y-auto pr-1" tabIndex={0} role="region" aria-label="Previsión de los próximos 90 días">{events.length?events.slice(0,30).map(e=><div key={e.type+e.entity_id+e.date} className="flex justify-between gap-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div><strong>{e.title}</strong><div className="text-xs text-[var(--muted)]">{e.date} · {eventTypeLabel(e.type)}{e.confidence?' · '+Math.round(Number(e.confidence)*100)+'% confianza':''}</div>{e.basis&&<div className="mt-1 text-[11px] text-[var(--muted)]">{e.basis}</div>}</div>{e.amount&&<strong><Money value={e.amount}/></strong>}</div>):<EmptyState>No hay histórico suficiente ni compromisos registrados para proyectar los próximos 90 días.</EmptyState>}</div>}
       </Card>
 
       <Card className="xl:col-span-2">

@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from decimal import Decimal
 import json
 from pathlib import Path
-from threading import Thread
+from threading import Event,Thread
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
@@ -21,7 +21,7 @@ from .services.financial_analytics import cash_flow,category_spending
 from .models import Account, ActionItem, AuditEvent, Budget, CategorizationAudit, Category, Commitment, Contract, Document, ExtractedFact, Mortgage, Transaction
 from .models_analytics import EntityLink
 from .models_extended import InsurancePolicy
-from .schemas import AccountCreate, AccountOut, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentEntityLinkUpdate, DocumentIndexRequest, DocumentMortgageLinkUpdate, FactUpdate, ForecastRequest, ManualFactCreate, MortgageScenarioRequest, MortgagePrepaymentRequest, MortgageRatePathRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
+from .schemas import AccountCreate, AccountOut, AccountUpdate, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentEntityLinkUpdate, DocumentIndexRequest, DocumentMortgageLinkUpdate, FactUpdate, ForecastRequest, ManualFactCreate, MortgageScenarioRequest, MortgagePrepaymentRequest, MortgageRatePathRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
 from .security import LocalSecurityMiddleware, create_session
 from .routes_extended import router as extended_router
 from .routes_analytics import router as analytics_router
@@ -42,6 +42,7 @@ from .services.imports import import_csv
 from .services.local_ai import status as ai_status
 from .services.secure_config import provider_status
 from .services.snapshots import record_snapshot
+from .services.banking import sync_all_connections
 
 
 def _refresh_stale_document_ai() -> None:
@@ -62,6 +63,19 @@ def _refresh_stale_document_ai() -> None:
                 db.rollback()
 
 
+def _banking_auto_sync(stop_event:Event) -> None:
+    while not stop_event.is_set():
+        config=provider_status().get("enable_banking",{})
+        if config.get("app_id") and config.get("private_key"):
+            with SessionLocal() as db:
+                try:
+                    sync_all_connections(db)
+                    db.commit()
+                except Exception:
+                    db.rollback()
+        stop_event.wait(15*60)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     if settings.host not in {"127.0.0.1", "localhost", "::1"}:
@@ -73,10 +87,13 @@ async def lifespan(_: FastAPI):
         synchronize_all_document_evidence(db)
         db.commit()
     watcher=VaultWatcher(); watcher.start()
+    banking_stop=Event()
     Thread(target=_refresh_stale_document_ai,name="financito-document-ai-refresh",daemon=True).start()
+    Thread(target=_banking_auto_sync,args=(banking_stop,),name="financito-banking-auto-sync",daemon=True).start()
     try:
         yield
     finally:
+        banking_stop.set()
         watcher.stop()
 
 app = FastAPI(title="Financito Local API", version="0.3.0", docs_url="/api/docs", openapi_url="/api/openapi.json", lifespan=lifespan)
@@ -125,6 +142,21 @@ def create_account(payload: AccountCreate, db: Session = Depends(get_db)):
     record_snapshot(db,"account",row.id,{"balance":str(row.current_balance),"available_balance":None if row.available_balance is None else str(row.available_balance),"currency":row.currency},source="account_created")
     db.add(AuditEvent(event_type="account_created",entity_type="account",entity_id=row.id))
     db.commit(); db.refresh(row); return row
+
+
+@app.patch("/api/v1/accounts/{account_id}", response_model=AccountOut)
+def update_account(account_id:str,payload:AccountUpdate,db:Session=Depends(get_db)):
+    row=db.get(Account,account_id)
+    if not row:raise HTTPException(404,"Account not found")
+    values=payload.model_dump(exclude_unset=True)
+    if row.source!="manual" and any(key in values for key in ("current_balance","available_balance")):
+        raise HTTPException(409,"El saldo de una cuenta bancaria conectada procede del banco. Sincronízala en lugar de editarlo manualmente.")
+    for key,value in values.items():
+        setattr(row,key,value)
+    if "current_balance" in values or "available_balance" in values:
+        record_snapshot(db,"account",row.id,{"balance":str(row.current_balance),"available_balance":None if row.available_balance is None else str(row.available_balance),"currency":row.currency},source="manual_balance_update")
+    db.add(AuditEvent(event_type="account_updated",entity_type="account",entity_id=row.id,metadata_json=json.dumps({"fields":sorted(values)})))
+    db.commit();db.refresh(row);return row
 
 
 @app.get("/api/v1/transactions", response_model=list[TransactionOut])

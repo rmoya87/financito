@@ -19,6 +19,15 @@ class AccountCreate(BaseModel):
     available_balance: Decimal | None = None
 
 
+class AccountUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    institution_name: str | None = Field(default=None, max_length=120)
+    account_type: str | None = None
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
+    current_balance: Decimal | None = None
+    available_balance: Decimal | None = None
+
+
 class AccountOut(ORMModel):
     id: str
     name: str
@@ -27,6 +36,7 @@ class AccountOut(ORMModel):
     currency: str
     current_balance: Decimal
     available_balance: Decimal | None
+    source: str
     sync_status: str
 
 

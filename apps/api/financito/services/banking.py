@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from ..models import Account,ActionItem,AuditEvent,Transaction
 from ..models_analytics import BankingAccountLink,BankingConnection
 from ..providers.enable_banking import EnableBankingProvider
+from ..domain.analytics import detect_recurring
 from .categorization import categorize_transaction,normalize_text
 from .snapshots import record_snapshot
 from .transaction_ops import detect_internal_transfers,detect_refunds
@@ -225,10 +226,11 @@ def sync_connection(session:Session,connection_id:str,provider:EnableBankingProv
         link.last_sync_at=datetime.now(timezone.utc)
     transfer_pairs=detect_internal_transfers(session)
     refunds=detect_refunds(session)
-    session.add(AuditEvent(event_type="banking_connection_synced",entity_type="banking_connection",entity_id=connection.id,metadata_json=json.dumps({"inserted":inserted,"skipped":skipped,"accounts":len(links),"transfer_pairs":transfer_pairs,"refunds":refunds})))
+    recurring_count=len(detect_recurring(session,use_ai=False))
+    session.add(AuditEvent(event_type="banking_connection_synced",entity_type="banking_connection",entity_id=connection.id,metadata_json=json.dumps({"inserted":inserted,"skipped":skipped,"accounts":len(links),"transfer_pairs":transfer_pairs,"refunds":refunds,"recurring_series":recurring_count})))
     _ensure_consent_action(session,connection)
     session.flush()
-    return {"connection_id":connection.id,"status":connection.status,"inserted":inserted,"skipped":skipped,"accounts":len(links),"transfer_pairs":transfer_pairs,"refunds":refunds,"consent_expires_at":connection.consent_expires_at}
+    return {"connection_id":connection.id,"status":connection.status,"inserted":inserted,"skipped":skipped,"accounts":len(links),"transfer_pairs":transfer_pairs,"refunds":refunds,"recurring_series":recurring_count,"consent_expires_at":connection.consent_expires_at}
 
 def close_connection(session:Session,connection_id:str,provider:EnableBankingProvider|None=None)->dict:
     provider=provider or EnableBankingProvider()
@@ -274,3 +276,30 @@ def _ensure_consent_action(session:Session,connection:BankingConnection)->None:
     exists=session.scalar(select(ActionItem.id).where(ActionItem.action_type=="banking_consent_renewal",ActionItem.related_entity_id==connection.id,ActionItem.status.in_(["pending","in_progress"])))
     if not exists:
         session.add(ActionItem(action_type="banking_consent_renewal",title=f"Renovar consentimiento bancario de {connection.bank_name}",related_entity_type="banking_connection",related_entity_id=connection.id,due_date=aware.date(),priority="high",source_type="banking",source_ref=connection.id,notes="La renovación requiere volver a autorizar el acceso con el banco; Financito no puede renovar el consentimiento sin interacción del usuario."))
+
+
+def sync_all_connections(session:Session,provider_factory=EnableBankingProvider)->dict:
+    rows=session.scalars(
+        select(BankingConnection).where(BankingConnection.status.not_in(["closed","deleted"]))
+        .order_by(BankingConnection.created_at)
+    ).all()
+    results=[];errors=[]
+    provider=None
+    if rows:
+        provider=provider_factory()
+    for row in rows:
+        try:
+            with session.begin_nested():
+                result=sync_connection(session,row.id,provider)
+            results.append(result)
+        except Exception as exc:
+            errors.append({"connection_id":row.id,"bank_name":row.bank_name,"error":str(exc)[:300]})
+    return {
+        "connections":len(rows),
+        "synced":len(results),
+        "failed":len(errors),
+        "inserted":sum(int(x.get("inserted",0)) for x in results),
+        "skipped":sum(int(x.get("skipped",0)) for x in results),
+        "results":results,
+        "errors":errors,
+    }
