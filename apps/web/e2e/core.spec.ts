@@ -3,6 +3,31 @@ import AxeBuilder from '@axe-core/playwright';
 
 test.describe.configure({mode:'serial'});
 
+const mockFinancialHealth={
+  generated_at:'2026-09-21T12:00:00Z',
+  safe_to_spend:{
+    amount:'300',liquidity:'1000',reserved_goals:'100',obligations_until_next_income:'500',
+    minimum_buffer:'100',buffer_gap:'100',horizon_date:'2026-09-30',next_income:null,
+    explanation:'Cálculo E2E',
+  },
+  emergency_fund:{essential_monthly:'500',allocated:'1000',coverage_months:'2.0',minimum_buffer:'500'},
+  indicators:[
+    {status:'warning',title:'Liquidez',value:'2.0 meses',detail:'Cobertura E2E',rule:'Regla E2E'},
+    {status:'good',title:'Ahorro',value:'1500',detail:'75% de los ingresos del periodo.',rule:'Regla E2E'},
+    {status:'good',title:'Deuda',value:'0',detail:'Sin deuda E2E',rule:'Regla E2E'},
+    {status:'good',title:'Compromisos',value:'500',detail:'Compromisos E2E',rule:'Regla E2E'},
+  ],
+  changes:{
+    current:{start:'2026-09-01',end:'2026-09-21'},
+    previous:{start:'2026-08-11',end:'2026-08-31'},
+    expenses_delta:'0',income_delta:'0',savings_delta:'0',categories:[],
+  },
+  alerts:[],
+  budgets:[],
+  spending_structure:{total:'500',fixed_essential:'0',fixed_optional:'0',variable_essential:'500',discretionary:'0'},
+  data_status:{calculated_at:'2026-09-21T12:00:00Z',latest_transaction_date:'2026-09-21',basis:'E2E'},
+};
+
 async function expectAccessible(page:import('@playwright/test').Page){
   const result=await new AxeBuilder({page})
     .withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa'])
@@ -366,6 +391,7 @@ test('Inicio muestra gastos recurrentes validados en Próximamente',async({page}
         basis:'Patrón recurrente detectado en movimientos',
       }],
       actions:[],
+      financial_health:mockFinancialHealth,
     }),
   }));
   await page.goto('/');
@@ -396,6 +422,7 @@ test('Para ti abre Seguros y coberturas en modal sin salir de Inicio',async({pag
         related_entity_type:null,
         related_entity_id:null,
       }],
+      financial_health:mockFinancialHealth,
     }),
   }));
 
