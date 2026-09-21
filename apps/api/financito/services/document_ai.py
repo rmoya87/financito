@@ -15,6 +15,7 @@ from .local_ai import generate_json, status as ai_status
 
 ANALYSIS_FACT_TYPE = "ai_insight"
 ANALYSIS_KEY = "document_analysis"
+ANALYSIS_SCHEMA_VERSION = 2
 MAX_CONTEXT_CHARS = 48000
 MAX_CHUNKS = 18
 
