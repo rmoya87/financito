@@ -788,6 +788,11 @@ def wealth_details(db:Session=Depends(dbdep),account_id:str|None=None,account_ty
     for row in db.scalars(policy_stmt).all():
         annual_insurance+=row.annual_premium
         contract=contracts.get(row.contract_id) if row.contract_id else None
+        coverage_stmt=select(CoverageFact).where(
+            (CoverageFact.insurance_policy_id==row.id)
+            | ((CoverageFact.contract_id==row.contract_id) if row.contract_id else False)
+        ).order_by(CoverageFact.user_verified.desc(),CoverageFact.coverage_type)
+        coverage_rows=db.scalars(coverage_stmt).all()
         policies.append({
             "id":row.id,
             "account_id":row.account_id,
@@ -797,6 +802,13 @@ def wealth_details(db:Session=Depends(dbdep),account_id:str|None=None,account_ty
             "deductible":None if row.deductible is None else str(row.deductible),
             "provider":None if contract is None else contract.provider_name,
             "contract_id":row.contract_id,
+            "coverages":[{
+                "id":coverage.id,
+                "coverage_type":coverage.coverage_type,
+                "limit_amount":None if coverage.limit_amount is None else str(coverage.limit_amount),
+                "deductible":None if coverage.deductible is None else str(coverage.deductible),
+                "user_verified":coverage.user_verified,
+            } for coverage in coverage_rows],
         })
     investments=[row for row in tracked_assets(db) if row.get("owned")]
     if scope is not None:
