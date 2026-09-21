@@ -16,7 +16,8 @@ from .providers.fundamentals import SecFundamentalsProvider
 from .providers.macro import EcbMacroProvider
 from .providers.news import GdeltNewsProvider
 from .services.market_data import history as market_history,portfolio_exposure,refresh_history,refresh_security,security_risk
-from .services.news_analysis import analyze_all,analyze_item,local_news,portfolio_news_brief
+from .services.news_analysis import analyze_all,analyze_item,ingest_query,local_news,portfolio_news_brief
+from .services.market_insights import portfolio_market_insights
 from .services.portfolio_analysis import portfolio_fit,portfolio_performance
 from .services.decision_context import live_decision_context
 from .services.financial_analytics import category_spending
@@ -266,22 +267,10 @@ def crypto_price(ids:str,vs_currency:str="eur"):
 
 @router.post("/news/ingest")
 def ingest_news(q:str,db:Session=Depends(dbdep)):
-    if len(q)<2:raise HTTPException(400,"Query too short")
-    try:items=GdeltNewsProvider().search(q,30)
-    except Exception as e:raise HTTPException(503,str(e))
-    inserted=0
-    for item in items:
-        url=item.get("url")
-        if not url or db.scalar(select(NewsItem.id).where(NewsItem.canonical_url==url)):continue
-        published=item.get("published_at") or ""
-        try:
-            from datetime import datetime,timezone
-            dt=datetime.strptime(published[:14],"%Y%m%dT%H%M%S").replace(tzinfo=timezone.utc) if "T" in published else datetime.now(timezone.utc)
-        except Exception:
-            from datetime import datetime,timezone
-            dt=datetime.now(timezone.utc)
-        row=NewsItem(canonical_url=url,source=item.get("source") or "GDELT",headline=item.get("title") or "",published_at=dt,summary=None,reliability=Decimal("0.5"));db.add(row);db.flush();analyze_item(db,row);inserted+=1
-    db.commit();return {"inserted":inserted,"discovered":len(items)}
+    if len(q.strip())<2:raise HTTPException(400,"Escribe al menos dos caracteres")
+    result=ingest_query(db,q,30)
+    db.commit()
+    return result
 
 
 @router.get("/market/security/{security_id}/history")
@@ -366,13 +355,20 @@ def coverage_gaps(db:Session=Depends(dbdep)):
 @router.post("/news/research")
 def news_research(q:str,db:Session=Depends(dbdep)):
     if len(q.strip())<2:raise HTTPException(400,"Escribe al menos dos caracteres")
-    ingest=ingest_news(q,db)
+    ingest=ingest_query(db,q,30)
     analyze_all(db,500);db.commit()
     return {"query":q,"ingest":ingest,"brief":portfolio_news_brief(db,q)}
 
 @router.get("/news/local")
 def news_local(limit:int=100,db:Session=Depends(dbdep)):
     return {"items":local_news(db,limit)}
+
+@router.post("/market/portfolio-insights")
+def market_portfolio_insights(refresh_news:bool=True,db:Session=Depends(dbdep)):
+    result=portfolio_market_insights(db,refresh_news=refresh_news)
+    db.commit()
+    return result
+
 
 @router.post("/news/analyze")
 def news_analyze(limit:int=500,db:Session=Depends(dbdep)):
