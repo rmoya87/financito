@@ -11,6 +11,7 @@ import {DateRangeSelector,DateRangeKey,resolveDateRange} from '@/components/date
 import {Card} from '@/components/ui/card';
 import {Money} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
+import {InsurancePolicyDetailModal} from '@/components/insurance-policy-detail-modal';
 
 interface Dashboard{
   period:{start:string;end:string};
@@ -35,7 +36,7 @@ function actionDestination(action:Dashboard['actions'][number]){
   }
   if(action.related_entity_type==='contract'||action.action_type==='contract_notice')return {href:'/contracts/',label:'Revisar renovación, coste y condiciones'};
   if(action.related_entity_type==='banking_connection'||action.action_type==='banking_consent_renewal')return {href:'/banking/',label:'Renovar la autorización bancaria'};
-  if(action.related_entity_type==='insurance_policy')return {href:'/insurance/',label:'Revisar la póliza y sus coberturas'};
+  if(action.related_entity_type==='insurance_policy')return {href:'/insurance/?policy='+encodeURIComponent(action.related_entity_id||''),label:'Ver detalle completo de la póliza y sus coberturas'};
   return {href:'/actions/?action='+encodeURIComponent(action.id),label:'Abrir la tarea y ver qué falta'};
 }
 
@@ -54,6 +55,7 @@ export default function DashboardPage(){
   const [range,setRange]=useState<DateRangeKey>('month');
   const [customStart,setCustomStart]=useState(defaults.start);
   const [customEnd,setCustomEnd]=useState(defaults.end);
+  const [insuranceModalPolicyId,setInsuranceModalPolicyId]=useState<string|null|undefined>(undefined);
   const dates=resolveDateRange(range,customStart,customEnd);
   const dashboard=useQuery({
     queryKey:['dashboard',range,dates.start,dates.end],
@@ -102,16 +104,23 @@ export default function DashboardPage(){
         <Link href="/actions/" className="flex items-center gap-1 text-sm font-semibold text-[var(--brand)]">Ver todo <ArrowRight size={16}/></Link>
       </div>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {d.actions.slice(0,4).map(action=>{const destination=actionDestination(action);return <Link key={action.id} href={destination.href} className="fin-card block p-4 transition-transform hover:-translate-y-0.5">
-            <div className="flex items-center justify-between gap-2">
-              <span className="rounded-full bg-[var(--brand-soft)] px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-[var(--brand)]">{priorityLabel[action.priority]||action.priority}</span>
-              <Sparkles size={16} className="text-[var(--brand)]"/>
-            </div>
-            <div className="mt-3 font-semibold">{action.title}</div>
-            <div className="mt-2 text-xs"><strong>Qué hacer:</strong> {destination.label}</div>
-            {action.notes&&<div className="mt-1 line-clamp-2 text-xs text-[var(--muted)]">{action.notes}</div>}
-            <div className="mt-2 text-xs text-[var(--muted)]">{action.due_date?`Antes de ${action.due_date}`:'Sin fecha límite'}</div>
-          </Link>})}
+          {d.actions.slice(0,4).map(action=>{
+            const destination=actionDestination(action);
+            const card=<>
+              <div className="flex items-center justify-between gap-2">
+                <span className="rounded-full bg-[var(--brand-soft)] px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-[var(--brand)]">{priorityLabel[action.priority]||action.priority}</span>
+                <Sparkles size={16} className="text-[var(--brand)]"/>
+              </div>
+              <div className="mt-3 font-semibold">{action.title}</div>
+              <div className="mt-2 text-xs"><strong>Qué hacer:</strong> {destination.label}</div>
+              {action.notes&&<div className="mt-1 line-clamp-2 text-xs text-[var(--muted)]">{action.notes}</div>}
+              <div className="mt-2 text-xs text-[var(--muted)]">{action.due_date?`Antes de ${action.due_date}`:'Sin fecha límite'}</div>
+            </>;
+            if(action.related_entity_type==='insurance_policy'){
+              return <button key={action.id} type="button" className="fin-card block w-full p-4 text-left transition-transform hover:-translate-y-0.5" onClick={()=>setInsuranceModalPolicyId(action.related_entity_id||null)}>{card}</button>;
+            }
+            return <Link key={action.id} href={destination.href} className="fin-card block p-4 transition-transform hover:-translate-y-0.5">{card}</Link>;
+          })}
         </div>
     </section>}
 
@@ -180,5 +189,11 @@ export default function DashboardPage(){
         </Link>
       </div>
     </section>
+
+    <InsurancePolicyDetailModal
+      open={insuranceModalPolicyId!==undefined}
+      onClose={()=>setInsuranceModalPolicyId(undefined)}
+      policyId={insuranceModalPolicyId??null}
+    />
   </>;
 }
