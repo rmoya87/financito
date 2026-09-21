@@ -86,6 +86,21 @@ Evolución de principal pendiente.
 
 ## Inversión
 
+### Valores seguidos
+
+La vista Mercado puede comparar los activos de la watchlist mediante una línea por activo, normalizada a variación porcentual desde el primer precio disponible del periodo. Esto evita mezclar escalas de precio y divisas distintas.
+
+Cada serie debe mostrar:
+- nombre/identificador;
+- color diferenciado;
+- tooltip porcentual;
+- periodo;
+- proveedor y fecha de los datos en una alternativa textual.
+
+La gráfica se alimenta del histórico de precios persistido; no inventa puntos cuando un provider no devuelve datos.
+
+### Cartera
+
 - portfolio value;
 - performance vs benchmark;
 - drawdown;
