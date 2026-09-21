@@ -147,3 +147,23 @@ La relación entre una hipoteca concreta y sus pólizas se persiste mediante `Li
 Si el contrato hipotecario confirma `linked_home_insurance_rate_penalty_pp` o `linked_life_insurance_rate_penalty_pp`, el motor calcula el efecto de perder la bonificación sobre cuota e intereses. La relación manual identifica la póliza concreta; nunca sustituye la evidencia del porcentaje contractual.
 
 Cuando `MortgageProfileExtra.original_principal` está disponible, `/wealth/home` expone `principal_progress` con capital inicial, pendiente, amortizado y porcentajes pendiente/pagado. El cálculo se realiza con `Decimal`; la UI representa en verde la parte pendiente y en gris la amortizada.
+
+## Comparación de mercado y costes cruzados
+
+La comparación de una hipoteca actual con referencias públicas reutiliza el mismo switching_readiness que el Centro de decisión.
+
+Además de la penalización de salida actual, una alternativa pública solo puede entrar en el conjunto de escenarios que compensan cuando:
+- mejora el coste del escenario comparable;
+- recupera los costes conocidos antes del vencimiento;
+- no tiene seguros vinculados de coste desconocido;
+- el coste de entrada de la nueva hipoteca está confirmado o la fuente declara explícitamente que no existe la comisión relevante.
+
+La salida expone por separado:
+- coste de salida hipotecario;
+- coste anual de seguros actualmente vinculados;
+- penalizaciones de salida conocidas de esos seguros y cuáles siguen desconocidas;
+- impactos de tipo por pérdida de bonificaciones;
+- costes de entrada de la alternativa que siguen sin precio.
+
+El escenario «solo hipoteca» no presupone que los seguros actuales se cancelan. Un escenario de cambio de paquete completo debe sumar esas salidas de forma explícita.
+

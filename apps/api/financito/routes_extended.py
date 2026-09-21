@@ -27,6 +27,7 @@ from .services.wealth import summary as wealth_summary
 from .services.financial_analytics import cash_flow
 from .services.snapshots import record_snapshot
 from .services.decision_context import live_decision_context,mortgage_row
+from .services.decision_support import decision_overview
 from .services.contractual_costs import mortgage_contract_context,resolve_prepayment_penalty,switching_readiness
 from .services.evidence import suppress_insurance_evidence
 from .services.market_research import scan_public_market
@@ -75,6 +76,13 @@ def decision_lab_switching_readiness(mortgage_id:str|None=None,db:Session=Depend
 @router.get("/decision-lab/context")
 def decision_lab_context(db:Session=Depends(dbdep)):
     return live_decision_context(db)
+
+@router.get("/decision-lab/overview")
+def decision_lab_overview(mortgage_id:str|None=None,db:Session=Depends(dbdep)):
+    try:
+        return decision_overview(db,mortgage_id)
+    except ValueError as exc:
+        raise HTTPException(404,str(exc))
 
 def _policy_linked_mortgage_ids(db:Session,policy_id:str)->list[str]:
     return list(db.scalars(select(LinkedProduct.parent_product_id).where(
