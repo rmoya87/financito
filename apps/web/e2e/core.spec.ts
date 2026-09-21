@@ -233,9 +233,15 @@ test('Documentos permite subir y procesar un archivo desde la aplicación',async
     buffer:Buffer.from('Póliza de seguro de hogar. Prima anual 480 euros. Franquicia 100 euros. Preaviso de 30 días.'),
   });
   await expect(page.getByText(/1 documento\(s\) añadido\(s\)/)).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Evidencia extraída'})).toHaveCount(0);
+  await expect(page.getByRole('heading',{name:'Datos por confirmar'})).toBeVisible();
   await expect(page.getByText('annual_cost',{exact:true})).toBeVisible();
   await expect(page.getByText('deductible',{exact:true})).toBeVisible();
   await expect(page.getByText('cancellation_notice_days',{exact:true})).toBeVisible();
+
+  const annualFact=page.getByText('annual_cost',{exact:true}).locator('..').locator('..').locator('..');
+  await annualFact.getByRole('button',{name:'Confirmar'}).click();
+  await expect(page.getByText('annual_cost',{exact:true})).not.toBeVisible();
 });
 
 test('Vault indexa evidencia y conserva cita navegable',async({page})=>{
