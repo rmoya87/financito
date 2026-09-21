@@ -332,3 +332,32 @@ Se muestran:
 - MAE del ahorro.
 
 Si no hay histórico suficiente, la precisión se muestra como no disponible en lugar de inventar una confianza.
+
+
+## Ingresos recurrentes pendientes de cobro
+
+El cálculo operativo de liquidez detecta fuentes de ingreso mensuales a partir de movimientos positivos repetidos, excluyendo transferencias internas y reembolsos. Se proyecta únicamente el siguiente cobro y solo cuando la misma fuente aún no ha entrado en el mes actual.
+
+Ejemplos:
+- nómina;
+- pensión;
+- alquiler recurrente;
+- otro ingreso mensual suficientemente estable.
+
+La fecha, el importe y la confianza se muestran al usuario. Un ingreso previsto no se presenta como saldo bancario confirmado.
+
+## Periodos históricos
+
+Cuando el usuario selecciona un periodo ya cerrado, no se reutiliza la liquidez actual para fabricar un «disponible histórico». La interfaz muestra el cierre real del periodo y lo compara con una previsión reconstruida:
+- ingresos reales vs previstos;
+- gastos reales vs previstos;
+- ahorro real vs previsto;
+- desviación del ahorro.
+
+La reconstrucción utiliza únicamente señales históricas anteriores al periodo cuando el motor lo permite y se etiqueta como reconstruida; no debe confundirse con una predicción persistida en aquel momento.
+
+## Calibración de infrapredicción
+
+La previsión de cierre de mes mantiene un backtest de meses cerrados. Además de WAPE/MAE, calcula el sesgo y la infrapredicción típica del gasto. Cuando existen al menos tres meses evaluables y el sistema ha tendido a quedarse corto, añade una corrección proporcional a los días restantes.
+
+Los compromisos/recurrentes conocidos y los patrones históricos por categoría actúan como suelos alternativos, no acumulativos, para evitar contar dos veces el mismo gasto.
