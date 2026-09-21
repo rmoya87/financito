@@ -212,9 +212,9 @@ test('Movimientos vincula una cuota hipotecaria y solo descuenta capital',async(
   await detail.getByRole('tab',{name:'Transacciones'}).click();
   await expect(detail.getByRole('heading',{name:'Transacciones de la hipoteca'})).toBeVisible();
   await expect(detail.getByText(/Cuota Hipoteca Vinculada E2E/)).toBeVisible();
-  await expect(detail.getByText('Capital:',{exact:true})).toBeVisible();
-  await expect(detail.getByText('Interés estimado:',{exact:true})).toBeVisible();
-  await expect(detail.getByText('Saldo después:',{exact:true})).toBeVisible();
+  await expect(detail.getByText(/^Capital:/)).toBeVisible();
+  await expect(detail.getByText(/^Interés estimado:/)).toBeVisible();
+  await expect(detail.getByText(/^Saldo después:/)).toBeVisible();
   await expectAccessible(page);
   await detail.getByRole('button',{name:'Cerrar'}).click();
 });
