@@ -130,3 +130,8 @@ Las pruebas cubren:
 ## Recurrentes, previsión y cuentas locales
 
 La regresión incluye cobertura para detección determinista de una serie mensual con al menos tres cargos, expansión de recurrentes dentro del horizonte de 90 días, previsión mensual por categorías estables a partir de histórico real, modificación de un saldo manual (incluido un caso de 40.000 €) y bloqueo de la edición manual del saldo de una cuenta conectada, cuyo saldo debe seguir procediendo de PSD2.
+
+
+## Selector temporal compartido
+
+La regresión comprueba que Movimientos y Análisis exponen el mismo selector temporal que Inicio, que un rango personalizado filtra realmente movimientos fuera de fecha y que recurrentes/anomalías respetan los parámetros `start`/`end` del backend.
