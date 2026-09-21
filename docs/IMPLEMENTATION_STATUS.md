@@ -188,3 +188,11 @@ Las conclusiones de IA de varios documentos vinculados al mismo producto compart
 - **Cuentas** distingue dos fuentes de verdad: cuentas conectadas PSD2 con saldo de solo lectura procedente del banco, y cuentas manuales con saldo editable/auditado para ahorro, efectivo o entidades no conectadas.
 - Las conexiones PSD2 se refrescan desde el proceso local cada 15 minutos mientras Financito está abierto y también pueden sincronizarse manualmente. No se presenta como streaming en tiempo real porque la frecuencia efectiva depende de la API bancaria.
 - Los importes monetarios usan agrupación de miles explícita (por ejemplo, 4.988,93 €) mediante el componente común Money.
+
+
+## Filtros temporales compartidos (2026-09)
+
+- **Inicio**, **Movimientos** y **Análisis** usan el mismo selector de periodo en la cabecera: este mes, últimos 30 días, últimos 90 días, este año, últimos 12 meses, todo el histórico o rango personalizado.
+- En **Movimientos**, el periodo se aplica al listado/paginación y los filtros de búsqueda/categoría quedan como filtros secundarios.
+- En **Análisis**, el periodo se aplica a resumen, evolución, comercios, anomalías y recurrentes visibles. La fecha final del rango sirve además como fecha de referencia para la previsión de cierre de mes y para calcular los 90 días posteriores.
+- **Calidad de los datos** y el stress test siguen siendo controles globales/actuales porque no representan una serie histórica filtrable.
