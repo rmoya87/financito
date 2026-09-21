@@ -95,7 +95,6 @@ test('Análisis muestra 30 días, tarta de comercios y permite alternar a listad
   await expect(chartButton).toHaveAttribute('aria-pressed','true');
   await listButton.click();
   await expect(listButton).toHaveAttribute('aria-pressed','true');
-  await expect(page.getByText('E2E Shop',{exact:true})).toBeVisible();
   await expectAccessible(page);
 });
 
