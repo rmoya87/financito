@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from ..models import Account,ActionItem,AuditEvent,Transaction
 from ..models_analytics import BankingAccountLink,BankingConnection
 from ..providers.enable_banking import EnableBankingProvider
+from ..domain.analytics import detect_recurring
 from .categorization import categorize_transaction,normalize_text
 from .snapshots import record_snapshot
 from .transaction_ops import detect_internal_transfers,detect_refunds
@@ -225,10 +226,11 @@ def sync_connection(session:Session,connection_id:str,provider:EnableBankingProv
         link.last_sync_at=datetime.now(timezone.utc)
     transfer_pairs=detect_internal_transfers(session)
     refunds=detect_refunds(session)
-    session.add(AuditEvent(event_type="banking_connection_synced",entity_type="banking_connection",entity_id=connection.id,metadata_json=json.dumps({"inserted":inserted,"skipped":skipped,"accounts":len(links),"transfer_pairs":transfer_pairs,"refunds":refunds})))
+    recurring_count=len(detect_recurring(session,use_ai=False))
+    session.add(AuditEvent(event_type="banking_connection_synced",entity_type="banking_connection",entity_id=connection.id,metadata_json=json.dumps({"inserted":inserted,"skipped":skipped,"accounts":len(links),"transfer_pairs":transfer_pairs,"refunds":refunds,"recurring_series":recurring_count})))
     _ensure_consent_action(session,connection)
     session.flush()
-    return {"connection_id":connection.id,"status":connection.status,"inserted":inserted,"skipped":skipped,"accounts":len(links),"transfer_pairs":transfer_pairs,"refunds":refunds,"consent_expires_at":connection.consent_expires_at}
+    return {"connection_id":connection.id,"status":connection.status,"inserted":inserted,"skipped":skipped,"accounts":len(links),"transfer_pairs":transfer_pairs,"refunds":refunds,"recurring_series":recurring_count,"consent_expires_at":connection.consent_expires_at}
 
 def close_connection(session:Session,connection_id:str,provider:EnableBankingProvider|None=None)->dict:
     provider=provider or EnableBankingProvider()
