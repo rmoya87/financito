@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..models import Security
 from ..models_extended import NewsItem
+from ..providers.news import GdeltNewsProvider
 from ..models_analytics import NewsAnalysis
 from .investment_tracking import tracked_assets
 from .local_ai import generate_json,status as local_ai_status
@@ -60,6 +61,40 @@ def _entity_matches(headline:str,securities:list[Security])->list[Security]:
         if symbol_match or name_match:
             out.append(security)
     return out
+
+
+def ingest_query(session:Session,query:str,limit:int=30)->dict:
+    query=" ".join((query or "").split()).strip()
+    if len(query)<2:
+        return {"inserted":0,"discovered":0,"warning":"La consulta de noticias es demasiado corta."}
+    warning=None
+    try:
+        items=GdeltNewsProvider().search(query,limit)
+    except Exception as exc:
+        items=[]
+        warning=str(exc)
+    inserted=0
+    from datetime import datetime,timezone
+    for item in items:
+        url=item.get("url")
+        if not url or session.scalar(select(NewsItem.id).where(NewsItem.canonical_url==url)):
+            continue
+        published=item.get("published_at") or ""
+        try:
+            stamp=datetime.strptime(published[:14],"%Y%m%dT%H%M%S").replace(tzinfo=timezone.utc) if "T" in published else datetime.now(timezone.utc)
+        except Exception:
+            stamp=datetime.now(timezone.utc)
+        row=NewsItem(
+            canonical_url=url,
+            source=item.get("source") or "GDELT",
+            headline=item.get("title") or "",
+            published_at=stamp,
+            summary=None,
+            reliability=Decimal("0.5"),
+        )
+        session.add(row);session.flush();analyze_item(session,row);inserted+=1
+    session.flush()
+    return {"inserted":inserted,"discovered":len(items),"warning":warning}
 
 def analyze_item(session:Session,item:NewsItem)->list[NewsAnalysis]:
     text=_norm(item.headline+" "+(item.summary or ""))
