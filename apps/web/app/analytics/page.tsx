@@ -109,7 +109,8 @@ export default function AnalyticsPage(){
   const daily=useMemo(()=>Array.isArray(overview.data?.daily)?overview.data!.daily!.map(x=>({
     ...x,income:Number(x.income||0),expenses:Number(x.expenses||0),savings:Number(x.savings||0),
   })):[],[overview.data]);
-  const trendData=range==='month'?daily:monthly;
+  const usesDailyTrend=daily.length>0;
+  const trendData=usesDailyTrend?daily:monthly;
   const [merchantView,setMerchantView]=useState<'chart'|'list'>('chart');
   const mix=useMemo(()=>{
     const s=overview.data?.spending_structure;
@@ -178,7 +179,7 @@ export default function AnalyticsPage(){
       <Card className="xl:col-span-2">
         <h2 className="font-bold">Ingresos, gasto y ahorro</h2>
         {overview.isLoading?<div className="mt-4"><Loading/></div>:overview.error?<div className="mt-4"><ErrorState error={overview.error}/></div>:trendData.length?
-          <div className="mt-4 h-72"><ResponsiveContainer width="100%" height="100%"><LineChart data={trendData}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="period" tickFormatter={value=>range==='month'?String(value).slice(8,10):String(value)}/><YAxis tickFormatter={(value)=>formatNumber(value,0,0)}/><Tooltip formatter={value=>formatMoney(Number(value||0))}/><Legend/><Line type="monotone" dataKey="income" name="Ingresos" stroke="var(--chart-income)" strokeWidth={3} dot={range==='month'}/><Line type="monotone" dataKey="expenses" name="Gastos" stroke="var(--chart-expenses)" strokeWidth={3} dot={range==='month'}/><Line type="monotone" dataKey="savings" name="Ahorro" stroke="var(--chart-savings)" strokeWidth={3} dot={range==='month'}/></LineChart></ResponsiveContainer></div>:
+          <div className="mt-4 h-72"><ResponsiveContainer width="100%" height="100%"><LineChart data={trendData}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="period" tickFormatter={value=>usesDailyTrend?String(value).slice(8,10):String(value)}/><YAxis tickFormatter={(value)=>formatNumber(value,0,0)}/><Tooltip formatter={value=>formatMoney(Number(value||0))}/><Legend/><Line type="monotone" dataKey="income" name="Ingresos" stroke="var(--chart-income)" strokeWidth={3} dot={usesDailyTrend}/><Line type="monotone" dataKey="expenses" name="Gastos" stroke="var(--chart-expenses)" strokeWidth={3} dot={usesDailyTrend}/><Line type="monotone" dataKey="savings" name="Ahorro" stroke="var(--chart-savings)" strokeWidth={3} dot={usesDailyTrend}/></LineChart></ResponsiveContainer></div>:
           <EmptyState>Importa histórico para ver la evolución.</EmptyState>}
       </Card>
 
