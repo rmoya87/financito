@@ -494,3 +494,13 @@ Cada producto distingue:
 3. dato realmente no encontrado.
 
 Desde la sección del producto se puede relanzar el análisis de IA local solo sobre sus documentos asociados. Si el dato sigue sin aparecer, la UI ofrece un campo manual para los campos estructurados editables. Los valores introducidos manualmente se guardan en el perfil del producto y pueden modificarse posteriormente desde sus opciones de edición.
+
+## Documentos mixtos y proyección por dominio
+
+Un archivo puede contener evidencia de más de un producto. El caso típico es documentación hipotecaria que incluye un seguro de vida u hogar vinculado. Financito no debe tratar todos los hechos confirmados del archivo como si pertenecieran al producto principal.
+
+Antes de proyectar hechos confirmados, la sincronización separa el dominio hipotecario del asegurador usando `fact_type`, claves explícitas y el contexto/página donde aparecen marcadores de seguro o coberturas. Un `provider_name`, `annual_cost`, `renewal_date`, `contract_number` o `next_review_date` situado en una sección de seguro no puede modificar el prestamista ni el calendario de revisión de la hipoteca.
+
+Cuando un documento hipotecario contiene evidencia aseguradora confirmada suficiente, Financito crea o actualiza la póliza y su contrato, proyecta prima, proveedor, renovación, número de póliza/contrato, objeto asegurado, franquicia y coberturas verificadas, conserva el mismo documento como evidencia de la póliza y registra la relación `mortgage -> insurance_policy` mediante `LinkedProduct`. No se crea una póliza nueva si falta una prima real confirmada: nunca se inventa un coste 0.
+
+Los identificadores usados para agrupar documentos también respetan el dominio. Un `contract_number` situado en una sección de seguro no puede hacer que un recibo posterior de esa póliza se vincule por error a la hipoteca que contiene el anexo.

@@ -226,3 +226,13 @@ Las conclusiones de IA de varios documentos vinculados al mismo producto compart
 - **Mercado** refresca automáticamente precios e histórico de los activos seguidos al entrar. “Cartera simulada” y “Evolución de los valores que sigues” pasan a ser subsecciones de “Mis activos”.
 - **Noticias**: GDELT usa caché local de diez minutos, reintento breve y degradación a noticias ya guardadas. Un 429 deja de exponerse como error HTTP/URL al usuario.
 - **Lectura inicial de Mercado con IA local**: cruza posición real/simulada/seguida, valoración y P&L, retornos históricos 30/90/365 días, volatilidad/drawdown y noticias vinculadas. La salida usa orientaciones de revisión (“Estudiar entrada”, “Mantener / observar”, “Revisar exposición”, “Datos insuficientes”) y nunca ejecuta ni presenta órdenes automáticas de compra/venta o predicciones de rentabilidad.
+
+## Proyección de evidencia confirmada desde documentos mixtos (2026-09-21)
+
+- La sincronización documental distingue hechos hipotecarios y aseguradores dentro del mismo PDF.
+- Un seguro de vida/hogar confirmado dentro de documentación hipotecaria se materializa como `InsurancePolicy` + `Contract`, mantiene enlace de evidencia al documento y proyecta sus `CoverageFact`.
+- Se crea relación explícita `LinkedProduct` desde la hipoteca a la póliza, usada por Casa para mostrar únicamente seguros realmente vinculados además de los seguros de hogar relevantes para el inmueble.
+- `contract_number` puede utilizarse como número de póliza cuando la evidencia confirmada demuestra que pertenece a una sección de seguro.
+- `insured_object` se conserva en la póliza y los tipos reconocibles se normalizan a categorías canónicas (`life`, `home`, etc.) para que requisitos y análisis funcionen de forma consistente.
+- Se impide contaminación cruzada: proveedor, renovación o próxima revisión de un seguro no pueden sobrescribir prestamista ni revisión de la hipoteca.
+- Biblioteca ya no muestra una lista permanente de “Evidencia extraída”. Los hechos confirmados desaparecen de revisión; solo quedan hechos materiales pendientes, dudosos o en conflicto.

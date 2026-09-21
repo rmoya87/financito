@@ -151,3 +151,17 @@ La cobertura automática comprueba: descarte de patrones recurrentes históricos
 Las pruebas cubren la creación de una hipoteca desde Casa, reapertura del modal de datos, apertura del modal contextual de documentación, subida y visualización de un documento hipotecario; en seguros, apertura de ficha, edición efectiva y documentación contextual con subida/visualización. También se comprueba que Casa no vuelve a mostrar el módulo duplicado “Seguros y protección”.
 
 Backend cubre que una limitación 429 del proveedor de noticias se convierte en un aviso legible sin URL/error HTTP y que el análisis de Mercado puede construir contexto con posición, histórico y noticias locales aun sin IA disponible. E2E comprueba además que Mercado muestra la lectura local en la cabecera y no expone mensajes 429 Too Many Requests ni la URL de GDELT.
+
+## Regresión: seguro dentro de documentación hipotecaria
+
+La suite crea una hipoteca y un PDF hipotecario con evidencia confirmada equivalente al caso real de un seguro Vida Anual Renovable: prima anual 378,62 €, renovación 26/05/2027, identificador de contrato/póliza, proveedor Bankinter Seguros de Vida, objeto asegurado y dos coberturas de 118.000 €. Se valida que:
+
+- la hipoteca conserva su prestamista y solo recibe hechos `mortgage_term`;
+- la renovación del seguro no se convierte en próxima revisión hipotecaria;
+- se crea/actualiza una póliza de vida con prima, proveedor, renovación, número y objeto asegurado;
+- las dos coberturas confirmadas se proyectan con su límite;
+- la póliza queda vinculada a la hipoteca mediante `LinkedProduct` y aparece en `wealth/home`;
+- el veredicto de Seguros consume la misma póliza y coberturas;
+- un segundo documento con el mismo identificador asegurador se agrupa con la póliza y no con la hipoteca.
+
+E2E comprueba que Biblioteca no contiene el encabezado “Evidencia extraída”, que muestra “Datos por confirmar” mientras existen hechos pendientes y que un hecho desaparece de esa revisión inmediatamente después de confirmarlo.

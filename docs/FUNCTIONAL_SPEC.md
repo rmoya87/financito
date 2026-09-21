@@ -891,3 +891,14 @@ Al entrar en Mercado, Financito intenta actualizar los precios e histórico de t
 La cabecera de Mercado presenta primero una lectura de cartera producida localmente. Sus entradas son exclusivamente datos estructurados guardados: tipo de posición (real/simulada/seguimiento), valoración/P&L, histórico y métricas de riesgo deterministas, y noticias vinculadas almacenadas. La IA local puede sintetizar esos datos, pero no inventar precios, objetivos, probabilidades o noticias. Las orientaciones son categorías para revisar una decisión, no recomendaciones ejecutables ni predicciones.
 
 Las consultas de noticias deben tolerar limitación de proveedor. Se reutiliza caché y noticias locales cuando el proveedor devuelve 429 u otro fallo temporal; la UI muestra un aviso breve y nunca la excepción técnica o URL del proveedor.
+
+## Uso automático de hechos documentales confirmados
+
+Los hechos con `status=confirmed` y `user_verified=true` no se quedan como información aislada en Biblioteca. Se proyectan automáticamente al producto que corresponda y pasan a alimentar las vistas y cálculos deterministas.
+
+- Los hechos hipotecarios actualizan únicamente la hipoteca explícitamente vinculada al documento.
+- Los hechos de seguro actualizan la póliza, contrato y coberturas aunque el seguro esté incluido dentro de un PDF cuya clasificación principal sea `mortgage`.
+- Un seguro confirmado como vinculado a una hipoteca aparece en Casa dentro de “Seguros relacionados con la vivienda” y también en “Seguros y coberturas”.
+- Los datos ambiguos, inferidos o conflictivos siguen fuera de cálculos hasta la confirmación del usuario.
+
+Biblioteca documental es una superficie de revisión, no un duplicado de las fichas de producto. El bloque antes llamado “Evidencia extraída” no muestra hechos ya confirmados. Solo se muestran “Datos por confirmar”; al confirmar un hecho desaparece de esa lista y se utiliza en su área funcional correspondiente.

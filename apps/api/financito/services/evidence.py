@@ -10,7 +10,7 @@ from sqlalchemy import delete,select
 from sqlalchemy.orm import Session
 
 from ..models import ActionItem, Contract, Document, ExtractedFact, Mortgage
-from ..models_analytics import EntityLink
+from ..models_analytics import EntityLink,LinkedProduct
 from ..models_extended import CoverageFact,InsurancePolicy,MortgageProfileExtra
 from .document_ai import latest_analysis
 
@@ -132,6 +132,38 @@ def _identity_values(session: Session, document_id: str) -> dict[str, str]:
         if normalized:
             result[fact.key] = normalized
     return result
+
+
+def _fact_has_insurance_context(session: Session, fact: ExtractedFact) -> bool:
+    """Return True when a generic identifier sits in an insurance section.
+
+    This prevents an insurance contract number embedded in a mortgage PDF from
+    becoming a mortgage identity key for sibling-document grouping.
+    """
+    rows = _facts(session, fact.document_id)
+    for candidate in rows:
+        same_page = (
+            fact.source_page is None
+            or candidate.source_page is None
+            or candidate.source_page == fact.source_page
+        )
+        if not same_page:
+            continue
+        if candidate.fact_type == "coverage_fact":
+            return True
+        if candidate.key in {
+            "insurance_type",
+            "insured_object",
+            "policy_number",
+            "linked_insurance",
+            "linked_life_insurance",
+            "linked_home_insurance",
+            "linked_mortgage_insurance",
+        }:
+            return True
+        if candidate.fact_type == "linked_product" and "insurance" in candidate.key.lower():
+            return True
+    return False
 
 
 def _linked_document_ids(session: Session, to_type: str, to_id: str) -> list[str]:
@@ -276,6 +308,43 @@ def auto_link_document_entity(session: Session, document: Document) -> dict | No
         ).all()
         for fact in other_facts:
             if _normalize_identity(_payload(fact).get("value")) != contract_number:
+                continue
+
+            if _fact_has_insurance_context(session, fact):
+                linked_policy = _entity_link(session, fact.document_id, "insurance_policy")
+                if linked_policy is not None:
+                    document.document_type = "insurance"
+                    _add_evidence_link(
+                        session, document.id, "insurance_policy", linked_policy.to_id,
+                        confidence=Decimal("0.98"), source_type="document_identity",
+                    )
+                    policy = session.get(InsurancePolicy, linked_policy.to_id)
+                    if policy is not None and policy.contract_id:
+                        _add_evidence_link(
+                            session, document.id, "contract", policy.contract_id,
+                            confidence=Decimal("0.98"), source_type="document_identity",
+                        )
+                    return {
+                        "entity_type": "insurance_policy",
+                        "entity_id": linked_policy.to_id,
+                        "matched_by": "contract_number_insurance_context",
+                    }
+
+                insurance_contract = _insurance_contract_for_document(session, fact.document_id)
+                if insurance_contract is not None:
+                    document.document_type = "insurance"
+                    _add_evidence_link(
+                        session, document.id, "contract", insurance_contract.id,
+                        confidence=Decimal("0.96"), source_type="document_identity",
+                    )
+                    return {
+                        "entity_type": "contract",
+                        "entity_id": insurance_contract.id,
+                        "matched_by": "contract_number_insurance_context",
+                    }
+                # The identifier is visibly part of an insurance section. Do
+                # not fall through and reuse the mortgage link of the container
+                # document as the identity target.
                 continue
 
             linked_mortgage = _entity_link(session, fact.document_id, "mortgage")
@@ -567,17 +636,148 @@ def confirm_entity_coherent_evidence(session: Session, entity_type: str, entity_
     return _confirm_coherent_for_documents(session, _linked_document_ids(session, entity_type, entity_id))
 
 
-def _confirmed_values(session: Session, document_id: str) -> dict[str, dict]:
-    result: dict[str, dict] = {}
+MORTGAGE_VALUE_KEYS = {
+    "provider_name",
+    "remaining_principal",
+    "nominal_rate",
+    "monthly_payment",
+    "remaining_months",
+    "interest_type",
+    "mortgage_term_years",
+    "apr_rate",
+    "reference_index",
+    "differential_rate",
+    "rate_review_months",
+    "next_review_date",
+    "opening_fee_percent",
+    "early_repayment_fee",
+    "early_repayment_fee_percent",
+    "subrogation_fee_percent",
+    "cancellation_fee_percent",
+}
+INSURANCE_MARKER_KEYS = {
+    "insurance_type",
+    "insured_object",
+    "policy_number",
+    "linked_insurance",
+    "linked_life_insurance",
+    "linked_home_insurance",
+    "linked_mortgage_insurance",
+}
+INSURANCE_VALUE_KEYS = {
+    "provider_name",
+    "annual_cost",
+    "monthly_cost",
+    "renewal_date",
+    "next_review_date",
+    "cancellation_notice_days",
+    "early_exit_penalty",
+    "start_date",
+    "permanence_end_date",
+    "insurance_type",
+    "insured_object",
+    "policy_number",
+    "contract_number",
+    "deductible",
+}
+
+
+def _confirmed_fact_rows(session: Session, document_id: str) -> list[dict]:
+    rows = []
     for fact in _facts(session, document_id):
         if not (fact.user_verified and fact.status == "confirmed"):
             continue
-        if fact.key not in result:
-            payload = _payload(fact)
-            payload["source_page"] = fact.source_page
-            payload["confidence"] = str(fact.confidence)
-            result[fact.key] = payload
+        payload = _payload(fact)
+        rows.append({
+            "key": fact.key,
+            "fact_type": fact.fact_type,
+            "source_page": fact.source_page,
+            "confidence": str(fact.confidence),
+            "payload": payload,
+        })
+    return rows
+
+
+def _rows_to_values(rows: list[dict]) -> dict[str, dict]:
+    result: dict[str, dict] = {}
+    for row in rows:
+        if row["key"] in result:
+            continue
+        payload = dict(row["payload"])
+        payload["source_page"] = row["source_page"]
+        payload["confidence"] = row["confidence"]
+        payload["_fact_type"] = row["fact_type"]
+        result[row["key"]] = payload
     return result
+
+
+def _confirmed_values(session: Session, document_id: str) -> dict[str, dict]:
+    return _rows_to_values(_confirmed_fact_rows(session, document_id))
+
+
+def _partition_confirmed_values(
+    document: Document,
+    rows: list[dict],
+) -> tuple[dict[str, dict], dict[str, dict], bool]:
+    """Separate confirmed facts by product domain before projecting them.
+
+    A mortgage PDF may include a linked life/home policy. Generic contract keys
+    such as provider_name, annual_cost or renewal_date must therefore not be
+    allowed to overwrite mortgage fields merely because they live in the same
+    file. Confirmed fact_type + the pages carrying explicit insurance markers
+    provide the boundary.
+    """
+    all_values = _rows_to_values(rows)
+    if document.document_type == "insurance":
+        return {}, all_values, bool(all_values)
+
+    insurance_marker_pages = {
+        row["source_page"]
+        for row in rows
+        if (
+            row["fact_type"] == "coverage_fact"
+            or row["key"] in INSURANCE_MARKER_KEYS
+            or (row["fact_type"] == "linked_product" and "insurance" in row["key"].lower())
+        )
+        and row["source_page"] is not None
+    }
+    has_insurance = any(
+        row["fact_type"] == "coverage_fact"
+        or row["key"] in INSURANCE_MARKER_KEYS
+        or (row["fact_type"] == "linked_product" and "insurance" in row["key"].lower())
+        for row in rows
+    )
+
+    mortgage_rows: list[dict] = []
+    insurance_rows: list[dict] = []
+    for row in rows:
+        key = row["key"]
+        fact_type = row["fact_type"]
+        page = row["source_page"]
+
+        # A fact explicitly classified as mortgage data wins even if the same
+        # page also contains a bundled insurance product.
+        if fact_type == "mortgage_term":
+            mortgage_rows.append(row)
+        elif key in MORTGAGE_VALUE_KEYS and page not in insurance_marker_pages:
+            mortgage_rows.append(row)
+
+        if not has_insurance:
+            continue
+        if key in INSURANCE_MARKER_KEYS:
+            insurance_rows.append(row)
+        elif fact_type == "coverage_fact":
+            # Coverage rows are projected separately, but retaining them here
+            # makes the domain detection auditable.
+            insurance_rows.append(row)
+        elif key in INSURANCE_VALUE_KEYS and (
+            document.document_type == "insurance"
+            or page in insurance_marker_pages
+            or (page is None and fact_type == "linked_product")
+        ):
+            insurance_rows.append(row)
+
+    return _rows_to_values(mortgage_rows), _rows_to_values(insurance_rows), has_insurance
 
 
 def _decimal(value: object) -> Decimal | None:
@@ -628,11 +828,31 @@ def _insurance_type(file_name: str) -> str:
         (("vida",), "life"),
         (("salud", "medico", "médico"), "health"),
         (("mascota", "perro", "gato"), "pet"),
+        (("viaje",), "travel"),
     )
     for terms, value in mappings:
         if any(term in name for term in terms):
             return value
     return "unknown"
+
+
+def _canonical_insurance_type(value: object, file_name: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return _insurance_type(file_name)
+    low = raw.lower()
+    mappings = (
+        (("hogar", "vivienda", "home"), "home"),
+        (("coche", "auto", "vehiculo", "vehículo", "car"), "car"),
+        (("vida", "life"), "life"),
+        (("salud", "medico", "médico", "health"), "health"),
+        (("mascota", "perro", "gato", "pet"), "pet"),
+        (("viaje", "travel"), "travel"),
+    )
+    for terms, canonical in mappings:
+        if any(term in low for term in terms):
+            return canonical
+    return raw[:60]
 
 
 def _entity_link(
@@ -661,8 +881,20 @@ def _ensure_contract_projection(
     if document.document_type=="mortgage" and _entity_link(session,document.id,"mortgage") is None:
         return None
 
-    link = _entity_link(session, document.id, "contract")
-    contract = session.get(Contract, link.to_id) if link else None
+    contract = None
+    contract_links = session.scalars(
+        select(EntityLink).where(
+            EntityLink.from_type == "document",
+            EntityLink.from_id == document.id,
+            EntityLink.relation_type == "evidence_for",
+            EntityLink.to_type == "contract",
+        )
+    ).all()
+    for candidate_link in contract_links:
+        candidate = session.get(Contract, candidate_link.to_id)
+        if candidate is not None and candidate.contract_type == document.document_type:
+            contract = candidate
+            break
     if contract is None and document.document_type=="insurance":
         policy_link=_entity_link(session,document.id,"insurance_policy")
         policy=session.get(InsurancePolicy,policy_link.to_id) if policy_link else None
@@ -711,6 +943,8 @@ def _ensure_contract_projection(
         contract.start_date = _date(values["start_date"].get("value"))
     if "renewal_date" in values:
         contract.renewal_date = _date(values["renewal_date"].get("value"))
+    elif document.document_type=="insurance" and "next_review_date" in values:
+        contract.renewal_date = _date(values["next_review_date"].get("value"))
     if "permanence_end_date" in values:
         contract.permanence_end_date = _date(values["permanence_end_date"].get("value"))
 
@@ -904,7 +1138,7 @@ def _ensure_insurance_projection(
     if policy is None:
         policy = InsurancePolicy(
             contract_id=contract.id,
-            insurance_type=str(values.get("insurance_type",{}).get("value") or _insurance_type(document.file_name))[:60],
+            insurance_type=_canonical_insurance_type(values.get("insurance_type",{}).get("value"),document.file_name),
             annual_premium=premium,
             deductible=None,
             currency="EUR",
@@ -929,16 +1163,209 @@ def _ensure_insurance_projection(
 
     if contract is not None:
         policy.contract_id = contract.id
-    if values.get("policy_number",{}).get("value"):
-        policy.policy_number_masked=str(values["policy_number"]["value"])[:80]
+    policy_number = (
+        values.get("policy_number",{}).get("value")
+        or values.get("contract_number",{}).get("value")
+    )
+    if policy_number:
+        policy.policy_number_masked=str(policy_number)[:80]
     if values.get("insurance_type",{}).get("value"):
-        policy.insurance_type=str(values["insurance_type"]["value"])[:60]
+        policy.insurance_type=_canonical_insurance_type(values["insurance_type"]["value"],document.file_name)
     if premium is not None:
         policy.annual_premium = premium
     if "deductible" in values:
         policy.deductible = _decimal(values["deductible"].get("value"))
+    if values.get("insured_object",{}).get("value"):
+        policy.insured_object_json=json.dumps(
+            {"description":str(values["insured_object"]["value"])},
+            ensure_ascii=False,
+        )
     session.flush()
     return policy
+
+
+def _insurance_contract_for_document(session: Session, document_id: str) -> Contract | None:
+    links = session.scalars(
+        select(EntityLink).where(
+            EntityLink.from_type == "document",
+            EntityLink.from_id == document_id,
+            EntityLink.relation_type == "evidence_for",
+            EntityLink.to_type == "contract",
+        )
+    ).all()
+    for link in links:
+        contract = session.get(Contract, link.to_id)
+        if contract is not None and contract.contract_type == "insurance":
+            return contract
+    return None
+
+
+def _policy_by_confirmed_number(
+    session: Session,
+    policy_number: object,
+) -> InsurancePolicy | None:
+    normalized = _normalize_identity(policy_number)
+    if not normalized:
+        return None
+    for policy in session.scalars(select(InsurancePolicy)).all():
+        if _normalize_identity(policy.policy_number_masked) == normalized:
+            return policy
+    return None
+
+
+def _ensure_mortgage_insurance_link(
+    session: Session,
+    mortgage: Mortgage | None,
+    policy: InsurancePolicy | None,
+    document: Document,
+) -> None:
+    if mortgage is None or policy is None:
+        return
+    existing = session.scalar(
+        select(LinkedProduct).where(
+            LinkedProduct.parent_product_type == "mortgage",
+            LinkedProduct.parent_product_id == mortgage.id,
+            LinkedProduct.linked_product_type == "insurance_policy",
+            LinkedProduct.linked_product_id == policy.id,
+        )
+    )
+    if existing is None:
+        session.add(LinkedProduct(
+            parent_product_type="mortgage",
+            parent_product_id=mortgage.id,
+            linked_product_type="insurance_policy",
+            linked_product_id=policy.id,
+            discount_value=Decimal("0"),
+            discount_unit="currency",
+            conditions=f"Vinculado por evidencia confirmada del documento {document.file_name}",
+        ))
+        session.flush()
+
+
+def _ensure_embedded_insurance_projection(
+    session: Session,
+    document: Document,
+    mortgage: Mortgage | None,
+    values: dict[str, dict],
+    summary: dict,
+) -> tuple[Contract | None, InsurancePolicy | None]:
+    """Project a confirmed insurance section embedded in another product PDF.
+
+    The source document keeps its original classification (for example,
+    mortgage), while the insurance facts become a real insurance policy with
+    its own contract and evidence link.
+    """
+    if not values:
+        return None, None
+
+    policy_link = _entity_link(session, document.id, "insurance_policy")
+    policy = session.get(InsurancePolicy, policy_link.to_id) if policy_link else None
+    policy_number = (
+        values.get("policy_number",{}).get("value")
+        or values.get("contract_number",{}).get("value")
+    )
+    if policy is None and policy_number:
+        policy = _policy_by_confirmed_number(session, policy_number)
+
+    contract = (
+        session.get(Contract, policy.contract_id)
+        if policy is not None and policy.contract_id
+        else _insurance_contract_for_document(session, document.id)
+    )
+    if contract is None:
+        provider = str(values.get("provider_name",{}).get("value") or "").strip()
+        contract = Contract(
+            provider_name=(provider or f"{_label(document)} · seguro")[:180],
+            contract_type="insurance",
+            currency="EUR",
+            evidence_status="needs_more_data",
+        )
+        session.add(contract)
+        session.flush()
+        _add_evidence_link(
+            session, document.id, "contract", contract.id,
+            confidence=Decimal("1"), source_type="embedded_insurance_projection",
+        )
+
+    provider = str(values.get("provider_name",{}).get("value") or "").strip()
+    if provider:
+        contract.provider_name = provider[:180]
+    if "annual_cost" in values:
+        contract.annual_cost = _decimal(values["annual_cost"].get("value"))
+    elif "monthly_cost" in values:
+        monthly = _decimal(values["monthly_cost"].get("value"))
+        if monthly is not None:
+            contract.annual_cost = monthly * Decimal("12")
+    if "renewal_date" in values:
+        contract.renewal_date = _date(values["renewal_date"].get("value"))
+    elif "next_review_date" in values:
+        contract.renewal_date = _date(values["next_review_date"].get("value"))
+    if "start_date" in values:
+        contract.start_date = _date(values["start_date"].get("value"))
+    if "cancellation_notice_days" in values:
+        contract.cancellation_notice_days = _integer(values["cancellation_notice_days"].get("value"))
+    if "early_exit_penalty" in values:
+        contract.early_exit_penalty = _decimal(values["early_exit_penalty"].get("value"))
+    if "permanence_end_date" in values:
+        contract.permanence_end_date = _date(values["permanence_end_date"].get("value"))
+    contract.evidence_status = (
+        "confirmed"
+        if summary["confirmed"] > 0 and summary["pending"] == 0 and summary["ambiguous"] == 0
+        else "needs_more_data"
+    )
+
+    premium = contract.annual_cost
+    if policy is None and premium is None:
+        # InsurancePolicy requires a real premium. Keep the insurance contract
+        # as evidence, but never invent a 0 € policy.
+        session.flush()
+        return contract, None
+
+    if policy is None:
+        policy = InsurancePolicy(
+            contract_id=contract.id,
+            insurance_type=_canonical_insurance_type(
+                values.get("insurance_type",{}).get("value"),
+                document.file_name,
+            ),
+            annual_premium=premium,
+            deductible=_decimal(values.get("deductible",{}).get("value")),
+            currency="EUR",
+            insured_object_json="{}",
+        )
+        session.add(policy)
+        session.flush()
+    else:
+        policy.contract_id = contract.id
+        if premium is not None:
+            policy.annual_premium = premium
+
+    if policy_number:
+        policy.policy_number_masked = str(policy_number)[:80]
+    if values.get("insurance_type",{}).get("value"):
+        policy.insurance_type = _canonical_insurance_type(
+            values["insurance_type"]["value"],
+            document.file_name,
+        )
+    if "deductible" in values:
+        policy.deductible = _decimal(values["deductible"].get("value"))
+    if values.get("insured_object",{}).get("value"):
+        policy.insured_object_json = json.dumps(
+            {"description": str(values["insured_object"]["value"])},
+            ensure_ascii=False,
+        )
+
+    _add_evidence_link(
+        session, document.id, "insurance_policy", policy.id,
+        confidence=Decimal("1"), source_type="embedded_insurance_projection",
+    )
+    _add_evidence_link(
+        session, document.id, "contract", contract.id,
+        confidence=Decimal("1"), source_type="embedded_insurance_projection",
+    )
+    _ensure_mortgage_insurance_link(session, mortgage, policy, document)
+    session.flush()
+    return contract, policy
 
 
 def _ensure_coverage_projection(
@@ -947,7 +1374,7 @@ def _ensure_coverage_projection(
     contract: Contract | None,
     policy: InsurancePolicy | None,
 ) -> int:
-    if document.document_type != "insurance" or (contract is None and policy is None):
+    if contract is None and policy is None:
         return 0
 
     rows = session.scalars(
@@ -1022,12 +1449,34 @@ def synchronize_document_evidence(
 ) -> dict:
     auto_link_document_entity(session, document)
     summary = sync_review_action(session, document)
-    values = _confirmed_values(session, document.id)
-    contract = _ensure_contract_projection(session, document, values, summary)
-    mortgage = _ensure_mortgage_projection(session, document, values)
-    policy = _ensure_insurance_projection(session, document, contract, values)
-    coverage_count = _ensure_coverage_projection(session, document, contract, policy)
+    confirmed_rows = _confirmed_fact_rows(session, document.id)
+    all_values = _rows_to_values(confirmed_rows)
+    mortgage_values, insurance_values, has_embedded_insurance = _partition_confirmed_values(
+        document, confirmed_rows
+    )
+
+    primary_values = mortgage_values if document.document_type == "mortgage" else all_values
+    contract = _ensure_contract_projection(session, document, primary_values, summary)
+    mortgage = _ensure_mortgage_projection(session, document, mortgage_values if document.document_type == "mortgage" else all_values)
+
+    insurance_contract = contract if document.document_type == "insurance" else None
+    policy = _ensure_insurance_projection(session, document, insurance_contract, all_values)
+    if document.document_type != "insurance" and has_embedded_insurance:
+        insurance_contract, policy = _ensure_embedded_insurance_projection(
+            session,
+            document,
+            mortgage,
+            insurance_values,
+            summary,
+        )
+
+    coverage_count = _ensure_coverage_projection(
+        session, document, insurance_contract, policy
+    )
     if contract is not None:
+        from .contracts import refresh_contract_actions
+        refresh_contract_actions(session)
+    if insurance_contract is not None and insurance_contract is not contract:
         from .contracts import refresh_contract_actions
         refresh_contract_actions(session)
     if coverage_count:
@@ -1041,6 +1490,7 @@ def synchronize_document_evidence(
         **summary,
         "contract_id": None if contract is None else contract.id,
         "mortgage_id": None if mortgage is None else mortgage.id,
+        "insurance_contract_id": None if insurance_contract is None else insurance_contract.id,
         "insurance_policy_id": None if policy is None else policy.id,
         "coverage_count": coverage_count,
         "grouped_documents": grouped_documents,
