@@ -9,7 +9,7 @@ from sqlalchemy import delete,select
 from financito.db import SessionLocal
 from financito.domain.analytics import detect_anomalies,detect_recurring
 from financito.main import update_account
-from financito.models import Account, Transaction
+from financito.models import Account,Category,Transaction
 from financito.models_analytics import Anomaly,RecurringSeries
 from financito.routes_analytics import anomalies as route_anomalies,recurring as route_recurring
 from financito.schemas import AccountUpdate
@@ -72,7 +72,9 @@ def test_recurring_detection_and_90_day_historical_patterns():
 
         db.execute(delete(RecurringSeries).where(RecurringSeries.merchant_normalized==merchant))
         db.execute(delete(Transaction).where(Transaction.account_id==account.id))
-        db.delete(account);db.commit()
+        db.delete(account)
+        db.delete(anomaly_category)
+        db.commit()
 
 
 def test_manual_balance_can_be_corrected_but_connected_balance_is_bank_owned():
@@ -97,7 +99,8 @@ def test_analysis_routes_filter_recurring_and_anomalies_by_period():
     with SessionLocal() as db:
         categories=ensure_categories(db)
         account=Account(name="Period filter test",current_balance=Decimal("1000"),source="manual")
-        db.add(account);db.flush()
+        anomaly_category=Category(name="Period filter anomaly",system_key="period_filter_anomaly_"+uuid4().hex)
+        db.add_all([account,anomaly_category]);db.flush()
 
         for when in (date(2026,6,2),date(2026,7,2),date(2026,8,2)):
             _tx(db,account.id,when,"-20","Suscripción "+when.isoformat(),merchant,categories["subscriptions"].id)
@@ -109,7 +112,7 @@ def test_analysis_routes_filter_recurring_and_anomalies_by_period():
             (date(2026,8,15),"-10"),
             (date(2026,9,3),"-100"),
         ):
-            _tx(db,account.id,when,amount,"Compra patrón "+when.isoformat(),"outlier-period-test",categories["shopping"].id)
+            _tx(db,account.id,when,amount,"Compra patrón "+when.isoformat(),"outlier-period-test",anomaly_category.id)
         db.flush()
         detect_recurring(db,use_ai=False)
         detect_anomalies(db)
