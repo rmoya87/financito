@@ -12,6 +12,7 @@ import {Card} from '@/components/ui/card';
 import {Money,formatMoney,formatNumber} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
 import {DataStatus} from '@/components/data-status';
+import {MetricTile,SectionIntro} from '@/components/finance-ui';
 
 type Rec={id:string;merchant:string;cadence:string;expected_amount:string;next_expected_date:string;confidence:string;action:'keep'|'review'|'cancel'|'not_subscription';essential:boolean;essential_override:boolean|null;contract_id:string|null;contract_name:string|null;spending_class:string;projected:boolean};
 type ContractRef={id:string;provider_name:string;contract_type:string};
@@ -156,12 +157,23 @@ export default function AnalyticsPage(){
     />
     <div className="mb-4"><DataStatus label="Calculado" detail="movimientos del periodo seleccionado" tone="calculated"/></div>
 
+    {overview.data?.cash_flow&&<>
+      <SectionIntro eyebrow="Lectura rápida" title="Qué está pasando en el periodo" description="Primero la foto principal; debajo quedan las gráficas y patrones que explican por qué."/>
+      <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricTile label="Ingresos" value={<Money value={overview.data.cash_flow.income}/>} detail="Entradas reales del periodo seleccionado" status="Calculado" statusTone="calculated"/>
+        <MetricTile label="Gasto" value={<Money value={overview.data.cash_flow.expenses}/>} detail="Salidas netas de reembolsos" status={Number(overview.data.cash_flow.expenses)>Number(overview.data.cash_flow.income)?'Por encima de ingresos':'Controlado'} statusTone={Number(overview.data.cash_flow.expenses)>Number(overview.data.cash_flow.income)?'pending':'confirmed'}/>
+        <MetricTile label="Ahorro" value={<Money value={overview.data.cash_flow.savings}/>} detail="Ingresos menos gasto del periodo" emphasis/>
+        <MetricTile label="Tasa de ahorro" value={overview.data.cash_flow.savings_rate===null?'—':(Number(overview.data.cash_flow.savings_rate)*100).toLocaleString('es-ES',{maximumFractionDigits:1})+'%'} detail="Ahorro sobre los ingresos del periodo"/>
+      </div>
+    </>}
+
     <div className="mb-4 flex flex-wrap gap-2">
       <button className="fin-button" onClick={()=>refresh.mutate()} disabled={refresh.isPending}>{refresh.isPending?'Recalculando…':'Recalcular patrones'}</button>
       <Link href="/cost-centers/" className="fin-button secondary">Organizar por centros de coste</Link>
     </div>
     {refresh.error&&<div className="mb-4"><ErrorState error={refresh.error}/></div>}
 
+    <SectionIntro eyebrow="Evolución" title="Cómo se mueve tu dinero" description="Tendencia, cierre estimado y composición del gasto con el mismo periodo global."/>
     <div className="grid gap-4 xl:grid-cols-2">
       <Card className="xl:col-span-2">
         <h2 className="font-bold">Ingresos, gasto y ahorro</h2>
@@ -206,6 +218,7 @@ export default function AnalyticsPage(){
           <div className="mt-3 space-y-2">{merchants.slice(0,10).map(row=>{const pct=merchantShareTotal>0?Math.min(100,Math.max(0,Number(row.amount||0)/merchantShareTotal*100)):0;return <div key={row.merchant} className="flex items-center justify-between gap-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm"><span>{row.merchant}</span><div className="text-right"><strong><Money value={row.amount}/></strong><div className="text-xs text-[var(--muted)]">{formatNumber(pct,1,1)}%</div></div></div>})}</div>}
       </Card>
 
+      <div className="xl:col-span-2"><SectionIntro eyebrow="Patrones" title="Qué se repite y qué se sale de lo normal" description="Recurrentes y anomalías aparecen juntos para decidir qué mantener, revisar o corregir."/></div>
       {(recurring.isLoading||recurring.error||recurringRows.length>0)&&<Card className="xl:col-span-2">
         <h2 className="font-bold">Recurrentes</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">Decide qué hacer con cada patrón. “No es una suscripción” deja de proyectarlo; “Es imprescindible” lo mueve a gasto fijo esencial. Las decisiones persisten aunque recalcules patrones.</p>
