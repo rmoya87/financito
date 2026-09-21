@@ -68,18 +68,18 @@ def status()->dict:
             "error":f"{type(exc).__name__}: {exc}",
         }
 
-def embed(inputs:str|list[str])->list[list[float]]:
+def embed(inputs:str|list[str],timeout:float=120)->list[list[float]]:
     _,embedding_model=effective_ai_models()
     if not embedding_model:raise RuntimeError("No local embedding model configured")
     try:
-        data=_json("/api/embed",{"model":embedding_model,"input":inputs,"keep_alive":"10m"},timeout=120)
+        data=_json("/api/embed",{"model":embedding_model,"input":inputs,"keep_alive":"10m"},timeout=timeout)
         return data["embeddings"]
     except HTTPError as exc:
         if exc.code not in {404,405,422}:raise
         values=[inputs] if isinstance(inputs,str) else inputs
         embeddings=[]
         for value in values:
-            legacy=_json("/api/embeddings",{"model":embedding_model,"prompt":value},timeout=120)
+            legacy=_json("/api/embeddings",{"model":embedding_model,"prompt":value},timeout=timeout)
             vector=legacy.get("embedding")
             if not isinstance(vector,list):raise RuntimeError("Ollama no devolvió un embedding compatible")
             embeddings.append(vector)
@@ -136,7 +136,7 @@ def generate_json(prompt:str,timeout:float=180)->dict:
         if start>=0 and end>start:return json.loads(raw[start:end+1])
         raise RuntimeError("Local AI did not return valid JSON")
 
-def ask(prompt:str,context:str)->str:
+def ask(prompt:str,context:str,timeout:float=30)->str:
     return _generate(
         "Eres Financito. Responde en español. No inventes cifras, normativa ni fuentes. "
         "Las cifras financieras solo pueden proceder del contexto calculado por herramientas. "
@@ -144,7 +144,7 @@ def ask(prompt:str,context:str)->str:
         "si status=confirmed y user_verified=true. No uses hechos inferred/ambiguous como base cierta de cálculos o "
         "conclusiones materiales. Si falta evidencia, indícalo.\n\n"
         "CONTEXTO LOCAL ESTRUCTURADO Y DOCUMENTAL:\n"+context+"\n\nPREGUNTA:\n"+prompt,
-        timeout=180,
+        timeout=timeout,
     )
 
 def diagnose()->dict:

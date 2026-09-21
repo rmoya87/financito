@@ -68,15 +68,19 @@ def _vector_search(session:Session,query_vector:list[float],limit:int)->list[tup
         candidates=session.scalars(select(DocumentChunk).where(DocumentChunk.embedding_json.is_not(None))).all()
         return sorted(((c.id,_cos(query_vector,json.loads(c.embedding_json or "[]"))) for c in candidates),key=lambda x:x[1],reverse=True)[:limit]
 
-def search(session:Session,query:str,limit:int=8)->list[dict]:
+def search(session:Session,query:str,limit:int=8,*,use_vector:bool=True,vector_timeout:float=6)->list[dict]:
     tokens=re.findall(r"[\wáéíóúüñÁÉÍÓÚÜÑ]{2,}",query)
     match=" OR ".join('"'+t.replace('"','')+'"' for t in tokens) or '""'
     lexical=[]
     try:lexical=session.execute(text("SELECT chunk_id,bm25(document_chunk_fts) score FROM document_chunk_fts WHERE document_chunk_fts MATCH :q ORDER BY score LIMIT :n"),{"q":match,"n":limit*4}).all()
     except Exception:lexical=[]
     vector=[]
-    try:vector=_vector_search(session,embed(query)[0],limit*4)
-    except Exception:vector=[]
+    # La búsqueda textual es inmediata y suficiente para coincidencias claras.
+    # Solo consultamos Ollama cuando el llamador lo permite y faltan resultados
+    # léxicos; así Buscar/Preguntar no quedan bloqueados por un embedding lento.
+    if use_vector and len(lexical)<limit:
+        try:vector=_vector_search(session,embed(query,timeout=vector_timeout)[0],limit*4)
+        except Exception:vector=[]
     scores={}
     for rank,(cid,_) in enumerate(lexical):scores[cid]=scores.get(cid,0)+1/(60+rank+1)
     for rank,(cid,_) in enumerate(vector):scores[cid]=scores.get(cid,0)+1/(60+rank+1)

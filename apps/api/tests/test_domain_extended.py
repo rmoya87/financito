@@ -70,6 +70,18 @@ def test_rag_indexes_and_finds_vault_text():
         assert any(r["document_id"]==indexed.document.id for r in results)
 
 
+def test_rag_lexical_search_can_skip_vector_model(monkeypatch):
+    path=settings.vault_dir/"rag-lexical-fast.txt"
+    path.write_text("La póliza rápida tiene una franquicia de 250 euros.",encoding="utf-8")
+    with SessionLocal() as db:
+        indexed=index_document(db,str(path),"insurance");db.commit()
+        def should_not_embed(*args,**kwargs):
+            raise AssertionError("La búsqueda lexical no debe invocar Ollama")
+        monkeypatch.setattr("financito.services.rag.embed",should_not_embed)
+        results=search(db,"franquicia 250",5,use_vector=False)
+        assert any(r["document_id"]==indexed.document.id for r in results)
+
+
 def test_stress_backtest_and_planning_engines():
     stressed=run_stress(Decimal("10000"),Decimal("3000"),Decimal("2500"),Decimal("20000"),Decimal("50"),Decimal("2000"),Decimal("20"),6)
     assert Decimal(stressed["ending_liquidity"]) < Decimal("10000")

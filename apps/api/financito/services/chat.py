@@ -19,7 +19,7 @@ def _deterministic_fallback(structured:dict,reason:str)->str:
         f"El patrimonio neto calculado para el ámbito actual es {structured['wealth']['net_worth']} €. "
         f"Hay {len(structured['decision_alerts'])} alerta(s) determinista(s) y "
         f"{len(structured['actions'])} acción(es) pendiente(s). "
-        "Puedes revisar Configuración > IA local para probar el modelo."
+        "La respuesta se ha devuelto sin esperar indefinidamente al modelo local."
     )
 
 
@@ -33,6 +33,18 @@ def answer(
     account_type:str|None=None,
 )->dict:
     today=date.today()
+
+    # Comprobamos Ollama una sola vez y antes de la recuperación documental.
+    # Si no está listo, la consulta sigue por el camino determinista/lexical.
+    ai=status()
+    ai_meta={
+        "available":bool(ai.get("available")),
+        "ready":bool(ai.get("chat_ready")),
+        "model":ai.get("configured_model"),
+        "used":False,
+        "error":ai.get("error"),
+    }
+
     structured=live_decision_context(
         session,
         start=start,
@@ -48,7 +60,13 @@ def answer(
         "savings":current_flow["savings"],
     }
 
-    evidence=search(session,question,limit=6)
+    evidence=search(
+        session,
+        question,
+        limit=6,
+        use_vector=bool(ai.get("embedding_ready")),
+        vector_timeout=6,
+    )
     fragments="\n\n".join(
         f"[{index+1}] {item['document_name']}: {item['text'][:1200]}"
         for index,item in enumerate(evidence)
@@ -59,25 +77,16 @@ def answer(
         +fragments
     )
 
-    ai=status()
-    ai_meta={
-        "available":bool(ai.get("available")),
-        "ready":bool(ai.get("chat_ready")),
-        "model":ai.get("configured_model"),
-        "used":False,
-        "error":ai.get("error"),
-    }
-
     if ai_meta["available"] and ai_meta["ready"] and ai_meta["model"]:
         try:
-            result=ask(question,context)
+            result=ask(question,context,timeout=30)
             ai_meta["used"]=True
             ai_meta["error"]=None
         except Exception as exc:
             ai_meta["error"]=f"{type(exc).__name__}: {exc}"
             result=_deterministic_fallback(
                 structured,
-                "La IA local estaba configurada pero no pudo completar esta pregunta.",
+                "La IA local no respondió a tiempo o no pudo completar esta pregunta.",
             )
     elif not ai_meta["available"]:
         result=_deterministic_fallback(
