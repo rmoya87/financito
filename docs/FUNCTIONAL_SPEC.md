@@ -1073,3 +1073,54 @@ Las condiciones encontradas automáticamente se muestran como pendientes de vali
 - Cuenta y Periodo son filtros globales persistentes y se muestran a la derecha del submenú o del título cuando no existe submenú.
 - Importar extracto se abre desde un modal en Movimientos para priorizar la tabla.
 - Buscar usa SQL/FTS como camino inmediato y no espera a Ollama para devolver coincidencias. Preguntar degrada a datos deterministas si embeddings o generación local no responden con rapidez.
+
+
+## Gestión financiera cotidiana
+
+### Objetivos y dinero reservado
+
+Los objetivos vinculados a una cuenta usan una **asignación explícita**. El progreso no equivale al saldo completo de la cuenta: cada euro puede estar reservado para un único objetivo y la suma de asignaciones activas nunca puede superar el saldo disponible de esa cuenta.
+
+El fondo de emergencia es un objetivo especial. Financito calcula el gasto esencial mensual a partir del histórico reciente, permite una meta de 3, 6, 9 o 12 meses y muestra tanto el importe reservado como los meses reales de cobertura.
+
+### Presupuestos
+
+Cada presupuesto tiene un ámbito inequívoco:
+
+- **Hogar**: se compara con el gasto consolidado de todas las cuentas.
+- **Cuenta**: se compara exclusivamente con los movimientos de esa cuenta.
+
+Un filtro de cuenta no debe comparar su gasto con un presupuesto de hogar ni reutilizar ese límite como si fuese específico de la cuenta.
+
+### Disponible para gastar
+
+Inicio calcula una cifra operativa de **Disponible para gastar**. Parte de la liquidez y protege, en este orden, el dinero reservado para objetivos, las obligaciones y gastos previsibles hasta el siguiente ingreso detectado y el colchón mínimo de liquidez que todavía no esté cubierto por el fondo de emergencia.
+
+El resultado nunca puede ser negativo y nunca debe presentar como libre dinero ya asignado a un objetivo.
+
+### Estructura del gasto
+
+Cada euro de gasto pertenece a exactamente uno de cuatro grupos excluyentes:
+
+- fijo esencial;
+- fijo prescindible;
+- variable esencial;
+- discrecional.
+
+La suma de estos cuatro grupos debe coincidir con el gasto total del periodo. Los recurrentes se clasifican automáticamente a partir de su categoría y pueden corregirse por el usuario.
+
+### Recurrentes accionables
+
+Cada patrón recurrente permite elegir **Mantener**, **Revisar**, **Cancelar** o **No es una suscripción**, indicar si es imprescindible y vincularlo a un contrato. Las preferencias sobreviven al recálculo de patrones.
+
+Un recurrente marcado como “No es una suscripción” deja de proyectarse en el calendario. Revisar o Cancelar genera una acción pendiente para el usuario.
+
+### Situación, cambios, avisos y procedencia
+
+Inicio muestra cuatro indicadores explicables: Liquidez, Ahorro, Deuda y Compromisos. Los estados visuales solo se aplican cuando existe una regla visible que los justifica.
+
+“Qué ha cambiado” compara el periodo seleccionado con el periodo inmediatamente anterior de la misma duración.
+
+Los avisos se reservan para situaciones accionables, como renovaciones próximas, cuentas que pueden quedarse cortas, presupuestos al límite, subidas de recurrentes, objetivos fuera de ritmo o evidencia contractual pendiente.
+
+Los datos financieros relevantes deben indicar discretamente su procedencia o estado: calculado, guardado/confirmado o pendiente de confirmar.
