@@ -5,7 +5,7 @@ from decimal import Decimal
 from sqlalchemy import select
 
 from financito.db import SessionLocal
-from financito.models import Document,ExtractedFact,Mortgage
+from financito.models import Contract,Document,ExtractedFact,Mortgage
 from financito.models_analytics import EntityLink,LinkedProduct
 from financito.models_extended import CoverageFact,InsurancePolicy,MortgageProfileExtra
 from financito.routes_extended import wealth_home
@@ -104,6 +104,23 @@ def test_confirmed_embedded_life_insurance_projects_to_mortgage_and_insurance():
             ]
             db.add_all(facts);db.flush()
 
+            sibling=Document(
+                file_path="/tmp/financito-test-life-receipt.pdf",
+                file_name="recibo-seguro-vida-bankinter.pdf",
+                mime_type="application/pdf",
+                sha256="e"*64,
+                document_type="contract",
+                status="indexed",
+                page_count=1,
+                extracted_text="Recibo del seguro 0128 0064 36 0510018972",
+            )
+            db.add(sibling);db.flush()
+            db.add(_fact(
+                sibling.id,"contract_term","contract_number",
+                "0128 0064 36 0510018972",page=1,
+            ))
+            db.flush()
+
             sync=synchronize_document_evidence(db,document)
             db.flush()
 
@@ -126,7 +143,7 @@ def test_confirmed_embedded_life_insurance_projects_to_mortgage_and_insurance():
             assert policy.policy_number_masked=="0128 0064 36 0510018972"
             assert "Fallecimiento por cualquier causa" in policy.insured_object_json
 
-            insurance_contract=policy.contract_id and db.get(__import__("financito.models",fromlist=["Contract"]).Contract,policy.contract_id)
+            insurance_contract=policy.contract_id and db.get(Contract,policy.contract_id)
             assert insurance_contract is not None
             assert insurance_contract.provider_name=="Bankinter Seguros De Vida S.a."
             assert insurance_contract.renewal_date==date(2027,5,26)
@@ -149,6 +166,22 @@ def test_confirmed_embedded_life_insurance_projects_to_mortgage_and_insurance():
                 LinkedProduct.linked_product_id==policy.id,
             ))
             assert relation is not None
+
+            sibling_policy_link=db.scalar(select(EntityLink).where(
+                EntityLink.from_type=="document",
+                EntityLink.from_id==sibling.id,
+                EntityLink.relation_type=="evidence_for",
+                EntityLink.to_type=="insurance_policy",
+                EntityLink.to_id==policy.id,
+            ))
+            sibling_mortgage_link=db.scalar(select(EntityLink).where(
+                EntityLink.from_type=="document",
+                EntityLink.from_id==sibling.id,
+                EntityLink.relation_type=="evidence_for",
+                EntityLink.to_type=="mortgage",
+            ))
+            assert sibling_policy_link is not None
+            assert sibling_mortgage_link is None
 
             home=wealth_home(mortgage.id,db)
             linked=next(row for row in home["insurance"] if row["id"]==policy.id)
