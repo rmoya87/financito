@@ -236,8 +236,6 @@ export default function InsurancePage(){
           </div>):<EmptyState>Crea tu primer seguro y después asocia su documentación desde la propia póliza.</EmptyState>}</div>
         </Card>
 
-      </Card>
-
       <Card className="mt-4">
         <h2 className="font-bold">Conciliación con tus movimientos</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">Compara lo que dicen las pólizas con lo que realmente aparece cargado en tus cuentas. Una diferencia no se interpreta automáticamente como error: puede ser una prima fraccionada, un cambio de precio o un movimiento mal categorizado.</p>
