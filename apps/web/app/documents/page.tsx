@@ -251,19 +251,18 @@ export default function DocumentsPage(){
     ['contract','loan','energy','telecom'].includes(selectedDoc?.document_type||'')?g.entity_type==='contract':
     true
   );
-  const pending=materialFacts.filter(f=>!f.user_verified&&['inferred','ambiguous','conflicting'].includes(f.status)).length;
-  const factText=(key:string)=>String(materialFacts.find(f=>f.key===key&&f.user_verified&&f.status==='confirmed')?.value?.value||'');
+  const mortgageFactText=(key:string)=>String(materialFacts.find(f=>f.fact_type==='mortgage_term'&&f.key===key&&f.user_verified&&f.status==='confirmed')?.value?.value||'');
   const prefillMortgage=()=>{
-    const termYears=factText('mortgage_term_years');
-    const kind=factText('interest_type').toLowerCase();
+    const termYears=mortgageFactText('mortgage_term_years');
+    const kind=mortgageFactText('interest_type').toLowerCase();
     setMortgageDraft({
-      lender:factText('provider_name')||mortgageDraft.lender,
-      remaining_principal:factText('remaining_principal')||mortgageDraft.remaining_principal,
+      lender:mortgageFactText('provider_name')||mortgageDraft.lender,
+      remaining_principal:mortgageFactText('remaining_principal')||mortgageDraft.remaining_principal,
       interest_type:kind.includes('variable')?'variable':kind.includes('mixt')?'mixed':kind.includes('fij')||kind.includes('fixed')?'fixed':mortgageDraft.interest_type,
-      nominal_rate_pct:factText('nominal_rate')||mortgageDraft.nominal_rate_pct,
-      monthly_payment:factText('monthly_payment')||mortgageDraft.monthly_payment,
-      remaining_months:factText('remaining_months')||(termYears?String(Math.round(Number(termYears)*12)):mortgageDraft.remaining_months),
-      early_repayment_fee:factText('early_repayment_fee')||mortgageDraft.early_repayment_fee,
+      nominal_rate_pct:mortgageFactText('nominal_rate')||mortgageDraft.nominal_rate_pct,
+      monthly_payment:mortgageFactText('monthly_payment')||mortgageDraft.monthly_payment,
+      remaining_months:mortgageFactText('remaining_months')||(termYears?String(Math.round(Number(termYears)*12)):mortgageDraft.remaining_months),
+      early_repayment_fee:mortgageFactText('early_repayment_fee')||mortgageDraft.early_repayment_fee,
     });
   };
 
