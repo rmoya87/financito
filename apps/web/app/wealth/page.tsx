@@ -255,6 +255,7 @@ export default function WealthPage(){
             <div className="rounded-xl bg-[var(--surface-2)] p-4">
               <div className="text-xs text-[var(--muted)]">Capital pendiente</div>
               <div className="mt-1 text-xl font-bold">{home.data.mortgage?<Money value={home.data.mortgage.remaining_principal}/>:<span>—</span>}</div>
+              <div className="mt-1 text-[11px] text-[var(--muted)]">{home.data.mortgage?.lender||'Sin hipoteca'}</div>
               {home.data.principal_progress?<div className="mt-2">
                 <div className="flex items-center justify-between text-[11px]"><strong>{Number(home.data.principal_progress.remaining_percent).toLocaleString('es-ES',{maximumFractionDigits:1})}% pendiente</strong><span className="text-[var(--muted)]">{Number(home.data.principal_progress.paid_percent).toLocaleString('es-ES',{maximumFractionDigits:1})}% pagado</span></div>
                 <div className="mt-1 flex h-2 overflow-hidden rounded-full bg-[var(--border)]" aria-label="Progreso del capital hipotecario">
