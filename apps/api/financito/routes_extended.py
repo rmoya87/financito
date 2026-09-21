@@ -764,6 +764,7 @@ def _ensure_insurance_contract(db:Session,p:InsuranceCreate|InsuranceUpdate,curr
         db.add(contract);db.flush()
     if p.provider_name:contract.provider_name=p.provider_name.strip()[:180]
     contract.contract_type="insurance"
+    contract.annual_cost=p.annual_premium
     contract.renewal_date=p.renewal_date
     contract.cancellation_notice_days=p.cancellation_notice_days
     contract.early_exit_penalty=p.early_exit_penalty
