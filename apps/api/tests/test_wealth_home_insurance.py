@@ -32,7 +32,7 @@ def test_wealth_details_reports_asset_value_evolution_and_liability_can_be_delet
 
         data=wealth_details(db)
         row=next(item for item in data["assets"] if item["id"]==asset.id)
-        assert row["previous_value"]=="30000.0000"
+        assert Decimal(row["previous_value"])==Decimal("30000")
         assert Decimal(row["change_amount"])==Decimal("-6000.00")
         assert Decimal(row["change_pct"])==Decimal("-20.00")
 
@@ -88,4 +88,5 @@ def test_insurance_verdict_exposes_contract_conditions_coverages_and_exclusions(
         assert row["coverages"][0]["exclusions"]["exclusion"]=="falta de mantenimiento"
         assert row["coverages"][0]["effective_to"]=="2026-12-31"
 
-        db.delete(coverage);db.delete(policy);db.delete(contract);db.commit()
+        db.execute(delete(CoverageFact).where(CoverageFact.id==coverage.id))
+        db.delete(policy);db.delete(contract);db.commit()
