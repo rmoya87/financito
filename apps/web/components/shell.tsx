@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import {useEffect,useState} from 'react';
 import {usePathname} from 'next/navigation';
 import {
   ArrowLeftRight,
@@ -86,7 +87,9 @@ function ContextNav({label,items,path}:{label:string;items:NavItem[];path:string
   return <nav aria-label={`Navegación de ${label}`} className="mb-6 overflow-x-auto">
     <div className="inline-flex min-w-full gap-1 rounded-2xl border border-[var(--border)] bg-white p-1 sm:min-w-0">
       {items.map(item=>{
-        const active=path.startsWith(item.href);
+        const [itemPath,itemHash='']=item.href.split('#');
+        const [currentPath,currentHash='']=path.split('#');
+        const active=itemHash?currentPath===itemPath&&currentHash===itemHash:currentPath.startsWith(itemPath)&&!currentHash;
         return <Link
           key={item.href}
           href={item.href}
@@ -102,6 +105,14 @@ function ContextNav({label,items,path}:{label:string;items:NavItem[];path:string
 
 export function Shell({children}:{children:React.ReactNode}){
   const path=usePathname();
+  const [hash,setHash]=useState('');
+  useEffect(()=>{
+    const update=()=>setHash(window.location.hash.replace(/^#/,''));
+    update();
+    window.addEventListener('hashchange',update);
+    return ()=>window.removeEventListener('hashchange',update);
+  },[path]);
+  const contextPath=hash?path+'#'+hash:path;
   const activeArea=areas.find(area=>matches(path,area.paths));
   const inConfiguration=matches(path,configurationPaths);
 
@@ -139,7 +150,7 @@ export function Shell({children}:{children:React.ReactNode}){
     </aside>
 
     <main className="min-w-0 p-4 md:p-7 lg:p-9">
-      {activeArea&&activeArea.href!=='/'?<ContextNav label={activeArea.label} items={activeArea.secondary} path={path}/>:null}
+      {activeArea&&activeArea.href!=='/'?<ContextNav label={activeArea.label} items={activeArea.secondary} path={contextPath}/>:null}
       {inConfiguration?<ContextNav label="Configuración" items={configurationNav} path={path}/>:null}
       {children}
     </main>
