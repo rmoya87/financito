@@ -74,8 +74,8 @@ export default function WealthPage(){
   const [homeValue,setHomeValue]=useState('');
 
   useEffect(()=>{
-    if(!selectedMortgageId&&mortgages.data?.length)setSelectedMortgageId(mortgages.data[0].id);
-  },[mortgages.data,selectedMortgageId]);
+    if(!creatingMortgage&&!selectedMortgageId&&mortgages.data?.length)setSelectedMortgageId(mortgages.data[0].id);
+  },[mortgages.data,selectedMortgageId,creatingMortgage]);
 
   useEffect(()=>{
     const h=home.data;
@@ -295,7 +295,7 @@ export default function WealthPage(){
           {home.data.pending_review?.length>0&&<div className="mt-4 rounded-xl border border-[var(--brand)] bg-[var(--brand-soft)] p-4">
             <h3 className="font-semibold">Datos ya encontrados pendientes de validar</h3>
             <p className="mt-1 text-xs text-[var(--muted)]">No están ausentes: el extractor o la IA local los ha localizado. Confírmalos en el documento para que se proyecten automáticamente a la hipoteca y entren en cálculos.</p>
-            <div className="mt-2 grid gap-2 md:grid-cols-2">{home.data.pending_review.map(x=><div key={x.key} className="rounded-lg bg-white p-3 text-xs"><strong>{x.label}</strong><div className="mt-1">{String(x.value??'Dato localizado')}{x.unit?' '+x.unit:''}</div><div className="mt-1 text-[var(--muted)]">{x.reason}</div>{x.document_id&&<Link className="mt-2 inline-block underline" href={'/documents/?document='+encodeURIComponent(x.document_id)}>Revisar evidencia{x.page?' · pág. '+x.page:''}</Link>}</div>)}</div>
+            <div className="mt-2 grid gap-2 md:grid-cols-2">{home.data.pending_review.map(x=><div key={x.key} className="rounded-lg bg-white p-3 text-xs"><strong>{x.label}</strong><div className="mt-1">{String(x.value??'Dato localizado')}{x.unit?' '+x.unit:''}</div><div className="mt-1 text-[var(--muted)]">{x.reason}</div>{x.document_id&&selectedMortgageId&&<Link className="mt-2 inline-block underline" href={'/documents/?entity_type=mortgage&entity_id='+encodeURIComponent(selectedMortgageId)+'&label='+encodeURIComponent('Hipoteca · '+(home.data?.mortgage?.lender||'seleccionada'))+'&document='+encodeURIComponent(x.document_id)}>Revisar documentación{x.page?' · pág. '+x.page:''}</Link>}</div>)}</div>
           </div>}
 
           {home.data.missing.length>0&&selectedMortgageId&&!creatingMortgage&&<div className="mt-4 rounded-xl bg-[var(--surface-2)] p-4">
