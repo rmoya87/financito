@@ -140,3 +140,8 @@ La regresión comprueba que Movimientos y Análisis exponen el mismo selector te
 ## Análisis diario, comercios y eliminación de cuentas
 
 Las regresiones comprueban que la serie diaria incluye todos los días del intervalo, que el total de comercios es coherente con el gasto, que Recurrentes no depende del filtro mensual, que Análisis muestra el horizonte de 30 días y permite alternar gráfica/listado, y que eliminar una cuenta elimina solo sus movimientos sin afectar a otras cuentas.
+
+
+## Regresiones Casa, seguros, bienes y recurrentes
+
+La cobertura automática comprueba: descarte de patrones recurrentes históricos ya caducados; exclusión de esos patrones del calendario; evolución de un bien a partir de snapshots; borrado de una deuda sin mantenerla en patrimonio actual; exposición de condiciones contractuales, objeto asegurado, condiciones/exclusiones y vigencia de coberturas en el veredicto de seguros; navegación de Patrimonio con Casa; creación/borrado de deuda desde UI; apertura de la ficha completa de una póliza; y porcentajes de comercios que nunca superan el 100 % en gráfica/listado.
