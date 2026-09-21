@@ -144,7 +144,7 @@ def test_spending_structure_is_exclusive_and_safe_to_spend_protects_reserved_mon
         db.delete(goal);db.delete(account);db.commit()
 
 
-def test_available_to_spend_changes_with_selected_period_spending_rate():
+def test_available_to_spend_exposes_selected_period_spending_rate_without_treating_past_as_today():
     suffix=uuid4().hex[:8]
     with SessionLocal() as db:
         cats=ensure_categories(db)
@@ -161,12 +161,78 @@ def test_available_to_spend_changes_with_selected_period_spending_rate():
         _transaction(db,account.id,today,"-100","High spend "+suffix,discretionary[1].id,False)
         db.commit()
 
-        low=financial_health_summary(db,as_of=today,start=previous,end=previous,account_id=account.id)
-        high=financial_health_summary(db,as_of=today,start=today,end=today,account_id=account.id)
+        past=financial_health_summary(db,as_of=today,start=previous,end=previous,account_id=account.id)
+        current=financial_health_summary(db,as_of=today,start=today,end=today,account_id=account.id)
 
-        assert Decimal(low["safe_to_spend"]["selected_monthly_spending"])==Decimal("300.00")
-        assert Decimal(high["safe_to_spend"]["selected_monthly_spending"])==Decimal("3000.00")
-        assert Decimal(high["safe_to_spend"]["amount"])<Decimal(low["safe_to_spend"]["amount"])
+        assert past["safe_to_spend"]["mode"]=="historical"
+        assert past["safe_to_spend"]["historical_outcome"] is not None
+        assert current["safe_to_spend"]["mode"]=="current"
+        assert Decimal(current["safe_to_spend"]["selected_monthly_spending"])==Decimal("3000.00")
+
+        db.execute(delete(Transaction).where(Transaction.account_id==account.id))
+        db.delete(account);db.commit()
+
+
+def test_available_to_spend_includes_expected_salary_not_yet_received():
+    suffix=uuid4().hex[:8]
+    with SessionLocal() as db:
+        cats=ensure_categories(db)
+        salary_category=next(iter(cats.values()))
+        account=Account(
+            name="Salary health "+suffix,current_balance=Decimal("1000"),
+            available_balance=Decimal("1000"),source="manual",
+        )
+        db.add(account);db.flush()
+        today=date.today()
+        for days in (85,55,25):
+            _transaction(db,account.id,today-timedelta(days=days),"2000","Nomina "+suffix,salary_category.id,False)
+        db.commit()
+
+        health=financial_health_summary(db,as_of=today,start=today.replace(day=1),end=today,account_id=account.id)
+        safe=health["safe_to_spend"]
+
+        assert safe["mode"]=="current"
+        assert Decimal(safe["expected_income_before_horizon"])==Decimal("2000.00")
+        assert len(safe["expected_incomes"])==1
+        assert Decimal(safe["amount"])>=Decimal("3000.00")
+
+        db.execute(delete(Transaction).where(Transaction.account_id==account.id))
+        db.delete(account);db.commit()
+
+
+def test_closed_period_returns_consolidated_actual_vs_reconstructed_forecast():
+    suffix=uuid4().hex[:8]
+    with SessionLocal() as db:
+        cats=ensure_categories(db)
+        category=next(iter(cats.values()))
+        account=Account(
+            name="Historical health "+suffix,current_balance=Decimal("99999"),
+            available_balance=Decimal("99999"),source="manual",
+        )
+        db.add(account);db.flush()
+        today=date.today()
+        previous_end=today.replace(day=1)-timedelta(days=1)
+        previous_start=previous_end.replace(day=1)
+        actual_income_day=min(5,previous_end.day)
+        actual_expense_day=min(12,previous_end.day)
+        _transaction(db,account.id,previous_start.replace(day=actual_income_day),"3000","Income actual "+suffix,category.id,False)
+        _transaction(db,account.id,previous_start.replace(day=actual_expense_day),"-1000","Expense actual "+suffix,category.id,False)
+        ly_start=previous_start.replace(year=previous_start.year-1)
+        _transaction(db,account.id,ly_start.replace(day=actual_income_day),"2800","Income ly "+suffix,category.id,False)
+        _transaction(db,account.id,ly_start.replace(day=actual_expense_day),"-1200","Expense ly "+suffix,category.id,False)
+        db.commit()
+
+        health=financial_health_summary(db,as_of=today,start=previous_start,end=previous_end,account_id=account.id)
+        safe=health["safe_to_spend"]
+        outcome=safe["historical_outcome"]
+
+        assert safe["mode"]=="historical"
+        assert outcome is not None
+        assert Decimal(outcome["actual_income"])==Decimal("3000.00")
+        assert Decimal(outcome["actual_expenses"])==Decimal("1000.00")
+        assert Decimal(outcome["actual_savings"])==Decimal("2000.00")
+        assert Decimal(outcome["savings_variance"])==Decimal(outcome["actual_savings"])-Decimal(outcome["forecast_savings"])
+        assert outcome["forecast_kind"]=="reconstructed"
 
         db.execute(delete(Transaction).where(Transaction.account_id==account.id))
         db.delete(account);db.commit()
