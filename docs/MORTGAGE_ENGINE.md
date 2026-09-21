@@ -110,3 +110,31 @@ Una oferta pública no se considera mejor por el TIN de forma aislada. El compar
 \`break_even_meses = penalizacion_salida / ahorro_mensual_real\`
 
 La referencia solo entra en \`better_offers\` cuando el ahorro mensual es positivo, el ahorro de intereses conocido supera la penalización y el punto de equilibrio es anterior al vencimiento. Si la referencia requiere un seguro vinculado cuyo coste no está disponible, la comparación se marca incompleta y no se afirma que sea mejor. Tasación, costes de una FEIN u otros importes no confirmados nunca se presuponen como cero.
+
+
+## TAE estimada sobre el saldo restante
+
+Financito conserva la TAE contractual como evidencia original. Para describir el coste actual puede calcular una **TAE estimada restante** resolviendo la tasa interna mensual que iguala el capital pendiente con los flujos futuros conocidos:
+
+\`capital_pendiente = Σ[(cuota_calculada + costes_vinculados_mensuales_conocidos) / (1+r_m)^t]\`
+
+y anualiza:
+
+\`TAE_estimada = (1 + r_m)^12 - 1\`
+
+Esta tasa no es una nueva TAE contractual: excluye costes hundidos ya pagados y solo incorpora costes futuros actualmente estructurados.
+
+## Revisión automática de hipoteca variable
+
+Una revisión automática requiere evidencia confirmada de:
+- índice de referencia;
+- diferencial;
+- periodicidad de revisión;
+- fecha de la próxima revisión;
+- desfase exacto entre la fecha de revisión y el mes/publicación del índice (\`reference_index_lag_months\`).
+
+Para Euríbor 12 meses se usa la serie mensual oficial del BCE \`FM.M.U2.EUR.RT.MM.EURIBOR1YD_.HSTA\`. El motor calcula:
+
+\`TIN_estimado = indice_oficial + diferencial_confirmado\`
+
+y vuelve a amortizar el capital/plazo restantes para obtener cuota e intereses estimados. El resultado se etiqueta como estimación y exige confirmación; no sobrescribe automáticamente el TIN/cuota guardados.
