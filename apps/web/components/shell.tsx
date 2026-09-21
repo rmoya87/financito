@@ -76,7 +76,7 @@ function matches(path:string,paths:string[]){
 }
 
 function navLinkClass(active:boolean){
-  return `flex min-w-max items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${active?'bg-[var(--brand)] text-white':'text-[var(--muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]'}`;
+  return `flex min-w-max items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium ${active?'bg-[var(--brand)] text-white':'text-[var(--muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]'}`;
 }
 
 function ContextNav({label,items,path}:{label:string;items:NavItem[];path:string}){
@@ -89,7 +89,7 @@ function ContextNav({label,items,path}:{label:string;items:NavItem[];path:string
           key={item.href}
           href={item.href}
           aria-current={active?'page':undefined}
-          className={`rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${active?'bg-[var(--brand)] text-white':'text-[var(--muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]'}`}
+          className={`rounded-xl px-3 py-2 text-sm font-semibold ${active?'bg-[var(--brand)] text-white':'text-[var(--muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]'}`}
         >
           {item.label}
         </Link>;
