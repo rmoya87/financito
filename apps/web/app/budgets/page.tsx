@@ -79,7 +79,6 @@ export default function BudgetsPage(){
       </div>
     </>}
     <VisualPanel title="Nuevo presupuesto" description="Elige si el límite pertenece a todo el hogar o solo a una cuenta. Así nunca se comparan importes incompatibles." status="Movimientos reales" statusTone="calculated">
-      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Nuevo presupuesto</h2><p className="mt-1 text-sm text-[var(--muted)]">El ámbito evita comparar importes que no representan lo mismo.</p></div><DataStatus label="Calculado con movimientos reales" tone="calculated"/></div>
       <form className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-5" onSubmit={(e:FormEvent)=>{e.preventDefault();add.mutate()}}>
         <select className="fin-input" aria-label="Ámbito del presupuesto" value={scope} onChange={e=>setScope(e.target.value)}>
           <option value="household">Hogar · todas las cuentas</option>
