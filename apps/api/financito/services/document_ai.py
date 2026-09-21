@@ -379,6 +379,7 @@ def _normalize(result: dict, document: Document) -> dict:
         confidence = Decimal("0.55")
     confidence = max(Decimal("0"), min(Decimal("1"), confidence))
     return {
+        "analysis_schema_version": ANALYSIS_SCHEMA_VERSION,
         "document_type": document.document_type,
         "summary": str(result.get("summary") or "")[:3000],
         "advantages": _clean_list(result.get("advantages")),
@@ -579,6 +580,24 @@ SCHEMA JSON:
     _upsert_action(session, document, result)
     session.flush()
     return {"status": "ready", "analysis": result, "message": None}
+
+
+def stale_analysis_document_ids(session: Session) -> list[str]:
+    """Documents that need the current extraction/search strategy.
+
+    Missing analyses and analyses created with an older schema are refreshed when
+    the local model is available. The refresh never confirms material facts.
+    """
+    ids=[]
+    for document in session.scalars(select(Document).order_by(Document.updated_at.desc())).all():
+        analysis=latest_analysis(session,document.id)
+        try:
+            version=int((analysis or {}).get("analysis_schema_version") or 0)
+        except (TypeError,ValueError):
+            version=0
+        if version<ANALYSIS_SCHEMA_VERSION:
+            ids.append(document.id)
+    return ids
 
 
 def analyze_document_by_id(session: Session, document_id: str) -> dict:
