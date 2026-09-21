@@ -221,12 +221,6 @@ test('al pulsar un seguro se abre su ficha completa',async({page})=>{
 });
 
 test('Para ti abre Seguros y coberturas en modal sin salir de Inicio',async({page})=>{
-  const response=await page.request.get('/api/v1/insurance');
-  expect(response.ok()).toBeTruthy();
-  const policies=await response.json() as {id:string;provider_name?:string|null}[];
-  const policy=policies.find(item=>item.provider_name==='Seguro E2E')||policies[0];
-  expect(policy).toBeTruthy();
-
   await page.route('**/api/v1/dashboard?**',route=>route.fulfill({
     status:200,
     contentType:'application/json',
@@ -238,13 +232,13 @@ test('Para ti abre Seguros y coberturas en modal sin salir de Inicio',async({pag
       actions:[{
         id:'insurance-home-e2e',
         title:'Seguros y coberturas',
-        action_type:'review_insurance',
+        action_type:'insurance_review',
         priority:'high',
         due_date:null,
         status:'pending',
         notes:'Revisar coberturas y condiciones',
-        related_entity_type:'insurance_policy',
-        related_entity_id:policy.id,
+        related_entity_type:null,
+        related_entity_id:null,
       }],
     }),
   }));
@@ -253,6 +247,8 @@ test('Para ti abre Seguros y coberturas en modal sin salir de Inicio',async({pag
   await page.getByRole('button',{name:/Seguros y coberturas/}).click();
   const insuranceDialog=page.getByRole('dialog',{name:'Detalle de Seguros y coberturas'});
   await expect(insuranceDialog).toBeVisible();
+  await expect(insuranceDialog.getByRole('heading',{name:'Pólizas'})).toBeVisible();
+  await insuranceDialog.getByRole('button',{name:/Seguro E2E/}).click();
   await expect(insuranceDialog.getByRole('heading',{name:'Todo lo indicado por la documentación'})).toBeVisible();
   await expect(insuranceDialog.getByRole('heading',{name:'Obligaciones'})).toBeVisible();
   await expect(insuranceDialog.getByRole('heading',{name:'Riesgos'})).toBeVisible();
