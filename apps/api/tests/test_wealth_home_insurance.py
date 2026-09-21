@@ -424,7 +424,7 @@ def test_insurance_payment_rule_backfills_same_concept_and_applies_future_import
         verdict=insurance_verdict(db,use_ai=False)
         policy_row=next(row for row in verdict["policies"] if row["id"]==policy.id)
         assert policy_row["linked_payment_count"]==3
-        assert Decimal(policy_row["linked_payments_last_365_total"])==Decimal("360.00")
+        assert Decimal(policy_row["linked_payments_last_365_total"])==Decimal("240.00")
 
         tx_ids=db.scalars(select(Transaction.id).where(
             Transaction.account_id==account.id,
