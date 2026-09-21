@@ -9,6 +9,7 @@ import {PageHeader} from '@/components/page-header';
 import {Card} from '@/components/ui/card';
 import {Money} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
+import {DetailGroup,MetricTile,SectionIntro,VisualPanel} from '@/components/finance-ui';
 
 type Decision={id:string;type:string;question:string;status:string;created_at:string};
 type Detail={
@@ -137,25 +138,22 @@ export default function DecisionsPage(){
     <PageHeader title="Mis decisiones" description="Una única lectura de tus datos cruza hipoteca, seguros, movimientos, presupuestos, patrimonio, contratos y evidencia para decir qué se puede comparar ya y qué falta antes de decidir."/>
 
     {overview.isLoading?<Loading/>:overview.error?<ErrorState error={overview.error}/>:overview.data&&<>
-      <Card className="mb-4">
+      <SectionIntro eyebrow="Lectura rápida" title="Qué puedes decidir con los datos actuales" description="Separa liquidez, ahorro, alertas y datos pendientes antes de entrar en cada decisión."/>
+      <VisualPanel title="Cómo leer los resultados" description="Cada dato indica si está confirmado, calculado o es solo una referencia de mercado." className="mb-4">
         <div className="grid gap-3 md:grid-cols-3 text-sm">
           <div><strong>Confirmado</strong><div className="mt-1 text-xs text-[var(--muted)]">Dato de movimientos o documentos que ya forma parte del cálculo.</div></div>
           <div><strong>Calculado</strong><div className="mt-1 text-xs text-[var(--muted)]">Resultado matemático usando solo datos confirmados y supuestos visibles.</div></div>
           <div><strong>Referencia de mercado</strong><div className="mt-1 text-xs text-[var(--muted)]">Sirve para pedir una oferta; no se trata como condición personal hasta aportar FEIN o presupuesto.</div></div>
         </div>
-      </Card>
+      </VisualPanel>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Card><div className="text-xs uppercase text-[var(--muted)]">Liquidez</div><div className="mt-2 text-2xl font-bold"><Money value={overview.data.financial_context.liquidity}/></div><div className="mt-1 text-xs text-[var(--muted)]">Saldo consolidado usado en escenarios</div></Card>
-        <Card><div className="text-xs uppercase text-[var(--muted)]">Ahorro este mes</div><div className="mt-2 text-2xl font-bold"><Money value={overview.data.financial_context.cash_flow_current_month.savings}/></div><div className="mt-1 text-xs text-[var(--muted)]">Movimientos reales, reembolsos neteados</div></Card>
-        <Card><div className="text-xs uppercase text-[var(--muted)]">Decisiones con datos pendientes</div><div className="mt-2 text-2xl font-bold">{overview.data.summary.requiring_data}</div><div className="mt-1 text-xs text-[var(--muted)]">No se rellenan costes desconocidos con 0 €</div></Card>
-        <Card><div className="text-xs uppercase text-[var(--muted)]">Alertas de gasto/movimientos</div><div className="mt-2 text-2xl font-bold">{overview.data.summary.alerts}</div><div className="mt-1 text-xs text-[var(--muted)]">{overview.data.summary.pending_actions} acción(es) adicional(es) pendientes</div></Card>
+        <MetricTile label="Liquidez" value={<Money value={overview.data.financial_context.liquidity}/>} detail="Saldo consolidado usado en escenarios" status="Real" statusTone="confirmed"/>
+        <MetricTile label="Ahorro este mes" value={<Money value={overview.data.financial_context.cash_flow_current_month.savings}/>} detail="Movimientos reales, reembolsos neteados" status="Calculado" statusTone="calculated"/>
+        <MetricTile label="Faltan datos" value={overview.data.summary.requiring_data} detail="Decisiones que todavía no pueden cerrarse" status={overview.data.summary.requiring_data?'Revisar':'Completo'} statusTone={overview.data.summary.requiring_data?'pending':'confirmed'} emphasis={overview.data.summary.requiring_data>0}/>
+        <MetricTile label="Alertas" value={overview.data.summary.alerts} detail={overview.data.summary.pending_actions+' acción(es) adicional(es) pendientes'}/>
       </div>
 
-      <Card className="mt-4">
-        <div className="flex items-start justify-between gap-3">
-          <div><h2 className="font-bold">Qué puedes decidir ahora</h2><p className="mt-1 text-sm text-[var(--muted)]">Cada tarjeta separa resultado calculable, información pendiente y siguiente paso. No ordena alternativas por un único precio.</p></div>
-          <Sparkles size={20} className="text-[var(--brand)]"/>
-        </div>
+      <VisualPanel className="mt-4" title="Qué puedes decidir ahora" description="Cada tarjeta separa resultado calculable, información pendiente y siguiente paso. No ordena alternativas por un único precio." action={<Sparkles size={20} className="text-[var(--brand)]"/>}>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {overview.data.choice_cards.map(choice=><div key={choice.id} className="rounded-xl border border-[var(--border)] p-4">
             <div className="flex items-start justify-between gap-3"><div className="font-semibold">{choice.title}</div><ChoiceStatus status={choice.status}/></div>
@@ -165,8 +163,9 @@ export default function DecisionsPage(){
             <Link href={choice.path} className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[var(--brand)]">Abrir <ArrowRight size={14}/></Link>
           </div>)}
         </div>
-      </Card>
+      </VisualPanel>
 
+      <div className="mt-6"><SectionIntro eyebrow="Profundizar" title="Protecciones y señales antes de actuar" description="Liquidez protegida, condiciones contractuales y alertas se presentan antes de cualquier escenario."/></div>
       <div className="mt-4 grid gap-4 xl:grid-cols-2">
         <Card>
           <div className="flex items-start justify-between gap-3"><div><h2 className="font-bold">Amortización y liquidez</h2><p className="mt-1 text-sm text-[var(--muted)]">La simulación protege primero un colchón de referencia y aplica la comisión contractual real cuando está confirmada.</p></div><Calculator size={20} className="text-[var(--brand)]"/></div>
@@ -212,8 +211,8 @@ export default function DecisionsPage(){
       </Card>
     </>}
 
-    <section className="mt-6">
-      <div className="mb-3"><h2 className="text-lg font-bold">Casos guardados</h2><p className="text-sm text-[var(--muted)]">Guarda una decisión concreta para añadir alternativas, supuestos y después comparar el resultado observado.</p></div>
+    <section className="mt-7">
+      <SectionIntro eyebrow="Seguimiento" title="Mis decisiones guardadas" description="Guarda una decisión concreta para añadir alternativas, supuestos y después comparar el resultado observado."/>
       <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
         <div className="space-y-4">
           <Card>
@@ -235,21 +234,20 @@ export default function DecisionsPage(){
         </div>
 
         <div>{!selected?<EmptyState>Selecciona o crea un caso para documentar alternativas y resultado.</EmptyState>:detail.isLoading?<Loading/>:detail.error?<ErrorState error={detail.error}/>:detail.data&&<div className="space-y-4">
-          <Card><div className="flex flex-wrap justify-between gap-3"><div><h3 className="text-lg font-bold">{detail.data.question}</h3><div className="text-sm text-[var(--muted)]">{detail.data.type} · {detail.data.status}</div></div><select className="fin-input max-w-44" aria-label="Estado de la decisión" value={detail.data.status} onChange={e=>status.mutate(e.target.value)}><option value="draft">Borrador</option><option value="evaluating">Evaluando</option><option value="decided">Decidida</option><option value="closed">Cerrada</option><option value="cancelled">Cancelada</option></select></div></Card>
+          <VisualPanel title={detail.data.question} description={detail.data.type.replaceAll('_',' ')} status={detail.data.status} statusTone={detail.data.status==='closed'||detail.data.status==='decided'?'confirmed':'calculated'} action={<select className="fin-input max-w-44" aria-label="Estado de la decisión" value={detail.data.status} onChange={e=>status.mutate(e.target.value)}><option value="draft">Borrador</option><option value="evaluating">Evaluando</option><option value="decided">Decidida</option><option value="closed">Cerrada</option><option value="cancelled">Cancelada</option></select>}>
+            <div className="text-xs text-[var(--muted)]">Puedes cambiar el estado sin perder alternativas ni resultados observados.</div>
+          </VisualPanel>
 
-          <Card>
-            <h3 className="font-bold">Qué sabe Financito para este caso</h3>
-            <p className="mt-1 text-sm text-[var(--muted)]">La instantánea guardada se contrasta con el contexto vivo actual; ambos proceden de los mismos motores deterministas.</p>
+          <VisualPanel title="Qué sabe Financito para este caso" description="La instantánea guardada se contrasta con el contexto vivo actual; ambos proceden de los mismos motores deterministas." status="Contexto vivo" statusTone="calculated">
             <div className="mt-3 grid gap-2 md:grid-cols-4 text-sm">
               <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Hipotecas</div><strong>{detail.data.live_current_state?.mortgages?.length??0}</strong></div>
               <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Seguros</div><strong>{detail.data.live_current_state?.insurance?.policies?.length??0}</strong></div>
               <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Alertas</div><strong>{detail.data.live_current_state?.decision_alerts?.length??0}</strong></div>
               <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Liquidez</div><strong><Money value={detail.data.live_current_state?.liquidity??'0'}/></strong></div>
             </div>
-          </Card>
+          </VisualPanel>
 
-          <Card>
-            <h3 className="font-bold">Alternativas</h3>
+          <DetailGroup title="Alternativas" description="Añade opciones concretas y deja visibles los costes, beneficio esperado, riesgo e incertidumbre.">
             <form className="mt-3 grid gap-2 md:grid-cols-2" onSubmit={(e:FormEvent)=>{e.preventDefault();addAlt.mutate()}}>
               <input className="fin-input" placeholder="Nombre" value={alt.name} onChange={e=>setAlt({...alt,name:e.target.value})} required/>
               <select className="fin-input" aria-label="Nivel de riesgo" value={alt.risk_level} onChange={e=>setAlt({...alt,risk_level:e.target.value})}><option value="unknown">Riesgo desconocido</option><option value="low">Bajo</option><option value="medium">Medio</option><option value="high">Alto</option></select>
@@ -261,10 +259,9 @@ export default function DecisionsPage(){
             </form>
             {addAlt.error&&<div className="mt-3"><ErrorState error={addAlt.error}/></div>}
             <div className="mt-4 grid gap-3 md:grid-cols-2">{detail.data.alternatives.length?detail.data.alternatives.map(a=><div key={a.id} className="rounded-xl bg-[var(--surface-2)] p-4 text-sm"><strong>{a.name}</strong><div className="mt-2">Beneficio neto anual <Money value={a.net_benefit}/></div><div>Break-even {a.break_even_months??'n/d'} meses · riesgo {a.risk_level}</div>{a.uncertainties.length>0&&<div className="mt-1 text-xs text-[var(--muted)]">Pendiente: {a.uncertainties.join(', ')}</div>}</div>):<EmptyState>Añade alternativas concretas para este caso.</EmptyState>}</div>
-          </Card>
+          </DetailGroup>
 
-          <Card>
-            <h3 className="font-bold">Resultado observado</h3>
+          <DetailGroup title="Resultado observado" description="Cuando ejecutes una decisión, registra qué ocurrió para comparar expectativa y realidad.">
             <form className="mt-3 grid gap-2 md:grid-cols-2" onSubmit={(e:FormEvent)=>{e.preventDefault();addOutcome.mutate()}}>
               <select className="fin-input" aria-label="Alternativa aplicada" value={outcome.selected_alternative_id} onChange={e=>setOutcome({...outcome,selected_alternative_id:e.target.value})}><option value="">Alternativa aplicada…</option>{detail.data.alternatives.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
               <input className="fin-input" aria-label="Inicio de observación" type="date" value={outcome.observation_start} onChange={e=>setOutcome({...outcome,observation_start:e.target.value})}/>
@@ -276,7 +273,7 @@ export default function DecisionsPage(){
             </form>
             {addOutcome.error&&<div className="mt-3"><ErrorState error={addOutcome.error}/></div>}
             <div className="mt-4 space-y-2">{detail.data.outcomes.map(o=><div key={o.id} className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div>{o.observation_start} → {o.observation_end}</div><div className="text-[var(--muted)]">Variación observada: <Money value={o.variance?.net??0}/> · datos disponibles {Math.round(Number(o.data_completeness)*100)}%</div></div>)}</div>
-          </Card>
+          </DetailGroup>
         </div>}</div>
       </div>
     </section>
