@@ -644,6 +644,10 @@ MORTGAGE_VALUE_KEYS = {
     "remaining_months",
     "interest_type",
     "mortgage_term_years",
+    "start_date",
+    "maturity_date",
+    "default_interest_rate_percent",
+    "reference_index_lag_months",
     "apr_rate",
     "reference_index",
     "differential_rate",
@@ -978,6 +982,8 @@ def _ensure_mortgage_extra_projection(
     percentages keep their percent scale because cost engines divide by 100.
     """
     mapping_keys = {
+        "start_date",
+        "maturity_date",
         "apr_rate",
         "reference_index",
         "differential_rate",
@@ -1002,6 +1008,10 @@ def _ensure_mortgage_extra_projection(
         session.add(row)
         session.flush()
 
+    if row.start_date is None and "start_date" in values:
+        row.start_date = _date(values["start_date"].get("value"))
+    if row.maturity_date is None and "maturity_date" in values:
+        row.maturity_date = _date(values["maturity_date"].get("value"))
     if row.apr_rate is None and "apr_rate" in values:
         pct = _decimal(values["apr_rate"].get("value"))
         if pct is not None:

@@ -176,3 +176,13 @@ E2E comprueba que Biblioteca no contiene el encabezado “Evidencia extraída”
 - E2E verifica que la modal de cada seguro contiene Obligaciones, Riesgos, Oportunidades de optimizar, Productos vinculados y Puntos para negociar.
 - E2E verifica que una acción de seguros en “Para ti” abre \`Detalle de Seguros y coberturas\` en modal sin navegar fuera de Inicio.
 - E2E verifica el nuevo bloque “Noticias guardadas · selección útil”.
+
+
+## Regresiones: Próximamente y revisión hipotecaria
+
+- El dashboard incluye una serie recurrente activa dentro de los próximos 45 días y conserva su importe/origen.
+- La proyección hipotecaria desde evidencia confirmada cubre fecha de inicio y vencimiento.
+- La preparación de revisión automática exige la regla temporal del índice (\`reference_index_lag_months\`).
+- La TAE estimada actual aumenta cuando existen primas futuras de seguros vinculados conocidas.
+- Con una fuente BCE simulada se verifica que una revisión vencida usa exactamente el mes contractual, calcula TIN/cuota/TAE estimados y no modifica el TIN guardado.
+- E2E verifica que Inicio etiqueta un próximo cargo como “Recurrente” y muestra su base de detección.

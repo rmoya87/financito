@@ -931,3 +931,28 @@ El punto de equilibrio se calcula con la cuota actual guardada y la penalizació
 Las acciones de “Para ti” relacionadas con seguros abren un modal sin abandonar Inicio. Si la acción identifica una póliza, abre directamente su detalle; si es genérica, muestra el resumen global y permite entrar en Hogar, Vida u otra póliza dentro del mismo modal.
 
 La modal de cada póliza y la ficha de “Seguros y coberturas” reutilizan todos los análisis de sus documentos asociados, incluso cuando el documento principal está clasificado como hipoteca. Deben incluir, como mínimo: ventajas/coberturas, penalizaciones, obligaciones, riesgos, exclusiones/límites, productos vinculados, oportunidades de optimizar, puntos para negociar, requisitos para comparar ofertas, impactos en otras áreas e información pendiente.
+
+
+## Inicio · Próximamente y recurrencia
+
+“Próximamente” reutiliza el calendario determinista de Financito. En los próximos 45 días muestra:
+- compromisos explícitos;
+- renovaciones contractuales con fecha conocida;
+- siguientes ocurrencias de series recurrentes activas y vigentes.
+
+Los patrones agregados por categoría (\`historical_pattern\`) siguen perteneciendo a previsión/análisis y no se presentan como si fueran un cargo concreto. Cada fila indica su origen (“Compromiso”, “Recurrente” o “Renovación”).
+
+## Evidencia hipotecaria interpretativa vs. datos estructurados
+
+Que una cláusula aparezca en el análisis narrativo de IA no la convierte por sí sola en un dato contractual confirmado. Sin embargo, desde el esquema de análisis v3, cualquier TIN, TAE, índice, diferencial, plazo, fecha de inicio/vencimiento, regla de revisión o comisión material que la IA utilice y que aparezca explícitamente debe duplicarse como \`proposed_material_fact\` con página. Queda pendiente de revisión hasta ser confirmado.
+
+En notas simples y documentos registrales, los importes de responsabilidad hipotecaria por intereses ordinarios, demora, costas/gastos o valor de subasta no son pagos, comisiones de salida ni gastos efectivamente soportados. La IA debe tratarlos como responsabilidad/condición registral. Un porcentaje explícito de demora puede registrarse por separado, pero nunca se obtiene una tasa dividiendo o reinterpretando el importe garantizado.
+
+## TAE contractual, TAE actual estimada y revisión variable
+
+La ficha de Casa distingue:
+- **TAE contractual**: la TAE original confirmada en la documentación; no se sobrescribe por una revisión posterior.
+- **TAE estimada actual**: tasa efectiva calculada sobre los flujos restantes usando el TIN vigente guardado y los costes futuros de productos vinculados que Financito conoce. Los costes de originación ya pagados no se vuelven a cargar.
+- **Cálculo automático de revisión**: para hipotecas variables/mixtas, cuando la fecha de revisión ha llegado y están confirmados índice, diferencial, periodicidad, próxima revisión y el desfase exacto de publicación del índice, Financito puede obtener el Euríbor 12 meses oficial del BCE y calcular el nuevo TIN, cuota, intereses restantes y TAE estimada.
+
+El cálculo automático de revisión es informativo y no sustituye el TIN/cuota contractual guardados hasta que el banco comunique el resultado o el usuario confirme evidencia equivalente.

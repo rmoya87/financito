@@ -220,6 +220,34 @@ test('al pulsar un seguro se abre su ficha completa',async({page})=>{
   await expect(dialog).not.toBeVisible();
 });
 
+test('Inicio muestra gastos recurrentes validados en Próximamente',async({page})=>{
+  await page.route('**/api/v1/dashboard?**',route=>route.fulfill({
+    status:200,
+    contentType:'application/json',
+    body:JSON.stringify({
+      period:{start:'2026-09-01',end:'2026-09-21'},
+      liquidity:'1000',income:'2000',expenses:'500',savings:'1500',savings_rate:'0.75',
+      spending_by_category:[],
+      upcoming_commitments:[{
+        id:'recurring-e2e:2026-09-25',
+        title:'netflix e2e',
+        amount:'17.99',
+        due_date:'2026-09-25',
+        type:'recurring',
+        confidence:'0.92',
+        basis:'Patrón recurrente detectado en movimientos',
+      }],
+      actions:[],
+    }),
+  }));
+  await page.goto('/');
+  await expect(page.getByRole('heading',{name:'Próximamente'})).toBeVisible();
+  await expect(page.getByText('netflix e2e',{exact:true})).toBeVisible();
+  await expect(page.getByText('Recurrente',{exact:true})).toBeVisible();
+  await expect(page.getByText(/Patrón recurrente detectado en movimientos/)).toBeVisible();
+  await expectAccessible(page);
+});
+
 test('Para ti abre Seguros y coberturas en modal sin salir de Inicio',async({page})=>{
   await page.route('**/api/v1/dashboard?**',route=>route.fulfill({
     status:200,

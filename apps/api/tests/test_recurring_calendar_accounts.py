@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date,timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -8,7 +8,7 @@ from sqlalchemy import delete,select
 
 from financito.db import SessionLocal
 from financito.domain.analytics import detect_anomalies,detect_recurring
-from financito.main import delete_account,update_account
+from financito.main import dashboard,delete_account,update_account
 from financito.models import Account,Category,Transaction
 from financito.models_analytics import Anomaly,RecurringSeries
 from financito.routes_analytics import anomalies as route_anomalies,recurring as route_recurring
@@ -75,6 +75,29 @@ def test_recurring_detection_and_90_day_historical_patterns():
         db.execute(delete(RecurringSeries).where(RecurringSeries.merchant_normalized==merchant))
         db.execute(delete(Transaction).where(Transaction.account_id==account.id))
         db.delete(account);db.commit()
+
+
+def test_dashboard_upcoming_includes_active_recurring_series():
+    merchant="dashboard recurring "+uuid4().hex[:8]
+    with SessionLocal() as db:
+        row=RecurringSeries(
+            merchant_normalized=merchant,
+            cadence="monthly",
+            expected_amount=Decimal("49.90"),
+            amount_tolerance=Decimal("5"),
+            next_expected_date=date.today()+timedelta(days=5),
+            confidence=Decimal("0.90"),
+            status="active",
+        )
+        db.add(row);db.commit()
+
+        data=dashboard(db=db)
+        match=next(item for item in data["upcoming_commitments"] if item["title"]==merchant)
+        assert match["type"]=="recurring"
+        assert Decimal(match["amount"])==Decimal("49.90")
+        assert match["basis"]=="Patrón recurrente detectado en movimientos"
+
+        db.delete(row);db.commit()
 
 
 def test_manual_balance_can_be_corrected_but_connected_balance_is_bank_owned():

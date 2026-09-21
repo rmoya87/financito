@@ -15,7 +15,7 @@ from .local_ai import generate_json, status as ai_status
 
 ANALYSIS_FACT_TYPE = "ai_insight"
 ANALYSIS_KEY = "document_analysis"
-ANALYSIS_SCHEMA_VERSION = 2
+ANALYSIS_SCHEMA_VERSION = 3
 MAX_CONTEXT_CHARS = 48000
 MAX_CHUNKS = 18
 
@@ -28,7 +28,8 @@ CONTRACT_FACT_KEYS = {
 }
 MORTGAGE_FACT_KEYS = {
     "nominal_rate","apr_rate","reference_index","interest_type","differential_rate",
-    "mortgage_term_years","rate_review_months","next_review_date","opening_fee_percent",
+    "start_date","maturity_date","mortgage_term_years","rate_review_months","next_review_date",
+    "reference_index_lag_months","default_interest_rate_percent","opening_fee_percent",
     "early_repayment_fee_percent","subrogation_fee_percent","cancellation_fee_percent",
     "remaining_principal","monthly_payment","remaining_months",
 }
@@ -522,7 +523,14 @@ REGLAS OBLIGATORIAS:
 - Busca de forma sistemática en todo el contexto disponible estas claves todavía no representadas para este tipo de documento: {', '.join(search_keys) if search_keys else 'ninguna; ya hay un hecho estructurado para todas las claves esperadas'}.
 - Si una de esas claves no aparece explícitamente, no la inventes ni generes un fact vacío; puedes indicarla en missing_information.
 - En proposed_material_facts incluye SOLO condiciones numéricas/textuales explícitas de estas claves: {', '.join(sorted(ALLOWED_MATERIAL_FACT_KEYS))}.
+- Si utilizas en advantages/penalties/obligations/risks/comparison_requirements un TIN, TAE, índice, diferencial, fecha de inicio/vencimiento, plazo, periodicidad de revisión, próxima revisión o comisión que encaje en una clave permitida y aparece explícitamente, DEBES reflejarlo también en proposed_material_facts.
 - Cada proposed_material_fact requiere una página concreta; si no puedes citarla, no lo propongas.
+- REGLA ESPECIAL PARA NOTAS SIMPLES/INFORMACIÓN REGISTRAL: distingue responsabilidad hipotecaria registral de coste contractual actual. Importes garantizados por intereses ordinarios, intereses de demora, costas/gastos o valor de subasta NO son cuotas, comisiones, penalizaciones de salida, gastos ya pagados ni capital pendiente.
+- En penalties incluye SOLO penalizaciones/comisiones reales de salida, cancelación, amortización anticipada, subrogación o novación expresamente descritas. Intereses de demora y costas de ejecución deben ir a risks/obligations y deben llamarse claramente responsabilidad o condición por incumplimiento, nunca coste de salida.
+- Si el documento dice un porcentaje máximo registral de demora, puedes proponer default_interest_rate_percent solo cuando el porcentaje aplicable/máximo esté explícito; nunca conviertas el importe de responsabilidad por intereses en una tasa.
+- Si aparece una fecha de vencimiento contractual explícita, propón maturity_date. Si aparece duración explícita, propón mortgage_term_years solo si el texto ya expresa años o la conversión desde meses es exacta e inequívoca. No conviertas el plazo original (por ejemplo 420 meses) en remaining_months salvo que el documento indique explícitamente que son meses pendientes a fecha del documento.
+- Si el contrato especifica qué mes/publicación del índice se usa antes de la revisión (por ejemplo, el Euríbor publicado dos meses antes), propón reference_index_lag_months con ese número de meses. No lo deduzcas por práctica bancaria general.
+- No infieras TAE, diferencial, índice de referencia, comisión de amortización o subrogación a partir de una nota simple cuando no consten expresamente: deben quedar en missing_information.
 - En coverage_facts incluye SOLO coberturas explícitas del seguro, con página concreta. No inventes límites, franquicias, condiciones ni exclusiones ausentes.
 - Devuelve SOLO JSON válido.
 

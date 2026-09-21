@@ -21,6 +21,7 @@ MORTGAGE_KEYS = {
     "apr_rate",
     "reference_index",
     "differential_rate",
+    "reference_index_lag_months",
     "rate_review_months",
     "next_review_date",
     "opening_fee_percent",

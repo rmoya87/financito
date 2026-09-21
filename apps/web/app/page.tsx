@@ -21,7 +21,7 @@ interface Dashboard{
   savings:string;
   savings_rate:string|null;
   spending_by_category:{category:string;system_key:string;amount:string}[];
-  upcoming_commitments:{id:string;title:string;amount:string;due_date:string}[];
+  upcoming_commitments:{id:string;title:string;amount:string|null;due_date:string;type:'commitment'|'recurring'|'renewal';confidence:string|null;basis:string|null}[];
   actions:{id:string;title:string;action_type:string;priority:string;due_date:string|null;status:string;notes:string|null;related_entity_type:string|null;related_entity_id:string|null}[];
 }
 interface Wealth{net_worth:string}
@@ -162,9 +162,12 @@ export default function DashboardPage(){
         </div>
         <div className="mt-4 flex flex-col gap-2">
           {d.upcoming_commitments.length?d.upcoming_commitments.slice(0,7).map(item=><div key={item.id} className="flex items-center justify-between gap-4 rounded-xl bg-[var(--surface-2)] p-3 text-sm">
-            <div><div className="font-medium">{item.title}</div><div className="text-xs text-[var(--muted)]">{item.due_date}</div></div>
-            <strong><Money value={item.amount}/></strong>
-          </div>):<EmptyState>No hay compromisos próximos registrados.</EmptyState>}
+            <div>
+              <div className="flex flex-wrap items-center gap-2"><div className="font-medium">{item.title}</div><span className="rounded-full bg-[var(--brand-soft)] px-2 py-0.5 text-[10px] font-semibold text-[var(--brand)]">{item.type==='recurring'?'Recurrente':item.type==='renewal'?'Renovación':'Compromiso'}</span></div>
+              <div className="text-xs text-[var(--muted)]">{item.due_date}{item.basis?' · '+item.basis:''}</div>
+            </div>
+            <strong>{item.amount===null?'—':<Money value={item.amount}/>}</strong>
+          </div>):<EmptyState>No hay compromisos, renovaciones ni gastos recurrentes previstos en los próximos 45 días.</EmptyState>}
         </div>
         <Link href="/forecast/" className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-[var(--brand)]">Ver previsión <ArrowRight size={16}/></Link>
       </Card>
