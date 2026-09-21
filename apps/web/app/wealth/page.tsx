@@ -82,7 +82,7 @@ function Metric({label,value,detail}:{label:string;value:string|number;detail:st
   return <Card><div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">{label}</div><div className="mt-2 text-2xl font-bold"><Money value={value}/></div><div className="mt-1 text-xs text-[var(--muted)]">{detail}</div></Card>;
 }
 
-export default function WealthPage(){
+export function WealthPage({mode='home'}:{mode?:'home'|'mortgage'}={}){
   const qc=useQueryClient();
   const details=useQuery({queryKey:['wealth-details'],queryFn:()=>apiGet<WealthDetails>('/api/v1/wealth/details')});
   const allAccounts=useQuery({queryKey:['accounts','mortgage-link'],queryFn:()=>apiGet<BankAccount[]>('/api/v1/accounts')});
@@ -263,21 +263,59 @@ export default function WealthPage(){
   const vehicles=useMemo(()=>d?sumAssets(d.assets,['vehicle','car','motorcycle']):0,[d]);
   const otherAssets=useMemo(()=>d?Math.max(0,Number(d.summary.manual_assets)-properties-vehicles):0,[d,properties,vehicles]);
 
+  if(mode==='home'){
+    return <>
+      <PageHeader title="Casa" description="Resumen de tu vivienda, hipoteca y seguros. Entra en cada apartado solo cuando necesites ver o modificar el detalle."/>
+      {details.isLoading||home.isLoading?<Loading/>:details.error?<ErrorState error={details.error}/>:home.error?<ErrorState error={home.error}/>:d&&home.data&&<>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <Metric label="Valor vivienda" value={home.data.property?.value||'0'} detail={home.data.property?'Última valoración guardada':'Sin valoración guardada'}/>
+          <Metric label="Capital hipotecario" value={home.data.mortgage?.remaining_principal||'0'} detail={home.data.mortgage?home.data.mortgage.lender:'Sin hipoteca registrada'}/>
+          <Metric label="Equity estimado" value={home.data.equity||'0'} detail="Valor de vivienda menos capital pendiente"/>
+          <Metric label="Seguros al año" value={d.insurance.annual_premium_total} detail={d.insurance.policies.length+' póliza(s) registrada(s)'}/>
+        </div>
+
+        <div className="mt-4 grid gap-4 xl:grid-cols-2">
+          <Card>
+            <div className="flex items-start justify-between gap-3">
+              <div><div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Hipoteca</div><h2 className="mt-1 text-lg font-bold">{home.data.mortgage?home.data.mortgage.lender:'Sin hipoteca'}</h2></div>
+              <Link className="fin-button secondary py-1.5 text-xs" href="/mortgage/">Ver hipoteca</Link>
+            </div>
+            {home.data.mortgage?<div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Cuota mensual</div><strong><Money value={home.data.mortgage.monthly_payment}/></strong></div>
+              <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">TIN actual</div><strong>{(Number(home.data.mortgage.nominal_rate)*100).toLocaleString('es-ES',{maximumFractionDigits:3})}%</strong></div>
+              <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Plazo restante</div><strong>{home.data.mortgage.remaining_months} meses</strong></div>
+              <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">LTV actual</div><strong>{home.data.ltv===null?'—':Number(home.data.ltv).toLocaleString('es-ES',{maximumFractionDigits:1})+'%'}</strong></div>
+            </div>:<div className="mt-4"><EmptyState>No hay una hipoteca registrada. Créala desde Hipoteca.</EmptyState></div>}
+          </Card>
+
+          <Card>
+            <div className="flex items-start justify-between gap-3">
+              <div><div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Seguros</div><h2 className="mt-1 text-lg font-bold">Protección y coste</h2></div>
+              <Link className="fin-button secondary py-1.5 text-xs" href="/insurance/">Ver seguros</Link>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Coste anual</div><strong><Money value={d.insurance.annual_premium_total}/></strong></div>
+              <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Pólizas</div><strong>{d.insurance.policies.length}</strong></div>
+            </div>
+            <div className="mt-3 space-y-2">{d.insurance.policies.slice(0,4).map(policy=><div key={policy.id} className="flex items-center justify-between gap-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm">
+              <div><strong>{policy.provider||'Aseguradora pendiente'}</strong><div className="text-xs text-[var(--muted)]">{policy.insurance_type}</div></div>
+              <strong><Money value={policy.annual_premium} currency={policy.currency}/>/año</strong>
+            </div>)}</div>
+            {!d.insurance.policies.length&&<div className="mt-4"><EmptyState>No hay seguros registrados.</EmptyState></div>}
+          </Card>
+        </div>
+      </>}
+    </>;
+  }
+
   return <>
-    <PageHeader title="Patrimonio" description="Foto completa de lo que tienes y lo que debes. Los seguros se muestran como protección y coste, pero no se suman como activo."/>
+    <PageHeader title="Hipoteca" description="Deuda, cuota, condiciones, documentación, seguros vinculados y comparación de mercado de tu hipoteca."/>
 
     {details.isLoading?<Loading/>:details.error?<ErrorState error={details.error}/>:d&&<>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Patrimonio neto" value={d.summary.net_worth} detail="Activos menos hipoteca y otras deudas"/>
-        <Metric label="Activos brutos" value={d.summary.gross_assets} detail="Liquidez + bienes + inversiones"/>
-        <Metric label="Deuda total" value={d.summary.total_debt} detail="Hipoteca + otros pasivos"/>
-        <Metric label="Seguros al año" value={d.insurance.annual_premium_total} detail="Coste de protección; no altera el patrimonio"/>
-      </div>
-
-      <Card className="mt-4" id="casa">
+      <Card>
         <div>
-          <div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Casa</div>
-          <h2 className="mt-1 text-xl font-bold">Vivienda e hipoteca</h2>
+          <div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Hipoteca</div>
+          <h2 className="mt-1 text-xl font-bold">Tu hipoteca</h2>
           <p className="mt-1 max-w-3xl text-sm text-[var(--muted)]">Centraliza valor de la vivienda, deuda, condiciones, seguros vinculados y evidencia documental. Estos datos alimentan las simulaciones de amortización, novación y subrogación.</p>
         </div>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
@@ -326,53 +364,18 @@ export default function WealthPage(){
             <div className="rounded-xl bg-[var(--surface-2)] p-4"><div className="text-xs text-[var(--muted)]">LTV actual</div><div className="mt-1 text-xl font-bold">{home.data.ltv===null?'—':Number(home.data.ltv).toLocaleString('es-ES',{maximumFractionDigits:1})+'%'}</div><div className="mt-1 text-[11px] text-[var(--muted)]">Capital pendiente / valor atribuible</div></div>
           </div>
 
-          {home.data.mortgage?.interest_type!=='fixed'&&<div className="mt-4 rounded-xl bg-[var(--surface-2)] p-4 text-sm">
-            <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold">Revisión automática del tipo</h3><p className="mt-1 text-xs text-[var(--muted)]">{home.data.rate_review_automation.automatic?'La regla contractual necesaria está completa para automatizar el cálculo de la próxima revisión.':'Todavía no se debe actualizar el tipo automáticamente porque falta evidencia contractual.'}</p></div><span className="rounded-full bg-[var(--brand-soft)] px-2 py-1 text-[10px] font-semibold text-[var(--brand)]">{home.data.rate_review_automation.automatic?'Preparada':'Pendiente'}</span></div>
-            {!home.data.rate_review_automation.automatic&&home.data.rate_review_automation.missing.length>0&&<div className="mt-2 text-xs"><strong>Falta:</strong> {home.data.rate_review_automation.missing.map(key=>key==='reference_index_lag_months'?'mes/publicación del índice que usa el contrato':key.replaceAll('_',' ')).join(' · ')}</div>}
-            {home.data.rate_review_automation.rule&&<div className="mt-2 text-[11px] text-[var(--muted)]">{home.data.rate_review_automation.rule}</div>}
-            {home.data.rate_review_automation.estimate&&<div className="mt-3 rounded-xl bg-[var(--brand-soft)] p-3">
-              <div className="font-semibold">Cálculo automático de la revisión</div>
-              <div className="mt-2 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4">
-                <div><span className="text-[var(--muted)]">Índice oficial usado</span><div className="font-semibold">{Number(home.data.rate_review_automation.estimate.reference_index_value_percent).toLocaleString('es-ES',{maximumFractionDigits:4})}% · {home.data.rate_review_automation.estimate.reference_period}</div></div>
-                <div><span className="text-[var(--muted)]">TIN estimado</span><div className="font-semibold">{(Number(home.data.rate_review_automation.estimate.estimated_nominal_rate)*100).toLocaleString('es-ES',{maximumFractionDigits:4})}%</div></div>
-                <div><span className="text-[var(--muted)]">Nueva cuota estimada</span><div className="font-semibold"><Money value={home.data.rate_review_automation.estimate.estimated_monthly_payment}/></div></div>
-                <div><span className="text-[var(--muted)]">TAE estimada tras revisión</span><div className="font-semibold">{home.data.rate_review_automation.estimate.estimated_current_apr?(Number(home.data.rate_review_automation.estimate.estimated_current_apr)*100).toLocaleString('es-ES',{maximumFractionDigits:3})+'%':'—'}</div></div>
-              </div>
-              <div className="mt-2 text-[11px] text-[var(--muted)]">{home.data.rate_review_automation.estimate.notice} Fuente: {home.data.rate_review_automation.estimate.reference_source} · {home.data.rate_review_automation.estimate.reference_series}.</div>
-            </div>}
-            {home.data.rate_review_automation.message&&<div className="mt-2 text-xs text-[var(--muted)]">{home.data.rate_review_automation.message}</div>}
-            {home.data.current_apr_estimate?.basis&&<div className="mt-2 text-[11px] text-[var(--muted)]">{home.data.current_apr_estimate.basis}</div>}
-          </div>}
-
-          {home.data.prepayment_restrictions&&<div className="mt-4 rounded-xl border border-[var(--border)] p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h3 className="font-semibold">Amortización anticipada</h3>
-                <p className="mt-1 text-xs text-[var(--muted)]">Aquí ves qué condiciones usa Financito antes de decirte qué ocurriría al amortizar. Si algo no está confirmado, el cálculo se bloquea en vez de asumirlo.</p>
-              </div>
-              <Link className="fin-button secondary py-1.5 text-xs" href="/tools/">Simular</Link>
-            </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-sm">
-              <div className="rounded-lg bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">¿Se puede?</div><strong>{home.data.prepayment_restrictions.partial_prepayment_allowed===true?'Sí, confirmado':home.data.prepayment_restrictions.partial_prepayment_allowed===false?'No, según contrato':'Pendiente'}</strong></div>
-              <div className="rounded-lg bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Importe permitido</div><strong>{home.data.prepayment_restrictions.effective_min_amount?'Desde '+home.data.prepayment_restrictions.effective_min_amount+' €':'Sin mínimo confirmado'}</strong><div className="text-[11px] text-[var(--muted)]">Máximo {home.data.prepayment_restrictions.effective_max_amount||'pendiente'} €</div></div>
-              <div className="rounded-lg bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Cómo se aplica</div><strong>{home.data.prepayment_restrictions.allowed_reduction_options.length?home.data.prepayment_restrictions.allowed_reduction_options.map(prepaymentOptionLabel).join(' / '):'Pendiente'}</strong></div>
-              <div className="rounded-lg bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Preaviso</div><strong>{home.data.prepayment_restrictions.notice_days===null?'Pendiente':home.data.prepayment_restrictions.notice_days+' días'}</strong></div>
-            </div>
-            {home.data.prepayment_restrictions.operational_checks.length>0&&<div className="mt-3 rounded-lg bg-[var(--brand-soft)] p-3 text-xs"><strong>Antes de hacerlo</strong><div className="mt-1 space-y-1">{home.data.prepayment_restrictions.operational_checks.map((item,i)=><div key={item.code+i}>{item.message}</div>)}</div></div>}
-          </div>}
-
-          {home.data.pending_review?.length>0&&<div className="mt-4 rounded-xl border border-[var(--brand)] bg-[var(--brand-soft)] p-4">
+          {home.data.pending_review?.filter(x=>x.key!=='reference_index_lag_months').length>0&&<div className="mt-4 rounded-xl border border-[var(--brand)] bg-[var(--brand-soft)] p-4">
             <h3 className="font-semibold">Datos ya encontrados pendientes de validar</h3>
             <p className="mt-1 text-xs text-[var(--muted)]">No están ausentes: el extractor o la IA local los ha localizado. Confírmalos en el documento para que se proyecten automáticamente a la hipoteca y entren en cálculos.</p>
-            <div className="mt-2 grid gap-2 md:grid-cols-2">{home.data.pending_review.map(x=><div key={x.key} className="rounded-lg bg-white p-3 text-xs"><strong>{x.label}</strong><div className="mt-1">{String(x.value??'Dato localizado')}{x.unit?' '+x.unit:''}</div><div className="mt-1 text-[var(--muted)]">{x.reason}</div>{x.document_id&&selectedMortgageId&&<Link className="mt-2 inline-block underline" href={'/documents/?entity_type=mortgage&entity_id='+encodeURIComponent(selectedMortgageId)+'&label='+encodeURIComponent('Hipoteca · '+(home.data?.mortgage?.lender||'seleccionada'))+'&document='+encodeURIComponent(x.document_id)}>Revisar documentación{x.page?' · pág. '+x.page:''}</Link>}</div>)}</div>
+            <div className="mt-2 grid gap-2 md:grid-cols-2">{home.data.pending_review.filter(x=>x.key!=='reference_index_lag_months').map(x=><div key={x.key} className="rounded-lg bg-white p-3 text-xs"><strong>{x.label}</strong><div className="mt-1">{String(x.value??'Dato localizado')}{x.unit?' '+x.unit:''}</div><div className="mt-1 text-[var(--muted)]">{x.reason}</div>{x.document_id&&selectedMortgageId&&<Link className="mt-2 inline-block underline" href={'/documents/?entity_type=mortgage&entity_id='+encodeURIComponent(selectedMortgageId)+'&label='+encodeURIComponent('Hipoteca · '+(home.data?.mortgage?.lender||'seleccionada'))+'&document='+encodeURIComponent(x.document_id)}>Revisar documentación{x.page?' · pág. '+x.page:''}</Link>}</div>)}</div>
           </div>}
 
-          {home.data.missing.length>0&&selectedMortgageId&&!creatingMortgage&&<div className="mt-4 rounded-xl bg-[var(--surface-2)] p-4">
+          {home.data.missing.filter(x=>x.key!=='reference_index_lag_months').length>0&&selectedMortgageId&&!creatingMortgage&&<div className="mt-4 rounded-xl bg-[var(--surface-2)] p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div><h3 className="font-semibold">Información que falta</h3><p className="mt-1 text-xs text-[var(--muted)]">Primero intenta localizarla en los documentos de esta hipoteca. Los datos numéricos sencillos pueden completarse manualmente; las condiciones contractuales como permiso, límites o forma de amortizar deben confirmarse desde la documentación.</p></div>
               <button className="fin-button secondary py-1.5 text-xs" type="button" onClick={()=>analyzeMortgageDocs.mutate()} disabled={analyzeMortgageDocs.isPending}>{analyzeMortgageDocs.isPending?'Buscando…':'Intentar completar con IA'}</button>
             </div>
-            <div className="mt-3 grid gap-3 md:grid-cols-2">{home.data.missing.map(x=><div key={x.key} className="rounded-lg bg-white p-3 text-xs">
+            <div className="mt-3 grid gap-3 md:grid-cols-2">{home.data.missing.filter(x=>x.key!=='reference_index_lag_months').map(x=><div key={x.key} className="rounded-lg bg-white p-3 text-xs">
               <strong>{x.label}</strong><div className="mt-1 text-[var(--muted)]">{x.reason}</div>
               <div className="mt-2">
                 {x.key==='property_value'?<input className="fin-input" type="number" step=".01" placeholder="Valor de la vivienda (€)" value={homeValue} onChange={e=>setHomeValue(e.target.value)}/>:
@@ -387,7 +390,7 @@ export default function WealthPage(){
             </div>)}</div>
             <div className="mt-3 flex gap-2">
               {home.data.missing.some(x=>x.key==='property_value')&&<button className="fin-button secondary" type="button" onClick={()=>saveHomeValue.mutate()} disabled={!homeValue||saveHomeValue.isPending}>Guardar valor vivienda</button>}
-              {home.data.missing.some(x=>editableMortgageMissingKeys.has(x.key))&&<button className="fin-button" type="button" onClick={()=>saveExtra.mutate()} disabled={saveExtra.isPending}>Guardar datos de hipoteca</button>}
+              {home.data.missing.filter(x=>x.key!=='reference_index_lag_months').some(x=>editableMortgageMissingKeys.has(x.key))&&<button className="fin-button" type="button" onClick={()=>saveExtra.mutate()} disabled={saveExtra.isPending}>Guardar datos de hipoteca</button>}
             </div>
             {analyzeMortgageDocs.error&&<div className="mt-3"><ErrorState error={analyzeMortgageDocs.error}/></div>}
           </div>}
@@ -438,90 +441,10 @@ export default function WealthPage(){
         </>}
       </Card>
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-2">
-        <Card>
-          <h2 className="font-bold">Composición de tus activos</h2>
-          <p className="mt-1 text-sm text-[var(--muted)]">Cada bloque muestra el valor que actualmente usa Financito para calcular tu patrimonio.</p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {[
-              ['Cuentas y liquidez',d.summary.accounts,'Saldos de tus cuentas'],
-              ['Vivienda e inmuebles',properties,'Últimas valoraciones guardadas'],
-              ['Vehículos',vehicles,'Coche y otros vehículos registrados'],
-              ['Inversiones',d.summary.investments,'Posiciones reales; precio de mercado si está disponible'],
-              ['Otros activos',otherAssets,'Bienes manuales no incluidos arriba'],
-            ].map(([label,value,detail])=><div key={String(label)} className="rounded-xl bg-[var(--surface-2)] p-4"><div className="text-xs text-[var(--muted)]">{label}</div><div className="mt-1 text-lg font-bold"><Money value={value as string|number}/></div><div className="mt-1 text-[11px] text-[var(--muted)]">{detail}</div></div>)}
-          </div>
-        </Card>
-
-        <Card>
-          <h2 className="font-bold">Deudas</h2>
-          <p className="mt-1 text-sm text-[var(--muted)]">Capital pendiente que resta valor a tus activos.</p>
-          <div className="mt-4 space-y-2">
-            {d.mortgages.map(m=><div key={m.id} className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="flex justify-between gap-3"><div><strong>Hipoteca · {m.lender}</strong><div className="text-xs text-[var(--muted)]">Cuota <Money value={m.monthly_payment} currency={m.currency}/> · {m.remaining_months} meses · TIN {(Number(m.nominal_rate)*100).toLocaleString('es-ES',{maximumFractionDigits:3})}%</div></div><strong><Money value={m.remaining_principal} currency={m.currency}/></strong></div></div>)}
-            {d.liabilities.map(x=><div key={x.id} className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="flex justify-between gap-3"><div><strong>{x.name}</strong><div className="text-xs text-[var(--muted)]">{x.type}</div></div><div className="text-right"><strong><Money value={x.amount} currency={x.currency}/></strong><div><button className="mt-1 text-xs underline" onClick={()=>{if(window.confirm('¿Eliminar la deuda '+x.name+'?'))removeDebt.mutate(x.id)}} disabled={removeDebt.isPending}>Eliminar deuda</button></div></div></div></div>)}
-            {!d.mortgages.length&&!d.liabilities.length&&<EmptyState>No hay deudas registradas.</EmptyState>}
-          </div>
-        </Card>
-      </div>
-
-      <Card className="mt-4">
-        <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Bienes y evolución de valor</h2><p className="mt-1 text-sm text-[var(--muted)]">Vivienda, coche y otros bienes sí forman parte de tu patrimonio. Cada nueva valoración queda guardada para medir revalorización o depreciación frente a la valoración anterior; no se inventan precios de mercado automáticamente.</p></div><Link className="text-xs underline" href="/history/">Ver histórico completo</Link></div>
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {d.assets.length?d.assets.map(x=><div key={x.id} className="rounded-xl border border-[var(--border)] p-4 text-sm">
-            {editingAsset?.id===x.id?<form className="grid gap-2" onSubmit={e=>{e.preventDefault();updateAsset.mutate()}}>
-              <select className="fin-input" aria-label="Tipo de activo editado" value={editingAsset.type} onChange={e=>setEditingAsset({...editingAsset,type:e.target.value})}><option value="property">Vivienda / inmueble</option><option value="vehicle">Vehículo</option><option value="other">Otro activo</option></select>
-              <input className="fin-input" value={editingAsset.name} onChange={e=>setEditingAsset({...editingAsset,name:e.target.value})} required/>
-              <input className="fin-input" type="number" min="0" step=".01" value={editingAsset.value} onChange={e=>setEditingAsset({...editingAsset,value:e.target.value})} required/>
-              <input className="fin-input" type="date" value={editingAsset.valuation_date} onChange={e=>setEditingAsset({...editingAsset,valuation_date:e.target.value})} required/>
-              <div className="flex gap-2"><button className="fin-button py-1.5 text-xs" disabled={updateAsset.isPending}>Guardar cambios</button><button type="button" className="fin-button secondary py-1.5 text-xs" onClick={()=>setEditingAsset(null)}>Cancelar</button></div>
-            </form>:<>
-              <div className="flex justify-between gap-3"><div><strong>{x.name}</strong><div className="text-xs text-[var(--muted)]">{x.type} · valoración {new Date(x.valuation_date).toLocaleDateString('es-ES')}</div></div><strong><Money value={x.value} currency={x.currency}/></strong></div>
-              <div className="mt-2 text-[11px] text-[var(--muted)]">Fuente: {x.valuation_source} · propiedad {formatNumber(x.ownership_percentage,0,2)}%</div>
-              {x.change_amount!=null&&<div className="mt-2 rounded-lg bg-[var(--surface-2)] p-2 text-xs"><strong>{Number(x.change_amount)>=0?'Revalorización':'Depreciación'}: <Money value={x.change_amount} currency={x.currency}/>{x.change_pct!=null?' · '+formatNumber(x.change_pct,1,1)+'%':''}</strong><div className="mt-1 text-[11px] text-[var(--muted)]">Desde la valoración anterior{x.previous_valuation_date?' del '+new Date(x.previous_valuation_date).toLocaleDateString('es-ES'):''}{x.previous_value!=null?' ('+formatNumber(x.previous_value,2,2)+' '+x.currency+')':''}.</div></div>}
-              {x.change_amount==null&&<div className="mt-2 text-[11px] text-[var(--muted)]">Aún no hay una segunda valoración para medir su evolución.</div>}
-              <div className="mt-3 flex gap-3"><button className="text-xs underline" onClick={()=>setEditingAsset(x)}>Editar</button><button className="text-xs underline" onClick={()=>{if(window.confirm('¿Eliminar '+x.name+' del patrimonio?'))removeAsset.mutate(x.id)}} disabled={removeAsset.isPending}>Eliminar</button></div>
-            </>}
-          </div>):<EmptyState>Aún no has añadido vivienda, coche u otros bienes.</EmptyState>}
-        </div>
-        <form className="mt-5 grid gap-2 md:grid-cols-4" onSubmit={(e:FormEvent)=>{e.preventDefault();addAsset.mutate()}}>
-          <select className="fin-input" aria-label="Tipo de activo" value={asset.asset_type} onChange={e=>setAsset({...asset,asset_type:e.target.value})}><option value="property">Vivienda / inmueble</option><option value="vehicle">Vehículo</option><option value="other">Otro activo</option></select>
-          <input className="fin-input" placeholder="Nombre, ej. Vivienda habitual" value={asset.name} onChange={e=>setAsset({...asset,name:e.target.value})} required/>
-          <input className="fin-input" placeholder="Valor de mercado" type="number" min="0" step=".01" value={asset.current_value} onChange={e=>setAsset({...asset,current_value:e.target.value})} required/>
-          <input className="fin-input" aria-label="Fecha de valoración" type="date" value={asset.valuation_date} onChange={e=>setAsset({...asset,valuation_date:e.target.value})} required/>
-          <button className="fin-button md:col-span-4" disabled={addAsset.isPending}>{addAsset.isPending?'Guardando…':'Añadir activo al patrimonio'}</button>
-        </form>
-        {(addAsset.error||updateAsset.error||removeAsset.error)&&<div className="mt-3"><ErrorState error={(addAsset.error||updateAsset.error||removeAsset.error)!}/></div>}
-      </Card>
-
-      <div className="mt-4 grid gap-4 xl:grid-cols-2">
-        <Card>
-          <div className="flex items-start justify-between gap-3"><div><h2 className="font-bold">Cuentas</h2><p className="mt-1 text-sm text-[var(--muted)]">Liquidez que entra directamente en el patrimonio.</p></div><Link href="/accounts/" className="text-xs underline">Gestionar</Link></div>
-          <div className="mt-3 space-y-2">{d.accounts.length?d.accounts.map(x=><div key={x.id} className="flex justify-between rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div><strong>{x.name}</strong><div className="text-xs text-[var(--muted)]">{x.institution_name}</div></div><strong><Money value={x.balance} currency={x.currency}/></strong></div>):<EmptyState>No hay cuentas registradas.</EmptyState>}</div>
-        </Card>
-
-        <Card>
-          <div className="flex items-start justify-between gap-3"><div><h2 className="font-bold">Inversiones que posees</h2><p className="mt-1 text-sm text-[var(--muted)]">Aquí solo se suman acciones, ETF, fondos, bonos o cripto que hayas marcado como “Lo tengo realmente”. Los valores que solo sigues y las compras simuladas no forman parte de tu patrimonio.</p></div><Link href="/markets/" className="text-xs underline">Gestionar y seguir mercado</Link></div>
-          <div className="mt-3 space-y-2">{d.investments.length?d.investments.map(x=><div key={x.security_id} className="flex justify-between rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div><strong>{x.name}</strong><div className="text-xs text-[var(--muted)]">{x.identifier||x.asset_class}{x.price_provider?' · '+x.price_provider:''}</div></div><strong><Money value={x.current_value??x.cost_basis} currency={x.currency}/></strong></div>):<EmptyState>No hay posiciones reales.</EmptyState>}</div>
-        </Card>
-
-        <Card>
-          <h2 className="font-bold">Otras deudas</h2>
-          <p className="mt-1 text-sm text-[var(--muted)]">Préstamos, financiación y otros pasivos que no sean la hipoteca principal.</p>
-          <form className="mt-3 grid gap-2 sm:grid-cols-2" onSubmit={(e:FormEvent)=>{e.preventDefault();addDebt.mutate()}}>
-            <select className="fin-input" aria-label="Tipo de deuda" value={debt.liability_type} onChange={e=>setDebt({...debt,liability_type:e.target.value})}><option value="loan">Préstamo</option><option value="credit">Crédito / financiación</option><option value="other">Otra deuda</option></select>
-            <input className="fin-input" placeholder="Nombre" value={debt.name} onChange={e=>setDebt({...debt,name:e.target.value})} required/>
-            <input className="fin-input sm:col-span-2" placeholder="Capital pendiente" type="number" min="0" step=".01" value={debt.outstanding_amount} onChange={e=>setDebt({...debt,outstanding_amount:e.target.value})} required/>
-            <button className="fin-button sm:col-span-2" disabled={addDebt.isPending}>{addDebt.isPending?'Guardando…':'Añadir deuda'}</button>
-          </form>
-          <div className="mt-4 space-y-2">{d.liabilities.length?d.liabilities.map(x=><div key={x.id} className="flex items-center justify-between gap-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div><strong>{x.name}</strong><div className="text-xs text-[var(--muted)]">{x.type}</div></div><div className="flex items-center gap-3"><strong><Money value={x.amount} currency={x.currency}/></strong><button className="text-xs underline" type="button" onClick={()=>{if(window.confirm('¿Eliminar la deuda '+x.name+'?'))removeDebt.mutate(x.id)}} disabled={removeDebt.isPending}>Eliminar</button></div></div>):<EmptyState>No hay otras deudas.</EmptyState>}</div>
-          {(addDebt.error||removeDebt.error)&&<div className="mt-3"><ErrorState error={(addDebt.error||removeDebt.error)!}/></div>}
-        </Card>
-      </div>
-
     {showMortgageEdit&&<div className="fixed inset-0 z-50 overflow-y-auto bg-black/45 p-4 md:p-8" role="dialog" aria-modal="true" aria-label={creatingMortgage?'Nueva hipoteca':'Datos de la hipoteca'}>
       <div className="mx-auto max-w-5xl"><Card>
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div><div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Casa</div><h2 className="mt-1 text-xl font-bold">{creatingMortgage?'Nueva hipoteca':home.data?.mortgage?.lender||'Hipoteca'}</h2><p className="mt-1 text-sm text-[var(--muted)]">{creatingMortgage?'Introduce los datos principales para crearla.':'Datos globales, transacciones vinculadas y condiciones/documentación en una única ficha.'}</p></div>
+          <div><div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Hipoteca</div><h2 className="mt-1 text-xl font-bold">{creatingMortgage?'Nueva hipoteca':home.data?.mortgage?.lender||'Hipoteca'}</h2><p className="mt-1 text-sm text-[var(--muted)]">{creatingMortgage?'Introduce los datos principales para crearla.':'Datos globales, transacciones vinculadas y condiciones/documentación en una única ficha.'}</p></div>
           <button className="fin-button secondary py-2 text-xs" type="button" onClick={()=>setShowMortgageEdit(false)}>Cerrar</button>
         </div>
         {!creatingMortgage&&selectedMortgageId&&<div className="mt-5 flex flex-wrap gap-2 border-b border-[var(--border)] pb-3" role="tablist" aria-label="Secciones de la hipoteca">
@@ -609,4 +532,8 @@ export default function WealthPage(){
     {selectedMortgageId&&<EntityDocumentsModal open={showMortgageDocuments} onClose={()=>setShowMortgageDocuments(false)} entityType="mortgage" entityId={selectedMortgageId} documentType="mortgage" title={'Documentos de la hipoteca · '+(home.data?.mortgage?.lender||'seleccionada')}/>}
     </>}
   </>;
+}
+
+export default function WealthPageRoute(){
+  return <WealthPage mode="home"/>;
 }
