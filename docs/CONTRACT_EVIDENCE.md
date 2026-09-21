@@ -444,3 +444,29 @@ El análisis de seguros debe cruzar:
 - campos documentales pendientes.
 
 La IA local puede resumir prioridades y formular preguntas, pero no decide suficiencia de cobertura ni recomienda cancelar/cambiar una póliza sin equivalencia demostrada.
+
+
+## Completado asistido por IA local
+
+El análisis documental no se limita a producir un resumen. Para cada tipo de documento mantiene una lista de hechos materiales esperables y busca de forma explícita los que todavía no están representados.
+
+Ejemplos:
+- hipoteca: TIN/TAE, índice, diferencial, revisiones, capital/cuota/plazo, comisiones y vinculaciones;
+- seguros: entidad, número de póliza, tipo, prima, franquicia, renovación, preaviso, coste de salida, objeto asegurado y coberturas;
+- préstamos: tipos, saldo, cuota, plazo y costes de amortización/salida;
+- energía/telecomunicaciones: coste, renovación, preaviso, permanencia, promoción/precio estándar y costes de cancelación;
+- inversiones documentales: identificación del producto y costes explícitos de gestión, custodia, suscripción o reembolso.
+
+La IA local:
+1. reutiliza los hechos ya extraídos y no vuelve a declarar como ausente una clave que ya exista;
+2. busca en el texto local únicamente los datos esperados que todavía no estén representados;
+3. solo crea propuestas materiales cuando el valor aparece explícitamente y puede citar una página;
+4. marca esas propuestas como `inferred` y `user_verified=false`;
+5. nunca convierte automáticamente una propuesta en dato confirmado.
+
+La UX distingue tres estados:
+- **confirmado**: puede alimentar proyecciones y engines;
+- **encontrado, pendiente de validar**: la IA/extractor ya localizó el dato y se muestra con documento/página para revisión;
+- **no encontrado**: no existe todavía evidencia suficiente y se solicita documentación o revisión adicional.
+
+En hipotecas, los hechos confirmados de TAE, índice, diferencial, periodicidad/próxima revisión y porcentajes de comisión completan los huecos de `MortgageProfileExtra` sin sobrescribir silenciosamente valores manuales existentes. En seguros, prima, franquicia, renovación, preaviso y coste de salida siguen el mismo principio. Los contratos e inversiones conservan sus propuestas estructuradas para reutilización en sus áreas correspondientes.
