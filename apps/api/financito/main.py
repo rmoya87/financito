@@ -10,7 +10,7 @@ from threading import Event,Thread
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, delete, func, select
 from sqlalchemy.orm import Session
 
 from .config import settings
@@ -19,7 +19,7 @@ from .migrations import migrate,MIGRATION_VERSION
 from .domain.engines import MortgageEngine, MortgagePrepaymentEngine, MortgageRatePathEngine, OptimizationEngine
 from .services.financial_analytics import cash_flow,category_spending
 from .models import Account, ActionItem, AuditEvent, Budget, CategorizationAudit, Category, Commitment, Contract, Document, ExtractedFact, Mortgage, Transaction
-from .models_analytics import EntityLink
+from .models_analytics import BankingAccountLink,EntityLink
 from .models_extended import InsurancePolicy
 from .schemas import AccountCreate, AccountOut, AccountUpdate, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentEntityLinkUpdate, DocumentIndexRequest, DocumentMortgageLinkUpdate, FactUpdate, ForecastRequest, ManualFactCreate, MortgageScenarioRequest, MortgagePrepaymentRequest, MortgageRatePathRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
 from .security import LocalSecurityMiddleware, create_session
@@ -157,6 +157,25 @@ def update_account(account_id:str,payload:AccountUpdate,db:Session=Depends(get_d
         record_snapshot(db,"account",row.id,{"balance":str(row.current_balance),"available_balance":None if row.available_balance is None else str(row.available_balance),"currency":row.currency},source="manual_balance_update")
     db.add(AuditEvent(event_type="account_updated",entity_type="account",entity_id=row.id,metadata_json=json.dumps({"fields":sorted(values)})))
     db.commit();db.refresh(row);return row
+
+
+@app.delete("/api/v1/accounts/{account_id}")
+def delete_account(account_id:str,db:Session=Depends(get_db)):
+    row=db.get(Account,account_id)
+    if not row:raise HTTPException(404,"Account not found")
+    transaction_count=int(db.scalar(select(func.count()).select_from(Transaction).where(Transaction.account_id==account_id)) or 0)
+    metadata={
+        "name":row.name,
+        "institution_name":row.institution_name,
+        "source":row.source,
+        "transactions_deleted":transaction_count,
+    }
+    db.execute(delete(BankingAccountLink).where(BankingAccountLink.local_account_id==account_id))
+    db.execute(delete(Transaction).where(Transaction.account_id==account_id))
+    db.execute(delete(Account).where(Account.id==account_id))
+    db.add(AuditEvent(event_type="account_deleted",entity_type="account",entity_id=account_id,metadata_json=json.dumps(metadata)))
+    db.commit()
+    return {"deleted":account_id,**metadata}
 
 
 @app.get("/api/v1/transactions", response_model=list[TransactionOut])
