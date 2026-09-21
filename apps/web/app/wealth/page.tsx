@@ -6,7 +6,7 @@ import {useMutation,useQuery,useQueryClient} from '@tanstack/react-query';
 import {apiGet,apiMutate} from '@/lib/api';
 import {PageHeader} from '@/components/page-header';
 import {Card} from '@/components/ui/card';
-import {Money} from '@/components/ui/money';
+import {Money,formatNumber} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
 
 type WealthSummary={
@@ -14,7 +14,7 @@ type WealthSummary={
   gross_assets:string;total_debt:string;net_worth:string
 };
 type Account={id:string;name:string;institution_name:string;currency:string;balance:string};
-type Asset={id:string;type:string;name:string;value:string;currency:string;valuation_date:string;valuation_source:string;ownership_type:string;ownership_percentage:string};
+type Asset={id:string;type:string;name:string;value:string;currency:string;valuation_date:string;valuation_source:string;ownership_type:string;ownership_percentage:string;previous_value?:string|null;previous_valuation_date?:string|null;change_amount?:string|null;change_pct?:string|null};
 type Liability={id:string;type:string;name:string;amount:string;currency:string;annual_rate:string|null;ownership_percentage:string};
 type Mortgage={id:string;lender:string;remaining_principal:string;currency:string;interest_type:string;nominal_rate:string;monthly_payment:string;remaining_months:number;early_repayment_fee?:string|null;source_document_id?:string|null;source_document_ids?:string[];document_count?:number};
 type Investment={security_id:string;name:string;identifier:string|null;asset_class:string;currency:string;quantity:string;cost_basis:string;current_value:string|null;current_price:string|null;price_provider:string|null};
@@ -131,6 +131,10 @@ export default function WealthPage(){
   const addDebt=useMutation({
     mutationFn:()=>apiMutate('/api/v1/liabilities','POST',{...debt,currency:'EUR',ownership_percentage:'100'}),
     onSuccess:()=>{setDebt({...debt,name:'',outstanding_amount:''});refresh()},
+  });
+  const removeDebt=useMutation({
+    mutationFn:(id:string)=>apiMutate('/api/v1/liabilities/'+id,'DELETE'),
+    onSuccess:refresh,
   });
 
   const saveMortgage=useMutation({
@@ -326,7 +330,7 @@ export default function WealthPage(){
           <div className="mt-4 grid gap-4 xl:grid-cols-2">
             <div className="rounded-xl border border-[var(--border)] p-4">
               <div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold">Seguros relacionados con la vivienda</h3><p className="mt-1 text-xs text-[var(--muted)]">Hogar y vida aparecen aquí porque pueden afectar al coste efectivo de la hipoteca o a sus bonificaciones.</p></div><Link className="text-xs underline" href="/insurance/">Seguros</Link></div>
-              <div className="mt-3 space-y-2">{home.data.insurance.length?home.data.insurance.map(x=><div key={x.id} className="flex justify-between gap-3 rounded-lg bg-[var(--surface-2)] p-3 text-sm"><div><strong>{x.insurance_type}</strong><div className="text-xs text-[var(--muted)]">{x.provider||'Proveedor pendiente'}{x.renewal_date?' · renueva '+new Date(x.renewal_date).toLocaleDateString('es-ES'):''}</div></div><strong><Money value={x.annual_premium}/>/año</strong></div>):<EmptyState>No hay seguros de hogar/vida estructurados todavía.</EmptyState>}</div>
+              <div className="mt-3 space-y-2">{home.data.insurance.length?home.data.insurance.map(x=><Link href={'/insurance/?policy='+encodeURIComponent(x.id)} key={x.id} className="flex justify-between gap-3 rounded-lg bg-[var(--surface-2)] p-3 text-sm hover:ring-1 hover:ring-[var(--brand)]"><div><strong>{x.insurance_type}</strong><div className="text-xs text-[var(--muted)]">{x.provider||'Proveedor pendiente'}{x.renewal_date?' · renueva '+new Date(x.renewal_date).toLocaleDateString('es-ES'):''}</div><div className="mt-1 text-[11px] underline">Ver ficha completa</div></div><strong><Money value={x.annual_premium}/>/año</strong></Link>):<EmptyState>No hay seguros de hogar/vida estructurados todavía.</EmptyState>}</div>
               {home.data.source_documents.length>0&&<div className="mt-3 text-xs text-[var(--muted)]"><strong>Documentación hipotecaria vinculada:</strong> {home.data.source_documents.map(x=>x.name).join(' · ')}</div>}
             </div>
 
@@ -351,6 +355,14 @@ export default function WealthPage(){
               </>}
             </div>
           </div>
+
+          <div className="mt-4 rounded-xl border border-[var(--border)] p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div><h3 className="font-semibold">Seguros y protección</h3><p className="mt-1 text-xs text-[var(--muted)]">Todos tus seguros quedan dentro del área Casa para relacionar protección, coste, vivienda e hipoteca. Pulsa una póliza para abrir su ficha completa.</p></div>
+              <Link className="text-xs underline" href="/insurance/">Gestionar todos los seguros</Link>
+            </div>
+            <div className="mt-3 grid gap-2 md:grid-cols-2">{d.insurance.policies.length?d.insurance.policies.map(x=><Link href={'/insurance/?policy='+encodeURIComponent(x.id)} key={x.id} className="rounded-xl bg-[var(--surface-2)] p-3 text-sm hover:ring-1 hover:ring-[var(--brand)]"><div className="flex justify-between gap-3"><div><strong>{x.insurance_type}</strong><div className="text-xs text-[var(--muted)]">{x.provider||'Proveedor no identificado'}{x.deductible?' · franquicia '+formatNumber(x.deductible,2,2)+' €':''}</div></div><div className="text-right"><strong><Money value={x.annual_premium} currency={x.currency}/></strong><div className="text-[11px] text-[var(--muted)]">al año</div></div></div><div className="mt-2 text-[11px] underline">Ver condiciones, coberturas y documentos</div></Link>):<EmptyState>No hay pólizas registradas.</EmptyState>}</div>
+          </div>
         </>}
       </Card>
 
@@ -374,14 +386,14 @@ export default function WealthPage(){
           <p className="mt-1 text-sm text-[var(--muted)]">Capital pendiente que resta valor a tus activos.</p>
           <div className="mt-4 space-y-2">
             {d.mortgages.map(m=><div key={m.id} className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="flex justify-between gap-3"><div><strong>Hipoteca · {m.lender}</strong><div className="text-xs text-[var(--muted)]">Cuota <Money value={m.monthly_payment} currency={m.currency}/> · {m.remaining_months} meses · TIN {(Number(m.nominal_rate)*100).toLocaleString('es-ES',{maximumFractionDigits:3})}%</div></div><strong><Money value={m.remaining_principal} currency={m.currency}/></strong></div></div>)}
-            {d.liabilities.map(x=><div key={x.id} className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="flex justify-between gap-3"><div><strong>{x.name}</strong><div className="text-xs text-[var(--muted)]">{x.type}</div></div><strong><Money value={x.amount} currency={x.currency}/></strong></div></div>)}
+            {d.liabilities.map(x=><div key={x.id} className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="flex justify-between gap-3"><div><strong>{x.name}</strong><div className="text-xs text-[var(--muted)]">{x.type}</div></div><div className="text-right"><strong><Money value={x.amount} currency={x.currency}/></strong><div><button className="mt-1 text-xs underline" onClick={()=>{if(window.confirm('¿Eliminar la deuda '+x.name+'?'))removeDebt.mutate(x.id)}} disabled={removeDebt.isPending}>Eliminar deuda</button></div></div></div></div>)}
             {!d.mortgages.length&&!d.liabilities.length&&<EmptyState>No hay deudas registradas.</EmptyState>}
           </div>
         </Card>
       </div>
 
       <Card className="mt-4">
-        <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Vivienda, coche y otros bienes</h2><p className="mt-1 text-sm text-[var(--muted)]">El valor de mercado que ves es la última valoración guardada. Actualízala cuando tengas una estimación más reciente.</p></div><Link className="text-xs underline" href="/history/">Ver histórico</Link></div>
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Bienes y evolución de valor</h2><p className="mt-1 text-sm text-[var(--muted)]">Vivienda, coche y otros bienes sí forman parte de tu patrimonio. Cada nueva valoración queda guardada para medir revalorización o depreciación frente a la valoración anterior; no se inventan precios de mercado automáticamente.</p></div><Link className="text-xs underline" href="/history/">Ver histórico completo</Link></div>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {d.assets.length?d.assets.map(x=><div key={x.id} className="rounded-xl border border-[var(--border)] p-4 text-sm">
             {editingAsset?.id===x.id?<form className="grid gap-2" onSubmit={e=>{e.preventDefault();updateAsset.mutate()}}>
@@ -392,7 +404,9 @@ export default function WealthPage(){
               <div className="flex gap-2"><button className="fin-button py-1.5 text-xs" disabled={updateAsset.isPending}>Guardar cambios</button><button type="button" className="fin-button secondary py-1.5 text-xs" onClick={()=>setEditingAsset(null)}>Cancelar</button></div>
             </form>:<>
               <div className="flex justify-between gap-3"><div><strong>{x.name}</strong><div className="text-xs text-[var(--muted)]">{x.type} · valoración {new Date(x.valuation_date).toLocaleDateString('es-ES')}</div></div><strong><Money value={x.value} currency={x.currency}/></strong></div>
-              <div className="mt-2 text-[11px] text-[var(--muted)]">Fuente: {x.valuation_source} · propiedad {Number(x.ownership_percentage).toLocaleString('es-ES')}%</div>
+              <div className="mt-2 text-[11px] text-[var(--muted)]">Fuente: {x.valuation_source} · propiedad {formatNumber(x.ownership_percentage,0,2)}%</div>
+              {x.change_amount!=null&&<div className="mt-2 rounded-lg bg-[var(--surface-2)] p-2 text-xs"><strong>{Number(x.change_amount)>=0?'Revalorización':'Depreciación'}: <Money value={x.change_amount} currency={x.currency}/>{x.change_pct!=null?' · '+formatNumber(x.change_pct,1,1)+'%':''}</strong><div className="mt-1 text-[11px] text-[var(--muted)]">Desde la valoración anterior{x.previous_valuation_date?' del '+new Date(x.previous_valuation_date).toLocaleDateString('es-ES'):''}{x.previous_value!=null?' ('+formatNumber(x.previous_value,2,2)+' '+x.currency+')':''}.</div></div>}
+              {x.change_amount==null&&<div className="mt-2 text-[11px] text-[var(--muted)]">Aún no hay una segunda valoración para medir su evolución.</div>}
               <div className="mt-3 flex gap-3"><button className="text-xs underline" onClick={()=>setEditingAsset(x)}>Editar</button><button className="text-xs underline" onClick={()=>{if(window.confirm('¿Eliminar '+x.name+' del patrimonio?'))removeAsset.mutate(x.id)}} disabled={removeAsset.isPending}>Eliminar</button></div>
             </>}
           </div>):<EmptyState>Aún no has añadido vivienda, coche u otros bienes.</EmptyState>}
@@ -419,11 +433,6 @@ export default function WealthPage(){
         </Card>
 
         <Card>
-          <div className="flex items-start justify-between gap-3"><div><h2 className="font-bold">Seguros y protección</h2><p className="mt-1 text-sm text-[var(--muted)]">Se muestran para tener la foto financiera completa, pero una póliza no es un activo patrimonial.</p></div><Link href="/insurance/" className="text-xs underline">Revisar coberturas</Link></div>
-          <div className="mt-3 space-y-2">{d.insurance.policies.length?d.insurance.policies.map(x=><div key={x.id} className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="flex justify-between gap-3"><div><strong>{x.insurance_type}</strong><div className="text-xs text-[var(--muted)]">{x.provider||'Proveedor no identificado'}{x.deductible?' · franquicia '+Number(x.deductible).toLocaleString('es-ES')+' €':''}</div></div><div className="text-right"><strong><Money value={x.annual_premium} currency={x.currency}/></strong><div className="text-[11px] text-[var(--muted)]">al año</div></div></div></div>):<EmptyState>No hay pólizas registradas.</EmptyState>}</div>
-        </Card>
-
-        <Card>
           <h2 className="font-bold">Otras deudas</h2>
           <p className="mt-1 text-sm text-[var(--muted)]">Préstamos, financiación y otros pasivos que no sean la hipoteca principal.</p>
           <form className="mt-3 grid gap-2 sm:grid-cols-2" onSubmit={(e:FormEvent)=>{e.preventDefault();addDebt.mutate()}}>
@@ -432,7 +441,8 @@ export default function WealthPage(){
             <input className="fin-input sm:col-span-2" placeholder="Capital pendiente" type="number" min="0" step=".01" value={debt.outstanding_amount} onChange={e=>setDebt({...debt,outstanding_amount:e.target.value})} required/>
             <button className="fin-button sm:col-span-2" disabled={addDebt.isPending}>{addDebt.isPending?'Guardando…':'Añadir deuda'}</button>
           </form>
-          {addDebt.error&&<div className="mt-3"><ErrorState error={addDebt.error}/></div>}
+          <div className="mt-4 space-y-2">{d.liabilities.length?d.liabilities.map(x=><div key={x.id} className="flex items-center justify-between gap-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div><strong>{x.name}</strong><div className="text-xs text-[var(--muted)]">{x.type}</div></div><div className="flex items-center gap-3"><strong><Money value={x.amount} currency={x.currency}/></strong><button className="text-xs underline" type="button" onClick={()=>{if(window.confirm('¿Eliminar la deuda '+x.name+'?'))removeDebt.mutate(x.id)}} disabled={removeDebt.isPending}>Eliminar</button></div></div>):<EmptyState>No hay otras deudas.</EmptyState>}</div>
+          {(addDebt.error||removeDebt.error)&&<div className="mt-3"><ErrorState error={(addDebt.error||removeDebt.error)!}/></div>}
         </Card>
       </div>
     </>}
