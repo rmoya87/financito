@@ -504,3 +504,18 @@ Antes de proyectar hechos confirmados, la sincronización separa el dominio hipo
 Cuando un documento hipotecario contiene evidencia aseguradora confirmada suficiente, Financito crea o actualiza la póliza y su contrato, proyecta prima, proveedor, renovación, número de póliza/contrato, objeto asegurado, franquicia y coberturas verificadas, conserva el mismo documento como evidencia de la póliza y registra la relación `mortgage -> insurance_policy` mediante `LinkedProduct`. No se crea una póliza nueva si falta una prima real confirmada: nunca se inventa un coste 0.
 
 Los identificadores usados para agrupar documentos también respetan el dominio. Un `contract_number` situado en una sección de seguro no puede hacer que un recibo posterior de esa póliza se vincule por error a la hipoteca que contiene el anexo.
+
+
+## Regla especial: notas simples y responsabilidad hipotecaria
+
+Una nota simple puede expresar cantidades máximas garantizadas por capital, intereses ordinarios, intereses de demora, costas/gastos y valor de subasta. Esas cantidades describen responsabilidad hipotecaria registral y no deben proyectarse automáticamente como:
+- penalización de cancelación;
+- comisión de amortización anticipada;
+- gasto inicial ya pagado;
+- cuota;
+- capital pendiente;
+- TAE.
+
+Si el mismo texto contiene un TIN nominal, un porcentaje máximo de demora, un vencimiento o un plazo explícitos, esos elementos sí pueden convertirse en propuestas de hechos independientes, siempre con página y manteniendo estado inferido hasta su confirmación.
+
+La ausencia explícita de TAE, diferencial, índice, comisión de subrogación o amortización sigue siendo “información que falta”; el análisis narrativo no puede inventarla.
