@@ -236,3 +236,15 @@ Las conclusiones de IA de varios documentos vinculados al mismo producto compart
 - `insured_object` se conserva en la póliza y los tipos reconocibles se normalizan a categorías canónicas (`life`, `home`, etc.) para que requisitos y análisis funcionen de forma consistente.
 - Se impide contaminación cruzada: proveedor, renovación o próxima revisión de un seguro no pueden sobrescribir prestamista ni revisión de la hipoteca.
 - Biblioteca ya no muestra una lista permanente de “Evidencia extraída”. Los hechos confirmados desaparecen de revisión; solo quedan hechos materiales pendientes, dudosos o en conflicto.
+
+
+## Mercados, comparador hipotecario y detalle de seguros (2026-09-21)
+
+- “Noticias guardadas” muestra una selección de máximo seis noticias relevantes, no el histórico completo.
+- La IA local combina noticias, precio/histórico, P&L, volatilidad y drawdown y devuelve por activo \`investment_status\` y \`future_risk_level\`; existe fallback determinista si la IA no está disponible.
+- El backend valida que la IA solo pueda seleccionar noticias realmente guardadas.
+- El comparador hipotecario expone \`better_offers\` y \`lower_rate_but_not_better\`; la UI solo lista \`better_offers\`.
+- Una referencia de menor TIN queda fuera si la penalización no se recupera dentro del plazo, el ahorro neto conocido no es positivo o existen seguros vinculados de coste desconocido.
+- Casa muestra cuota actual, penalización confirmada y coste anual de seguros actualmente vinculados junto al comparador.
+- “Para ti” abre seguros en una modal reutilizable y permite navegar entre pólizas sin salir de Inicio.
+- El detalle de Hogar/Vida/etc. consulta todos los documentos vinculados a la póliza, incluidos PDFs hipotecarios mixtos, y muestra todas las categorías interpretativas de “Detalle del documento”.

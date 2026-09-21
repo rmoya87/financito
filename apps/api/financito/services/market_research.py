@@ -9,9 +9,11 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import Mortgage
+from ..models import Contract,Mortgage
+from ..models_analytics import LinkedProduct
+from ..models_extended import InsurancePolicy
 from ..domain.engines import MortgageEngine
-from .contractual_costs import resolve_subrogation_penalty, switching_readiness
+from .contractual_costs import resolve_subrogation_penalty,switching_readiness
 
 
 OFFICIAL_SOURCES = (
@@ -194,7 +196,92 @@ def _scan_source(source: dict, client: httpx.Client) -> dict:
         }
 
 
-def _market_conclusion(mortgage: Mortgage | None, leads: list[dict], readiness: dict) -> dict:
+def _linked_mortgage_conditions(session:Session,mortgage:Mortgage|None)->dict:
+    if mortgage is None:
+        return {"policies":[],"annual_premium_total":"0","rate_impacts":[]}
+    links=session.scalars(select(LinkedProduct).where(
+        LinkedProduct.parent_product_type=="mortgage",
+        LinkedProduct.parent_product_id==mortgage.id,
+        LinkedProduct.linked_product_type=="insurance_policy",
+    )).all()
+    policies=[];annual=Decimal("0")
+    for link in links:
+        policy=session.get(InsurancePolicy,link.linked_product_id)
+        if policy is None:
+            continue
+        contract=session.get(Contract,policy.contract_id) if policy.contract_id else None
+        annual+=policy.annual_premium
+        policies.append({
+            "policy_id":policy.id,
+            "insurance_type":policy.insurance_type,
+            "annual_premium":str(policy.annual_premium),
+            "provider":None if contract is None else contract.provider_name,
+            "exit_penalty":None if contract is None or contract.early_exit_penalty is None else str(contract.early_exit_penalty),
+            "conditions":link.conditions,
+        })
+    readiness=switching_readiness(session,mortgage.id)
+    return {
+        "policies":policies,
+        "annual_premium_total":str(annual.quantize(Decimal("0.01"))),
+        "rate_impacts":((readiness.get("mortgage") or {}).get("linked_product_rate_impacts") or []),
+        "linked_product_signals":((readiness.get("mortgage") or {}).get("linked_product_signals") or []),
+    }
+
+
+def _market_conclusion(
+    mortgage: Mortgage | None,
+    better_offers: list[dict],
+    rejected_or_readiness: list[dict] | dict | None = None,
+    readiness: dict | None = None,
+) -> dict:
+    # Backwards-compatible direct-call shape used by existing callers/tests:
+    # _market_conclusion(mortgage, leads, readiness).
+    compatibility_mode = readiness is None and isinstance(rejected_or_readiness, dict)
+    if compatibility_mode:
+        readiness = rejected_or_readiness
+        raw_leads = better_offers
+        better_offers = []
+        rejected = []
+        if mortgage is not None and readiness.get("ready"):
+            for lead in raw_leads:
+                scenario = lead.get("scenario") or {}
+                try:
+                    monthly_saving = Decimal(str(
+                        scenario.get("actual_monthly_saving")
+                        or scenario.get("monthly_payment_difference")
+                    ))
+                    interest_saving = Decimal(str(scenario["remaining_interest_difference"]))
+                    penalty = Decimal(str(scenario["known_exit_penalty"]))
+                    break_even = Decimal(str(
+                        scenario.get("break_even_months")
+                        or scenario.get("break_even_months_known_penalty_only")
+                    ))
+                except (KeyError,TypeError,ValueError,ArithmeticError):
+                    continue
+                net_known=(interest_saving-penalty).quantize(Decimal("0.01"))
+                if monthly_saving>0 and net_known>0 and break_even<Decimal(mortgage.remaining_months):
+                    normalized={**lead,"scenario":{
+                        **scenario,
+                        "actual_monthly_saving":str(monthly_saving),
+                        "estimated_net_interest_saving_known_costs":str(net_known),
+                        "break_even_months":str(break_even),
+                        "compensates":True,
+                    }}
+                    better_offers.append(normalized)
+        elif mortgage is not None:
+            return {
+                "status":"needs_more_data",
+                "headline":"Faltan costes contractuales para decidir",
+                "action":"Confirma los datos pendientes antes de valorar un cambio. Financito no trata costes desconocidos como 0 €.",
+                "provider":None,
+                "source_id":None,
+                "missing":readiness.get("missing",[]),
+                "assumptions":["Las referencias públicas no sustituyen una FEIN/oferta personalizada."],
+            }
+    else:
+        rejected = rejected_or_readiness if isinstance(rejected_or_readiness,list) else []
+        readiness = readiness or {"ready":True,"missing":[]}
+
     if mortgage is None:
         return {
             "status": "needs_more_data",
@@ -206,71 +293,60 @@ def _market_conclusion(mortgage: Mortgage | None, leads: list[dict], readiness: 
             "assumptions": [],
         }
 
-    if not readiness.get("ready"):
+    if better_offers:
+        lead=sorted(
+            better_offers,
+            key=lambda item: Decimal((item.get("scenario") or {}).get("estimated_net_interest_saving_known_costs") or "0"),
+            reverse=True,
+        )[0]
+        scenario=lead["scenario"]
         return {
-            "status": "needs_more_data",
-            "headline": "Faltan costes contractuales para decidir",
-            "action": "Confirma los datos pendientes de la documentación antes de elegir una alternativa. Financito no trata una penalización o vinculación desconocida como 0 €.",
-            "provider": None,
-            "source_id": None,
-            "missing": readiness.get("missing", []),
-            "assumptions": ["Las referencias públicas no sustituyen una FEIN/oferta personalizada."],
+            "status":"request_personalized_offer",
+            "headline":f"{len(better_offers)} referencia(s) pública(s) mejoran tu escenario con los costes conocidos",
+            "action":(
+                f"La referencia con mayor ahorro conocido es {lead['provider']}. Solicita una FEIN/oferta personalizada "
+                f"y compárala con tu hipoteca actual. Con la penalización confirmada, el cambio empezaría a compensar "
+                f"aproximadamente a los {scenario['break_even_months']} meses si la oferta final conserva estas condiciones."
+            ),
+            "provider":lead["provider"],
+            "source_id":lead["source_id"],
+            "public_tin_percent":lead.get("public_tin_min"),
+            "estimated_monthly_saving":scenario["actual_monthly_saving"],
+            "estimated_remaining_interest_saving":scenario["remaining_interest_difference"],
+            "known_exit_penalty":scenario["known_exit_penalty"],
+            "estimated_net_interest_saving_known_costs":scenario["estimated_net_interest_saving_known_costs"],
+            "break_even_months":scenario["break_even_months"],
+            # Compatibility alias for clients created before the stricter market filter.
+            "break_even_months_known_penalty_only":scenario["break_even_months"],
+            "missing":[],
+            "assumptions":[
+                "Se usa el mismo capital pendiente y plazo restante.",
+                "El ahorro mensual se compara contra tu cuota guardada actual.",
+                "Solo se muestran como mejores las referencias cuyo ahorro conocido supera la penalización y cuyo punto de equilibrio llega antes del final de la hipoteca.",
+                "Una referencia con seguros vinculados de coste no publicado no se considera mejor hasta conocer ese coste.",
+            ],
         }
 
-    candidates = []
-    for lead in leads:
-        scenario = lead.get("scenario")
-        if not scenario or lead.get("kind") not in {"mortgage_subrogation", "mortgage_public_benchmark"}:
-            continue
-        try:
-            monthly_saving = Decimal(scenario["monthly_payment_difference"])
-            interest_saving = Decimal(scenario["remaining_interest_difference"])
-            penalty = Decimal(scenario["known_exit_penalty"])
-            break_even = Decimal(scenario["break_even_months_known_penalty_only"])
-        except (TypeError, ValueError, ArithmeticError):
-            continue
-        net_known = (interest_saving - penalty).quantize(Decimal("0.01"))
-        if monthly_saving > 0 and net_known > 0 and break_even < Decimal(mortgage.remaining_months):
-            candidates.append((net_known, monthly_saving, lead))
-
-    if not candidates:
-        return {
-            "status": "keep_or_negotiate",
-            "headline": "No hay una referencia pública que justifique cambiar con los datos actuales",
-            "action": "Mantén la hipoteca como escenario base y usa las mejores referencias públicas solo para negociar una novación. Repite la comparación cuando exista una oferta personalizada con TAE, vinculaciones y gastos completos.",
-            "provider": mortgage.lender,
-            "source_id": None,
-            "missing": [],
-            "assumptions": ["Se compara el mismo capital pendiente y el mismo plazo restante."],
-        }
-
-    candidates.sort(key=lambda row: (row[0], row[1]), reverse=True)
-    net_known, monthly_saving, lead = candidates[0]
-    scenario = lead["scenario"]
+    lower_rate_count=sum(1 for row in rejected if row.get("rate_better"))
+    missing=readiness.get("missing",[])
+    if lower_rate_count:
+        headline="Hay tipos públicos más bajos, pero no se ha demostrado que te compense cambiar"
+        action=(
+            "No se muestra ninguna como mejor oferta porque, al aplicar tu cuota, plazo y penalización, "
+            "o bien el punto de equilibrio no llega antes del fin de la hipoteca o faltan costes de vinculaciones de la nueva oferta."
+        )
+    else:
+        headline="No hay una referencia pública que mejore tu hipoteca con los datos actuales"
+        action="Mantén estas referencias como apoyo para negociar y vuelve a comparar cuando cambien las ofertas o tus condiciones."
     return {
-        "status": "request_personalized_offer",
-        "headline": f"La referencia más favorable para contrastar es {lead['provider']}",
-        "action": (
-            f"Solicita a {lead['provider']} una FEIN u oferta personalizada y pide primero a {mortgage.lender} "
-            "que iguale o mejore esas condiciones. Cambia solo si la oferta final mantiene un ahorro neto positivo "
-            "después de penalización, seguros vinculados, tasación y cualquier otro coste confirmado."
-        ),
-        "provider": lead["provider"],
-        "source_id": lead["source_id"],
-        "public_tin_percent": lead.get("public_tin_min"),
-        "estimated_monthly_saving": str(monthly_saving),
-        "estimated_remaining_interest_saving": scenario["remaining_interest_difference"],
-        "known_exit_penalty": scenario["known_exit_penalty"],
-        "estimated_net_interest_saving_known_costs": str(net_known),
-        "break_even_months_known_penalty_only": scenario["break_even_months_known_penalty_only"],
-        "missing": [],
-        "assumptions": [
-            "Mismo capital pendiente y plazo restante que la hipoteca seleccionada.",
-            "El TIN público es una referencia y puede no ser el TIN finalmente ofrecido.",
-            "El ahorro neto mostrado descuenta solo costes contractuales conocidos; la oferta final debe completar el resto.",
-        ],
+        "status":"keep_or_negotiate" if not missing else "needs_more_data",
+        "headline":headline,
+        "action":action,
+        "provider":mortgage.lender,
+        "source_id":None,
+        "missing":missing,
+        "assumptions":["Las referencias públicas no sustituyen una FEIN/oferta personalizada."],
     }
-
 
 def scan_public_market(session: Session, mortgage_id: str | None = None) -> dict:
     mortgage = session.get(Mortgage, mortgage_id) if mortgage_id else session.scalar(
@@ -288,70 +364,119 @@ def scan_public_market(session: Session, mortgage_id: str | None = None) -> dict
         mortgage.remaining_principal, mortgage.nominal_rate, mortgage.remaining_months
     )
     exit_penalty = None if mortgage is None else resolve_subrogation_penalty(session, mortgage)
-    leads = []
+    linked_conditions=_linked_mortgage_conditions(session,mortgage)
+    leads=[];better_offers=[];rejected=[]
     for source in sources:
-        tins = [float(x["value_percent"]) for x in source["rates"] if x["type"] == "TIN"]
-        min_tin = min(tins) if tins else None
-        benchmark_delta = None
-        if current_rate is not None and min_tin is not None:
-            benchmark_delta = float(current_rate) - min_tin
-        scenario = None
+        tins=[float(x["value_percent"]) for x in source["rates"] if x["type"]=="TIN"]
+        taes=[float(x["value_percent"]) for x in source["rates"] if x["type"]=="TAE"]
+        min_tin=min(tins) if tins else None
+        min_tae=min(taes) if taes else None
+        benchmark_delta=None if current_rate is None or min_tin is None else float(current_rate)-min_tin
+        scenario=None
+        rate_better=bool(current_rate is not None and min_tin is not None and Decimal(str(min_tin))<current_rate)
         if mortgage is not None and min_tin is not None:
-            candidate = MortgageEngine.amortization(
+            candidate=MortgageEngine.amortization(
                 mortgage.remaining_principal,
-                Decimal(str(min_tin)) / Decimal("100"),
+                Decimal(str(min_tin))/Decimal("100"),
                 mortgage.remaining_months,
             )
-            monthly_delta = (
-                current_scenario.monthly_payment - candidate.monthly_payment
-            ).quantize(Decimal("0.01"))
-            saved_payment_delta = (
-                mortgage.monthly_payment - candidate.monthly_payment
-            ).quantize(Decimal("0.01"))
-            interest_delta = (
-                current_scenario.total_interest - candidate.total_interest
-            ).quantize(Decimal("0.01")) if current_scenario is not None else None
-            known_penalty = None if not exit_penalty or exit_penalty["amount"] is None else exit_penalty["amount"]
-            break_even = None
-            if known_penalty is not None and monthly_delta > 0:
-                break_even = (known_penalty / monthly_delta).quantize(Decimal("0.1"))
-            scenario = {
-                "estimated_payment": str(candidate.monthly_payment),
-                "monthly_payment_difference": str(monthly_delta),
-                "saved_payment_difference": str(saved_payment_delta),
-                "remaining_interest_difference": None if interest_delta is None else str(interest_delta),
-                "known_exit_penalty": None if known_penalty is None else str(known_penalty),
-                "break_even_months_known_penalty_only": None if break_even is None else str(break_even),
-                "comparison_scope": "same_remaining_principal_and_term",
+            theoretical_saving=(current_scenario.monthly_payment-candidate.monthly_payment).quantize(Decimal("0.01"))
+            actual_saving=(mortgage.monthly_payment-candidate.monthly_payment).quantize(Decimal("0.01"))
+            interest_delta=(current_scenario.total_interest-candidate.total_interest).quantize(Decimal("0.01"))
+            known_penalty=None if not exit_penalty or exit_penalty["amount"] is None else exit_penalty["amount"]
+            break_even=None
+            if known_penalty is not None and actual_saving>0:
+                break_even=(known_penalty/actual_saving).quantize(Decimal("0.1"))
+            priced_link_unknown=any(
+                claim in source["claims"] for claim in ("linked_home_insurance","linked_life_insurance")
+            )
+            net_known=None if known_penalty is None else (interest_delta-known_penalty).quantize(Decimal("0.01"))
+            compensates=bool(
+                source["kind"] in {"mortgage_subrogation","mortgage_public_benchmark"}
+                and rate_better
+                and actual_saving>0
+                and net_known is not None and net_known>0
+                and break_even is not None and break_even<Decimal(mortgage.remaining_months)
+                and not priced_link_unknown
+            )
+            reason=None
+            if not rate_better:
+                reason="El TIN publicado no mejora tu TIN actual."
+            elif known_penalty is None:
+                reason="Falta confirmar la penalización/coste de salida de tu hipoteca."
+            elif actual_saving<=0:
+                reason="La cuota comparable no mejora tu cuota actual guardada."
+            elif break_even is None or break_even>=Decimal(mortgage.remaining_months):
+                reason="La penalización no se recupera antes de terminar el plazo restante."
+            elif net_known is not None and net_known<=0:
+                reason="El ahorro de intereses conocido no supera la penalización de salida."
+            elif priced_link_unknown:
+                reason="La oferta exige seguro vinculado y no publica un coste suficiente para demostrar el ahorro neto."
+            scenario={
+                "estimated_payment":str(candidate.monthly_payment),
+                "theoretical_monthly_saving":str(theoretical_saving),
+                "actual_monthly_saving":str(actual_saving),
+                "monthly_payment_difference":str(actual_saving),
+                "remaining_interest_difference":str(interest_delta),
+                "known_exit_penalty":None if known_penalty is None else str(known_penalty),
+                "estimated_net_interest_saving_known_costs":None if net_known is None else str(net_known),
+                "break_even_months":None if break_even is None else str(break_even),
+                "break_even_months_known_penalty_only":None if break_even is None else str(break_even),
+                "compensates":compensates,
+                "comparison_complete":known_penalty is not None and not priced_link_unknown,
+                "rejection_reason":reason,
+                "comparison_scope":"same_remaining_principal_and_term_vs_saved_current_payment",
             }
-        leads.append({
-            "source_id": source["id"],
-            "provider": source["provider"],
-            "kind": source["kind"],
-            "status": source["status"],
-            "public_tin_min": min_tin,
-            "benchmark_difference_pp": benchmark_delta,
-            "promo_percent": source.get("promo_percent"),
-            "claims": source["claims"],
-            "url": source["url"],
-            "retrieved_at": source["retrieved_at"],
-            "requires_personalized_quote": True,
-            "scenario": scenario,
-        })
+        lead={
+            "source_id":source["id"],
+            "provider":source["provider"],
+            "kind":source["kind"],
+            "status":source["status"],
+            "public_tin_min":min_tin,
+            "public_tae_min":min_tae,
+            "benchmark_difference_pp":benchmark_delta,
+            "promo_percent":source.get("promo_percent"),
+            "claims":source["claims"],
+            "url":source["url"],
+            "retrieved_at":source["retrieved_at"],
+            "requires_personalized_quote":True,
+            "rate_better":rate_better,
+            "scenario":scenario,
+        }
+        leads.append(lead)
+        if scenario and scenario["compensates"]:
+            better_offers.append(lead)
+        elif source["kind"] in {"mortgage_subrogation","mortgage_public_benchmark"} and rate_better:
+            rejected.append(lead)
 
-    readiness = switching_readiness(session, mortgage.id if mortgage is not None else None)
+    readiness=switching_readiness(session,mortgage.id if mortgage is not None else None)
+    better_offers.sort(
+        key=lambda item:Decimal((item.get("scenario") or {}).get("estimated_net_interest_saving_known_costs") or "0"),
+        reverse=True,
+    )
     return {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "mortgage_id": None if mortgage is None else mortgage.id,
-        "current_mortgage_rate_percent": None if current_rate is None else str(current_rate),
-        "current_monthly_payment": None if mortgage is None else str(mortgage.monthly_payment),
-        "official_sources": list(OFFICIAL_SOURCES),
-        "leads": leads,
-        "conclusion": _market_conclusion(mortgage, leads, readiness),
-        "disclaimer": (
-            "Los tipos publicados son referencias comerciales/estadísticas y no una oferta personalizada. "
-            "Las simulaciones mantienen capital pendiente y plazo actuales para hacer comparable la cuota. "
-            "El punto de equilibrio, cuando aparece, solo descuenta la penalización de salida confirmada; seguros vinculados, "
-            "tasación, otros costes y condiciones de una FEIN deben incorporarse antes de calcular el ahorro neto."
+        "generated_at":datetime.now(timezone.utc).isoformat(),
+        "mortgage_id":None if mortgage is None else mortgage.id,
+        "current_mortgage_rate_percent":None if current_rate is None else str(current_rate),
+        "current_monthly_payment":None if mortgage is None else str(mortgage.monthly_payment),
+        "current_conditions":{
+            "remaining_months":None if mortgage is None else mortgage.remaining_months,
+            "known_exit_penalty":None if not exit_penalty or exit_penalty["amount"] is None else str(exit_penalty["amount"]),
+            "exit_penalty_status":None if not exit_penalty else exit_penalty["status"],
+            "linked_insurance_annual_cost":linked_conditions["annual_premium_total"],
+            "linked_policies":linked_conditions["policies"],
+            "linked_product_rate_impacts":linked_conditions["rate_impacts"],
+            "linked_product_signals":linked_conditions["linked_product_signals"],
+        },
+        "official_sources":list(OFFICIAL_SOURCES),
+        "leads":leads,
+        "better_offers":better_offers,
+        "lower_rate_but_not_better":rejected,
+        "conclusion":_market_conclusion(mortgage,better_offers,rejected,readiness),
+        "disclaimer":(
+            "Solo se muestran como mejores las referencias que, con la cuota, capital, plazo y penalización confirmada actuales, "
+            "mantienen ahorro conocido positivo y recuperan el coste de salida antes del fin de la hipoteca. "
+            "Si la nueva referencia exige seguros vinculados cuyo coste no está publicado, no se afirma que sea mejor aunque su TIN sea inferior. "
+            "Una FEIN/oferta personalizada sigue siendo necesaria para cerrar la decisión."
         ),
     }

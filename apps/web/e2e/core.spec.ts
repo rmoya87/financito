@@ -190,6 +190,12 @@ test('al pulsar un seguro se abre su ficha completa',async({page})=>{
   await expect(dialog.getByRole('heading',{name:'Condiciones contractuales'})).toBeVisible();
   await expect(dialog.getByRole('heading',{name:'Documentos a consultar'})).toBeVisible();
   await expect(dialog.getByRole('heading',{name:'Coberturas, límites y exclusiones'})).toBeVisible();
+  await expect(dialog.getByRole('heading',{name:'Todo lo indicado por la documentación'})).toBeVisible();
+  await expect(dialog.getByRole('heading',{name:'Obligaciones'})).toBeVisible();
+  await expect(dialog.getByRole('heading',{name:'Riesgos'})).toBeVisible();
+  await expect(dialog.getByRole('heading',{name:'Oportunidades de optimizar'})).toBeVisible();
+  await expect(dialog.getByRole('heading',{name:'Productos vinculados'})).toBeVisible();
+  await expect(dialog.getByRole('heading',{name:'Puntos para negociar'})).toBeVisible();
   await dialog.getByRole('button',{name:'Editar seguro'}).click();
   await expect(dialog.getByRole('heading',{name:'Editar seguro'})).toBeVisible();
   await dialog.getByPlaceholder('Prima anual (€)').fill('500');
@@ -214,9 +220,50 @@ test('al pulsar un seguro se abre su ficha completa',async({page})=>{
   await expect(dialog).not.toBeVisible();
 });
 
+test('Para ti abre Seguros y coberturas en modal sin salir de Inicio',async({page})=>{
+  await page.route('**/api/v1/dashboard?**',route=>route.fulfill({
+    status:200,
+    contentType:'application/json',
+    body:JSON.stringify({
+      period:{start:'2026-09-01',end:'2026-09-21'},
+      liquidity:'0',income:'0',expenses:'0',savings:'0',savings_rate:null,
+      spending_by_category:[],
+      upcoming_commitments:[],
+      actions:[{
+        id:'insurance-home-e2e',
+        title:'Seguros y coberturas',
+        action_type:'insurance_review',
+        priority:'high',
+        due_date:null,
+        status:'pending',
+        notes:'Revisar coberturas y condiciones',
+        related_entity_type:null,
+        related_entity_id:null,
+      }],
+    }),
+  }));
+
+  await page.goto('/');
+  await page.getByRole('button',{name:/Seguros y coberturas/}).click();
+  const insuranceDialog=page.getByRole('dialog',{name:'Detalle de Seguros y coberturas'});
+  await expect(insuranceDialog).toBeVisible();
+  await expect(insuranceDialog.getByRole('heading',{name:'Pólizas'})).toBeVisible();
+  await insuranceDialog.getByRole('button',{name:/Seguro E2E/}).click();
+  await expect(insuranceDialog.getByRole('heading',{name:'Todo lo indicado por la documentación'})).toBeVisible();
+  await expect(insuranceDialog.getByRole('heading',{name:'Obligaciones'})).toBeVisible();
+  await expect(insuranceDialog.getByRole('heading',{name:'Riesgos'})).toBeVisible();
+  await expect(insuranceDialog.getByRole('heading',{name:'Oportunidades de optimizar'})).toBeVisible();
+  await expect(insuranceDialog.getByRole('heading',{name:'Productos vinculados'})).toBeVisible();
+  await expect(insuranceDialog.getByRole('heading',{name:'Puntos para negociar'})).toBeVisible();
+  await expectAccessible(page);
+  await insuranceDialog.getByRole('button',{name:'Cerrar'}).click();
+  await expect(insuranceDialog).not.toBeVisible();
+});
+
 test('Mercado muestra análisis local arriba y agrupa evolución dentro de Mis activos',async({page})=>{
   await page.goto('/markets/');
   await expect(page.getByRole('heading',{name:'Lectura de tus activos ahora'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Noticias guardadas · selección útil'})).toBeVisible();
   const assets=page.getByRole('heading',{name:'Mis activos'});
   await expect(assets).toBeVisible();
   const body=page.locator('body');

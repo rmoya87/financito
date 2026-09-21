@@ -13,8 +13,6 @@ type Quote={symbol:string;price:string;provider:string;as_of:string|null;delayed
 type CryptoPrice={provider?:string;assets?:{id:string;currency:string;price?:number|null;market_cap?:number|null;volume_24h?:number|null;change_24h_pct?:number|null;last_updated_at?:number|null}[]};
 type CryptoMetrics={coin_id:string;metrics?:{volatility?:number|null;max_drawdown?:number|null;sharpe?:number|null;sortino?:number|null;var_95?:number;cvar_95?:number};observations?:number;provider?:string};
 type SecData={cik:string;entity_name:string;provider:string;facts:Record<string,{value:number;unit:string;period_end:string|null;filed:string|null;form:string|null;accession:string|null}>};
-type Analysis={security_id:string|null;security:string|null;event_type:string;sentiment:number;impact_level:string;confidence:number;method_version:string;rationale:string};
-type LocalNews={items:{id:string;headline:string;url:string;source:string;published_at:string;reliability:number;analysis:Analysis[]}[]};
 type Portfolio={id:string;name:string};
 type Simulation={started_at:string;invested_amount:string;entry_price:string;quantity:string;current_value:string|null;pnl:string|null;return:string|null};
 type TrackedAsset={
@@ -30,18 +28,30 @@ type Research={
   query:string;ingest:{inserted:number;discovered:number;warning?:string|null};
   brief:{summary:string;facts:{headline:string;source:string;published_at:string;url:string;linked_assets:string[];event_types:string[];impact_levels:string[]}[];portfolio_impacts:{asset?:string;observation?:string;possible_effects?:string|any[];evidence_headlines?:string[]}[];risks:string[];watch:string[];method:string;ai_available:boolean;ai_warning?:string}
 };
-type MarketGuidance={security_id:string;name:string;orientation:'estudiar_entrada'|'mantener_observacion'|'revisar_exposicion'|'datos_insuficientes';summary:string;reasons:string[];risks:string[];watch:string[]};
-type MarketInsightAsset={security_id:string;name:string;identifier:string|null;asset_class:string;position_type:'owned'|'simulated'|'watching';owned:boolean;current_price:string|null;cost_basis:string|null;current_value:string|null;unrealized_pnl:string|null;unrealized_return:string|null;simulation:Simulation|null;history:{observations:number;return_30d:number|null;return_90d:number|null;return_365d:number|null;volatility:number|null;max_drawdown:number|null;sharpe:number|null};news:{headline:string;source:string;published_at:string;url:string}[]};
-type MarketInsights={generated_at:string;summary:string;assets:MarketInsightAsset[];guidance:MarketGuidance[];ai_available:boolean;method:string;news_refresh:{inserted:number;discovered:number;warning?:string|null};notice:string};
+type MarketGuidance={security_id:string;name:string;orientation:'estudiar_entrada'|'mantener_observacion'|'revisar_exposicion'|'datos_insuficientes';investment_status:'considerar'|'considerar_con_cautela'|'no_considerar_ahora'|'datos_insuficientes'|'riesgo_elevado';future_risk_level:'limited'|'moderate'|'elevated'|'unknown';summary:string;reasons:string[];risks:string[];watch:string[]};
+type MarketInsightAsset={security_id:string;name:string;identifier:string|null;asset_class:string;position_type:'owned'|'simulated'|'watching';owned:boolean;current_price:string|null;cost_basis:string|null;current_value:string|null;unrealized_pnl:string|null;unrealized_return:string|null;simulation:Simulation|null;history:{observations:number;return_30d:number|null;return_90d:number|null;return_365d:number|null;volatility:number|null;max_drawdown:number|null;sharpe:number|null};news:{id:string;headline:string;source:string;published_at:string;url:string;reliability?:number|null}[]};
+type MarketInsights={generated_at:string;summary:string;assets:MarketInsightAsset[];guidance:MarketGuidance[];news_digest:{summary:string;items:{id:string;headline:string;source:string;published_at:string;url:string;reliability?:number|null;linked_assets:string[];why_relevant:string}[];risks:string[];watch:string[];selection_method:string};ai_available:boolean;method:string;news_refresh:{inserted:number;discovered:number;warning?:string|null};notice:string};
 
 
-function sentimentLabel(value:number){return value>.15?'positivo':value<-.15?'negativo':'neutral'}
 function pct(value:string|null){return value===null?'—':(Number(value)*100).toLocaleString('es-ES',{maximumFractionDigits:2})+'%'}
 function insightLabel(value:MarketGuidance['orientation']){
   if(value==='estudiar_entrada')return 'Estudiar entrada';
   if(value==='revisar_exposicion')return 'Revisar exposición';
   if(value==='mantener_observacion')return 'Mantener / observar';
   return 'Datos insuficientes';
+}
+function investmentStatusLabel(value:MarketGuidance['investment_status']){
+  if(value==='considerar')return 'Hay base para considerar';
+  if(value==='considerar_con_cautela')return 'Considerar con cautela';
+  if(value==='no_considerar_ahora')return 'No hay base para entrar ahora';
+  if(value==='riesgo_elevado')return 'Riesgo elevado';
+  return 'Datos insuficientes';
+}
+function riskLevelLabel(value:MarketGuidance['future_risk_level']){
+  if(value==='elevated')return 'Elevado';
+  if(value==='moderate')return 'Moderado';
+  if(value==='limited')return 'Limitado con los datos actuales';
+  return 'No determinado';
 }
 function metricPct(value:number|null){return value===null||value===undefined?'—':(value*100).toLocaleString('es-ES',{maximumFractionDigits:1})+'%'}
 
@@ -65,10 +75,8 @@ export default function MarketsPage(){
   const portfolios=useQuery({queryKey:['portfolios'],queryFn:()=>apiGet<Portfolio[]>('/api/v1/portfolios')});
   const tracked=useQuery({queryKey:['tracked-assets'],queryFn:()=>apiGet<TrackedAsset[]>('/api/v1/tracked-assets')});
   const trackedHistory=useQuery({queryKey:['tracked-assets-history'],queryFn:()=>apiGet<TrackedHistory[]>('/api/v1/tracked-assets/history?days=365')});
-  const local=useQuery({queryKey:['local-news'],queryFn:()=>apiGet<LocalNews>('/api/v1/news/local?limit=30')});
   const portfolioInsights=useMutation({
     mutationFn:()=>apiMutate<MarketInsights>('/api/v1/market/portfolio-insights?refresh_news=true','POST'),
-    onSuccess:()=>qc.invalidateQueries({queryKey:['local-news']}),
   });
   const simHistory=useQuery({queryKey:['simulation-history',selectedSimulation],queryFn:()=>apiGet<SimHistory>('/api/v1/tracked-assets/'+selectedSimulation+'/simulation-history'),enabled:!!selectedSimulation});
 
@@ -78,7 +86,6 @@ export default function MarketsPage(){
   const sec=useMutation({mutationFn:()=>apiGet<SecData>('/api/v1/fundamentals/sec/'+encodeURIComponent(cik))});
   const research=useMutation({
     mutationFn:()=>apiMutate<Research>('/api/v1/news/research?q='+encodeURIComponent(newsQ),'POST'),
-    onSuccess:()=>qc.invalidateQueries({queryKey:['local-news']}),
   });
 
   const saveTracked=useMutation({
@@ -160,9 +167,13 @@ export default function MarketsPage(){
           return <div key={item.security_id} className="rounded-xl border border-[var(--border)] p-4 text-sm">
             <div className="flex flex-wrap items-start justify-between gap-3"><div><strong>{item.name}</strong><div className="mt-1 text-xs text-[var(--muted)]">{asset?.position_type==='owned'?'Posición real':asset?.position_type==='simulated'?'Compra simulada':'Solo seguimiento'} · {asset?.identifier||asset?.asset_class}</div></div><span className="rounded-full bg-[var(--surface-2)] px-3 py-1 text-xs font-semibold">{insightLabel(item.orientation)}</span></div>
             <p className="mt-3">{item.summary}</p>
+            <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+              <div className="rounded-lg bg-[var(--brand-soft)] p-3"><span className="text-[var(--muted)]">¿Hay base para invertir?</span><div className="mt-1 font-semibold">{investmentStatusLabel(item.investment_status)}</div></div>
+              <div className="rounded-lg bg-[var(--surface-2)] p-3"><span className="text-[var(--muted)]">Riesgo hacia delante</span><div className="mt-1 font-semibold">{riskLevelLabel(item.future_risk_level)}</div></div>
+            </div>
             {asset&&<div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4"><div><span className="text-[var(--muted)]">30 días</span><div className="font-semibold">{metricPct(asset.history.return_30d)}</div></div><div><span className="text-[var(--muted)]">90 días</span><div className="font-semibold">{metricPct(asset.history.return_90d)}</div></div><div><span className="text-[var(--muted)]">12 meses</span><div className="font-semibold">{metricPct(asset.history.return_365d)}</div></div><div><span className="text-[var(--muted)]">Drawdown</span><div className="font-semibold">{metricPct(asset.history.max_drawdown)}</div></div></div>}
-            {item.reasons.length>0&&<div className="mt-3 text-xs"><strong>Por qué:</strong> {item.reasons.join(' · ')}</div>}
-            {item.risks.length>0&&<div className="mt-2 text-xs"><strong>Riesgos:</strong> {item.risks.join(' · ')}</div>}
+            {item.reasons.length>0&&<div className="mt-3 text-xs"><strong>Qué lo sustenta:</strong> {item.reasons.join(' · ')}</div>}
+            {item.risks.length>0&&<div className="mt-2 text-xs"><strong>Peligros / riesgos detectados:</strong> {item.risks.join(' · ')}</div>}
             {item.watch.length>0&&<div className="mt-2 text-xs text-[var(--muted)]"><strong>Qué vigilar:</strong> {item.watch.join(' · ')}</div>}
           </div>;
         })}</div>
@@ -268,9 +279,14 @@ export default function MarketsPage(){
       </Card>
 
       <Card className="xl:col-span-2">
-        <h2 className="font-bold">Noticias guardadas</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">La clasificación de evento y sentimiento es contexto estructurado; no se presenta como probabilidad de subida o bajada.</p>
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">{local.data?.items.length?local.data.items.map(item=><a key={item.id} href={item.url} target="_blank" rel="noreferrer" className="rounded-xl bg-[var(--surface-2)] p-4 text-sm"><strong>{item.headline}</strong><div className="mt-1 text-xs text-[var(--muted)]">{item.source} · {new Date(item.published_at).toLocaleString('es-ES')}</div><div className="mt-3 space-y-2">{item.analysis.length?item.analysis.map((a,i)=><div key={i} className="rounded-lg bg-white p-2 text-xs"><div><strong>{a.security||'Sin activo vinculado'}</strong> · {a.event_type.replaceAll('_',' ')} · impacto {a.impact_level} · tono {sentimentLabel(a.sentiment)}</div><div className="mt-1 text-[var(--muted)]">confianza {Math.round(a.confidence*100)}% · {a.rationale}</div></div>):<div className="text-xs text-[var(--muted)]">Sin señales suficientes para vincularla a un activo.</div>}</div></a>):<EmptyState>No hay noticias guardadas.</EmptyState>}</div>
+        <h2 className="font-bold">Noticias guardadas · selección útil</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">No se muestran todas. Financito cruza las noticias guardadas con tus activos y la IA local selecciona solo las que pueden cambiar la lectura de inversión o riesgo.</p>
+        {portfolioInsights.data?.news_digest?<div className="mt-4 space-y-3">
+          <div className="rounded-xl bg-[var(--brand-soft)] p-3 text-sm"><strong>Lectura de noticias</strong><div className="mt-1">{portfolioInsights.data.news_digest.summary}</div><div className="mt-2 text-[11px] text-[var(--muted)]">Selección: {portfolioInsights.data.news_digest.selection_method==='local_ai'?'IA local':'relevancia determinista'}</div></div>
+          {portfolioInsights.data.news_digest.risks.length>0&&<div className="text-xs"><strong>Riesgos futuros a vigilar:</strong> {portfolioInsights.data.news_digest.risks.join(' · ')}</div>}
+          {portfolioInsights.data.news_digest.watch.length>0&&<div className="text-xs text-[var(--muted)]"><strong>Señales a seguir:</strong> {portfolioInsights.data.news_digest.watch.join(' · ')}</div>}
+          <div className="grid gap-3 lg:grid-cols-2">{portfolioInsights.data.news_digest.items.length?portfolioInsights.data.news_digest.items.map(item=><a key={item.id} href={item.url} target="_blank" rel="noreferrer" className="rounded-xl bg-[var(--surface-2)] p-4 text-sm"><strong>{item.headline}</strong><div className="mt-1 text-xs text-[var(--muted)]">{item.source} · {new Date(item.published_at).toLocaleString('es-ES')}{item.linked_assets.length?' · '+item.linked_assets.join(', '):''}</div><div className="mt-2 text-xs">{item.why_relevant}</div></a>):<EmptyState>No hay noticias materialmente relevantes para los activos seguidos.</EmptyState>}</div>
+        </div>:<EmptyState>Actualiza el análisis para seleccionar las noticias relevantes.</EmptyState>}
       </Card>
     </div>
   </>;

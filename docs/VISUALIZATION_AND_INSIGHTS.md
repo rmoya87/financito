@@ -224,3 +224,15 @@ Todos los wrappers compartidos deben usar:
 - no exagerar variaciones;
 - no esconder datos negativos;
 - no mezclar nominal y real sin etiqueta.
+
+
+## Selección de noticias de activos seguidos
+
+La superficie de Mercados no debe convertir “Noticias guardadas” en un feed exhaustivo. El backend mantiene el conjunto completo local para análisis y auditoría, pero la UI recibe un \`news_digest\` limitado y priorizado. Cuando la IA local está disponible, selecciona IDs de noticias del catálogo ya existente; cualquier ID no reconocido se descarta.
+
+La lectura de cada activo separa:
+- orientación (\`estudiar_entrada\`, \`mantener_observacion\`, \`revisar_exposicion\`, \`datos_insuficientes\`);
+- base disponible para considerar inversión (\`investment_status\`);
+- riesgo futuro observable (\`future_risk_level\`).
+
+La UI debe presentar estas señales como apoyo a decisión, no como predicciones ni instrucciones automáticas.

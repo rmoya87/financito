@@ -165,3 +165,14 @@ La suite crea una hipoteca y un PDF hipotecario con evidencia confirmada equival
 - un segundo documento con el mismo identificador asegurador se agrupa con la póliza y no con la hipoteca.
 
 E2E comprueba que Biblioteca no contiene el encabezado “Evidencia extraída”, que muestra “Datos por confirmar” mientras existen hechos pendientes y que un hecho desaparece de esa revisión inmediatamente después de confirmarlo.
+
+
+## Regresiones: mercados, hipoteca y seguros
+
+- Mercados valida que el fallback nunca muestre más de seis noticias guardadas y que cada activo incluya estado de consideración de inversión y nivel de riesgo.
+- Con IA local simulada, se comprueba que solo se acepten IDs reales de noticias seleccionadas y que \`investment_status\`/\`future_risk_level\` lleguen al resultado.
+- El comparador hipotecario prueba una referencia que sí recupera una penalización confirmada y otra con TIN inferior que queda descartada por exigir seguro vinculado de coste desconocido.
+- También se cubre el caso en que el tipo es menor pero una penalización elevada no se recupera antes de acabar el plazo: \`better_offers\` queda vacío.
+- E2E verifica que la modal de cada seguro contiene Obligaciones, Riesgos, Oportunidades de optimizar, Productos vinculados y Puntos para negociar.
+- E2E verifica que una acción de seguros en “Para ti” abre \`Detalle de Seguros y coberturas\` en modal sin navegar fuera de Inicio.
+- E2E verifica el nuevo bloque “Noticias guardadas · selección útil”.

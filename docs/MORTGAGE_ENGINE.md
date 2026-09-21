@@ -99,3 +99,14 @@ Para poder señalar una referencia concreta:
 4. los costes contractuales materiales exigidos por `switching_readiness` deben estar confirmados.
 
 Si falta una penalización, vinculación o evidencia material, el estado es `needs_more_data` y la interfaz indica qué dato confirmar. Si existe una referencia favorable, Financito indica qué entidad merece solicitar como FEIN/oferta personalizada y recomienda contrastarla primero con la entidad actual; la decisión final solo se calcula cuando se incorporan los costes y condiciones personalizados.
+
+
+## Regla de superioridad de una referencia de mercado
+
+Una oferta pública no se considera mejor por el TIN de forma aislada. El comparador mantiene capital y plazo restantes, calcula la cuota candidata y la contrasta con la cuota real guardada. Con una penalización de salida confirmada:
+
+\`ahorro_mensual_real = cuota_actual_guardada - cuota_candidata\`
+
+\`break_even_meses = penalizacion_salida / ahorro_mensual_real\`
+
+La referencia solo entra en \`better_offers\` cuando el ahorro mensual es positivo, el ahorro de intereses conocido supera la penalización y el punto de equilibrio es anterior al vencimiento. Si la referencia requiere un seguro vinculado cuyo coste no está disponible, la comparación se marca incompleta y no se afirma que sea mejor. Tasación, costes de una FEIN u otros importes no confirmados nunca se presuponen como cero.

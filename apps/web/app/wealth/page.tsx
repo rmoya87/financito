@@ -36,14 +36,15 @@ type HomeData={
   missing:{key:string;label:string;reason:string}[];
 };
 type MarketLead={
-  source_id:string;provider:string;kind:string;status:string;public_tin_min:number|null;benchmark_difference_pp:number|null;
-  claims:string[];url:string;retrieved_at:string;requires_personalized_quote:boolean;
-  scenario:null|{estimated_payment:string;monthly_payment_difference:string;remaining_interest_difference:string|null;known_exit_penalty:string|null;break_even_months_known_penalty_only:string|null;comparison_scope:string};
+  source_id:string;provider:string;kind:string;status:string;public_tin_min:number|null;public_tae_min?:number|null;benchmark_difference_pp:number|null;
+  claims:string[];url:string;retrieved_at:string;requires_personalized_quote:boolean;rate_better:boolean;
+  scenario:null|{estimated_payment:string;theoretical_monthly_saving:string;actual_monthly_saving:string;remaining_interest_difference:string;known_exit_penalty:string|null;estimated_net_interest_saving_known_costs:string|null;break_even_months:string|null;compensates:boolean;comparison_complete:boolean;rejection_reason:string|null;comparison_scope:string};
 };
-type MarketConclusion={status:string;headline:string;action:string;provider:string|null;source_id:string|null;missing:string[];estimated_monthly_saving?:string;estimated_net_interest_saving_known_costs?:string;break_even_months_known_penalty_only?:string;assumptions:string[]};
+type MarketConclusion={status:string;headline:string;action:string;provider:string|null;source_id:string|null;missing:string[];estimated_monthly_saving?:string;estimated_net_interest_saving_known_costs?:string;break_even_months?:string;known_exit_penalty?:string;assumptions:string[]};
 type MarketScan={
   generated_at:string;current_mortgage_rate_percent:string|null;current_monthly_payment:string|null;
-  official_sources:{id:string;provider:string;kind:string;url:string;description:string}[];leads:MarketLead[];conclusion:MarketConclusion;disclaimer:string;
+  current_conditions:{remaining_months:number|null;known_exit_penalty:string|null;exit_penalty_status:string|null;linked_insurance_annual_cost:string;linked_policies:{policy_id:string;insurance_type:string;annual_premium:string;provider:string|null;exit_penalty:string|null;conditions:string}[];linked_product_rate_impacts:any[];linked_product_signals:string[]};
+  official_sources:{id:string;provider:string;kind:string;url:string;description:string}[];leads:MarketLead[];better_offers:MarketLead[];lower_rate_but_not_better:MarketLead[];conclusion:MarketConclusion;disclaimer:string;
 };
 
 function sumAssets(rows:Asset[],types:string[]){
@@ -300,18 +301,24 @@ export default function WealthPage(){
               {!home.data.mortgage&&<div className="mt-3 text-xs text-[var(--muted)]">Completa primero la hipoteca para poder comparar la misma deuda y plazo.</div>}
               {marketScan.error&&<div className="mt-3"><ErrorState error={marketScan.error}/></div>}
               {marketScan.data&&<>
-                <div className="mt-3 rounded-xl bg-[var(--brand-soft)] p-3 text-sm"><strong>{marketScan.data.conclusion.headline}</strong><div className="mt-1">{marketScan.data.conclusion.action}</div>{marketScan.data.conclusion.estimated_monthly_saving&&<div className="mt-2 text-xs">Ahorro mensual comparable: <strong><Money value={marketScan.data.conclusion.estimated_monthly_saving}/></strong>{marketScan.data.conclusion.break_even_months_known_penalty_only?' · break-even '+marketScan.data.conclusion.break_even_months_known_penalty_only+' meses':''}</div>}{marketScan.data.conclusion.missing?.length>0&&<div className="mt-2 text-xs text-[var(--muted)]">Pendiente: {marketScan.data.conclusion.missing.join(' · ')}</div>}</div>
+                <div className="mt-3 rounded-xl bg-[var(--brand-soft)] p-3 text-sm"><strong>{marketScan.data.conclusion.headline}</strong><div className="mt-1">{marketScan.data.conclusion.action}</div>{marketScan.data.conclusion.estimated_monthly_saving&&<div className="mt-2 text-xs">Ahorro mensual sobre tu cuota actual: <strong><Money value={marketScan.data.conclusion.estimated_monthly_saving}/></strong>{marketScan.data.conclusion.break_even_months?' · empieza a compensar aprox. en '+marketScan.data.conclusion.break_even_months+' meses':''}</div>}{marketScan.data.conclusion.missing?.length>0&&<div className="mt-2 text-xs text-[var(--muted)]">Pendiente: {marketScan.data.conclusion.missing.join(' · ')}</div>}</div>
+                <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+                  <div className="rounded-lg bg-[var(--surface-2)] p-3"><span className="text-[var(--muted)]">Tu cuota actual</span><div className="font-semibold"><Money value={marketScan.data.current_monthly_payment}/></div></div>
+                  <div className="rounded-lg bg-[var(--surface-2)] p-3"><span className="text-[var(--muted)]">Penalización de salida confirmada</span><div className="font-semibold">{marketScan.data.current_conditions.known_exit_penalty===null?'Pendiente':<Money value={marketScan.data.current_conditions.known_exit_penalty}/>}</div></div>
+                  <div className="rounded-lg bg-[var(--surface-2)] p-3"><span className="text-[var(--muted)]">Seguros vinculados actuales</span><div className="font-semibold"><Money value={marketScan.data.current_conditions.linked_insurance_annual_cost}/> / año</div></div>
+                </div>
                 <div className="mt-3 rounded-lg bg-[var(--surface-2)] p-3 text-xs">{marketScan.data.disclaimer}</div>
-                <div className="mt-3 space-y-2">{marketScan.data.leads.filter(x=>x.kind.startsWith('mortgage_')&&x.public_tin_min!==null).map(x=><div key={x.source_id} className="rounded-lg border border-[var(--border)] p-3 text-sm">
-                  <div className="flex flex-wrap items-start justify-between gap-3"><div><strong>{x.provider}</strong><div className="text-xs text-[var(--muted)]">{x.kind==='mortgage_subrogation'?'Subrogación / cambio de banco':x.kind==='mortgage_current_bank'?'Negociación con entidad actual':'Referencia hipotecaria pública'}</div></div><a className="text-xs underline" href={x.url} target="_blank" rel="noreferrer">Fuente</a></div>
-                  <div className="mt-2 grid gap-2 sm:grid-cols-3 text-xs">
+                <div className="mt-3 space-y-2">{marketScan.data.better_offers.length?marketScan.data.better_offers.map(x=><div key={x.source_id} className="rounded-lg border border-[var(--border)] p-3 text-sm">
+                  <div className="flex flex-wrap items-start justify-between gap-3"><div><strong>{x.provider}</strong><div className="text-xs text-[var(--muted)]">{x.kind==='mortgage_subrogation'?'Subrogación / cambio de banco':'Referencia hipotecaria pública que mejora tu escenario'}</div></div><a className="text-xs underline" href={x.url} target="_blank" rel="noreferrer">Fuente</a></div>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-4 text-xs">
                     <div><span className="text-[var(--muted)]">TIN público desde</span><div className="font-semibold">{x.public_tin_min?.toLocaleString('es-ES',{maximumFractionDigits:3})}%</div></div>
                     <div><span className="text-[var(--muted)]">Cuota comparable</span><div className="font-semibold">{x.scenario?<Money value={x.scenario.estimated_payment}/>:<span>—</span>}</div></div>
-                    <div><span className="text-[var(--muted)]">Diferencia mensual</span><div className="font-semibold">{x.scenario?<><Money value={x.scenario.monthly_payment_difference}/> potencial</>:<span>—</span>}</div></div>
+                    <div><span className="text-[var(--muted)]">Ahorro mensual real</span><div className="font-semibold">{x.scenario?<Money value={x.scenario.actual_monthly_saving}/>:<span>—</span>}</div></div>
+                    <div><span className="text-[var(--muted)]">Empieza a compensar</span><div className="font-semibold">{x.scenario?.break_even_months?x.scenario.break_even_months+' meses':'—'}</div></div>
                   </div>
-                  {x.scenario?.remaining_interest_difference!==null&&<div className="mt-2 text-xs">Diferencia estimada de intereses restantes: <strong><Money value={x.scenario?.remaining_interest_difference}/></strong>.</div>}
-                  {x.scenario?.break_even_months_known_penalty_only&&<div className="mt-1 text-xs">Punto de equilibrio usando solo la penalización de salida conocida: <strong>{x.scenario.break_even_months_known_penalty_only} meses</strong>.</div>}
-                </div>)}</div>
+                  {x.scenario&&<div className="mt-2 text-xs">Penalización aplicada: <strong><Money value={x.scenario.known_exit_penalty}/></strong> · ahorro neto de intereses conocido: <strong><Money value={x.scenario.estimated_net_interest_saving_known_costs}/></strong>.</div>}
+                </div>):<EmptyState>No hay una oferta pública que se pueda demostrar mejor que tu hipoteca con tus condiciones actuales.</EmptyState>}</div>
+                {marketScan.data.lower_rate_but_not_better.length>0&&<div className="mt-3 text-xs text-[var(--muted)]">{marketScan.data.lower_rate_but_not_better.length} referencia(s) tienen un TIN menor pero no se muestran como mejores porque no compensan dentro del plazo o faltan costes de vinculaciones para demostrarlo.</div>}
                 <div className="mt-3"><div className="text-xs font-semibold">Referencias oficiales</div><div className="mt-1 space-y-1">{marketScan.data.official_sources.map(x=><div key={x.id} className="text-xs"><a className="underline" href={x.url} target="_blank" rel="noreferrer">{x.provider}</a> · <span className="text-[var(--muted)]">{x.description}</span></div>)}</div></div>
               </>}
             </div>
