@@ -707,6 +707,8 @@ def _ensure_contract_projection(
         monthly = _decimal(values["monthly_cost"].get("value"))
         if monthly is not None:
             contract.annual_cost = monthly * Decimal("12")
+    if "start_date" in values:
+        contract.start_date = _date(values["start_date"].get("value"))
     if "renewal_date" in values:
         contract.renewal_date = _date(values["renewal_date"].get("value"))
     if "permanence_end_date" in values:
