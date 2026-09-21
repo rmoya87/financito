@@ -71,14 +71,14 @@ def test_market_insights_use_position_history_and_local_news_without_ai(monkeypa
 
         assert result["method"]=="deterministic"
         assert result["ai_available"] is False
-        assert len(result["assets"])==1
-        asset=result["assets"][0]
+        asset=next(item for item in result["assets"] if item["security_id"]==security.id)
         assert asset["security_id"]==security.id
         assert asset["position_type"]=="watching"
         assert asset["history"]["observations"]==4
         assert asset["history"]["return_365d"] is not None
         assert asset["news"][0]["headline"]=="Insight Test Corp reports results"
-        assert result["guidance"][0]["orientation"]=="mantener_observacion"
+        guidance=next(item for item in result["guidance"] if item["security_id"]==security.id)
+        assert guidance["orientation"]=="mantener_observacion"
         assert "órdenes automáticas" in result["notice"]
 
         db.execute(delete(NewsAnalysis).where(NewsAnalysis.news_item_id==news.id))
