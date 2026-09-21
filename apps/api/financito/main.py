@@ -20,7 +20,7 @@ from .domain.analytics import detect_recurring
 from .domain.engines import MortgageEngine, MortgagePrepaymentEngine, MortgageRatePathEngine, OptimizationEngine
 from .services.financial_analytics import cash_flow,category_spending
 from .models import Account, ActionItem, AuditEvent, Budget, CategorizationAudit, Category, Commitment, Contract, Document, ExtractedFact, Mortgage, Transaction
-from .models_analytics import BankingAccountLink,EntityLink
+from .models_analytics import BankingAccountLink,EntityLink,EntitySnapshot
 from .models_extended import InsurancePolicy
 from .schemas import AccountCreate, AccountOut, AccountUpdate, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentEntityLinkUpdate, DocumentIndexRequest, DocumentMortgageLinkUpdate, FactUpdate, ForecastRequest, ManualFactCreate, MortgageScenarioRequest, MortgagePrepaymentRequest, MortgageRatePathRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
 from .security import LocalSecurityMiddleware, create_session
@@ -172,6 +172,7 @@ def delete_account(account_id:str,db:Session=Depends(get_db)):
         "transactions_deleted":transaction_count,
     }
     db.execute(delete(BankingAccountLink).where(BankingAccountLink.local_account_id==account_id))
+    db.execute(delete(EntitySnapshot).where(EntitySnapshot.entity_type=="account",EntitySnapshot.entity_id==account_id))
     db.execute(delete(Transaction).where(Transaction.account_id==account_id))
     db.execute(delete(Account).where(Account.id==account_id))
     db.flush()
