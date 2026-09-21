@@ -93,11 +93,14 @@ def _predict_expected_incomes(
             continue
         count=len(unique_dates)
         confidence=Decimal("0.90") if count>=5 else Decimal("0.85") if count>=4 else Decimal("0.75") if count>=3 else Decimal("0.70")
+        last_date=unique_dates[-1]
         candidates.append({
             "date":str(next_date),"amount":str(expected),"label":key,
             "confidence":str(confidence),
             "basis":f"Patrón de ingreso mensual detectado en {count} movimientos",
             "occurrences":count,
+            "last_received_date":str(last_date),
+            "received_this_month":last_date.year==as_of.year and last_date.month==as_of.month,
         })
     return sorted(candidates,key=lambda x:(x["date"],-Decimal(x["amount"])))
 
@@ -412,6 +415,7 @@ def financial_health_summary(
     expected_incomes=[
         row for row in income_candidates
         if as_of<date.fromisoformat(row["date"])<=horizon_date
+        and not bool(row.get("received_this_month"))
     ]
     expected_income=sum((Decimal(row["amount"]) for row in expected_incomes),Decimal("0")).quantize(CENT)
     spend_projection=_future_spending_projection(
