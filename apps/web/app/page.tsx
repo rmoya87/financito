@@ -7,6 +7,7 @@ import {ArrowRight,CalendarDays,CircleDollarSign,FileText,Sparkles,WalletCards} 
 import {apiGet} from '@/lib/api';
 import {categoryColor} from '@/lib/category-colors';
 import {PageHeader} from '@/components/page-header';
+import {DateRangeSelector,DateRangeKey,resolveDateRange} from '@/components/date-range-selector';
 import {Card} from '@/components/ui/card';
 import {Money} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
@@ -40,28 +41,6 @@ function actionDestination(action:Dashboard['actions'][number]){
 
 const priorityLabel:Record<string,string>={high:'Alta',medium:'Media',low:'Baja'};
 
-type DashboardRange='month'|'30d'|'90d'|'year'|'12m'|'all'|'custom';
-
-function isoDate(value:Date){
-  const y=value.getFullYear();
-  const m=String(value.getMonth()+1).padStart(2,'0');
-  const d=String(value.getDate()).padStart(2,'0');
-  return `${y}-${m}-${d}`;
-}
-
-function dashboardRange(range:DashboardRange,customStart='',customEnd=''){
-  if(range==='custom')return {start:customStart,end:customEnd};
-  const end=new Date();
-  const start=new Date(end);
-  if(range==='month')start.setDate(1);
-  if(range==='30d')start.setDate(start.getDate()-29);
-  if(range==='90d')start.setDate(start.getDate()-89);
-  if(range==='year'){start.setMonth(0);start.setDate(1)}
-  if(range==='12m')start.setFullYear(start.getFullYear()-1);
-  if(range==='all')return {start:'1900-01-01',end:isoDate(end)};
-  return {start:isoDate(start),end:isoDate(end)};
-}
-
 function Metric({label,value,detail}:{label:string;value:string;detail?:string}){
   return <Card>
     <div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">{label}</div>
@@ -71,11 +50,11 @@ function Metric({label,value,detail}:{label:string;value:string;detail?:string})
 }
 
 export default function DashboardPage(){
-  const defaults=dashboardRange('month');
-  const [range,setRange]=useState<DashboardRange>('month');
+  const defaults=resolveDateRange('month');
+  const [range,setRange]=useState<DateRangeKey>('month');
   const [customStart,setCustomStart]=useState(defaults.start);
   const [customEnd,setCustomEnd]=useState(defaults.end);
-  const dates=dashboardRange(range,customStart,customEnd);
+  const dates=resolveDateRange(range,customStart,customEnd);
   const dashboard=useQuery({
     queryKey:['dashboard',range,dates.start,dates.end],
     queryFn:()=>apiGet<Dashboard>('/api/v1/dashboard?start='+dates.start+'&end='+dates.end),
@@ -94,27 +73,15 @@ export default function DashboardPage(){
     <PageHeader
       title="Inicio"
       description="Tu situación financiera, lo que ha cambiado y lo que merece atención ahora."
-      action={<div className="flex flex-wrap items-end justify-end gap-2">
-        <label className="block text-xs font-medium text-[var(--muted)]">Periodo
-          <select className="fin-input mt-1 min-w-[180px]" aria-label="Periodo del resumen de Inicio" value={range} onChange={e=>setRange(e.target.value as DashboardRange)}>
-            <option value="month">Este mes</option>
-            <option value="30d">Últimos 30 días</option>
-            <option value="90d">Últimos 90 días</option>
-            <option value="year">Este año</option>
-            <option value="12m">Últimos 12 meses</option>
-            <option value="all">Todo el histórico</option>
-            <option value="custom">Personalizado</option>
-          </select>
-        </label>
-        {range==='custom'&&<>
-          <label className="block text-xs font-medium text-[var(--muted)]">Desde
-            <input className="fin-input mt-1 w-auto" type="date" value={customStart} max={customEnd||undefined} onChange={e=>setCustomStart(e.target.value)}/>
-          </label>
-          <label className="block text-xs font-medium text-[var(--muted)]">Hasta
-            <input className="fin-input mt-1 w-auto" type="date" value={customEnd} min={customStart||undefined} onChange={e=>setCustomEnd(e.target.value)}/>
-          </label>
-        </>}
-      </div>}
+      action={<DateRangeSelector
+        range={range}
+        customStart={customStart}
+        customEnd={customEnd}
+        onRangeChange={setRange}
+        onCustomStartChange={setCustomStart}
+        onCustomEndChange={setCustomEnd}
+        ariaLabel="Periodo del resumen de Inicio"
+      />}
     />
 
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
