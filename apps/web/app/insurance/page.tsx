@@ -10,6 +10,7 @@ import {Money} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
 import {EntityDocumentsModal} from '@/components/entity-documents-modal';
 import {DataStatus} from '@/components/data-status';
+import {DetailGroup,MetricTile,ModalHero,SectionIntro,VisualPanel} from '@/components/finance-ui';
 
 type CoverageRequirement={id:string;insurance_type:string|null;coverage_type:string;minimum_limit:string|null;currency:string;notes:string|null;enabled:boolean};
 type Account={id:string;name:string;institution_name:string;account_type:string;current_balance:string;available_balance:string|null};
@@ -79,14 +80,16 @@ function readableDetail(value:any):string{
 
 function PolicyInsightGroup({title,rows,field}:{title:string;rows:DocInsight[];field:InsightKey}){
   const items=rows.flatMap(row=>(row.analysis[field]||[]).map(item=>({item,documentId:row.document_id}))).slice(0,10);
-  return <div className="rounded-xl bg-[var(--surface-2)] p-3 text-sm">
-    <h4 className="font-semibold">{title}</h4>
-    <div className="mt-2 space-y-2">{items.length?items.map(({item,documentId},i)=><div key={field+i} className="text-xs">
+  const tone: 'default'|'soft'|'brand'|'warning' =
+    ['risks','penalties','exclusions_or_limits','missing_information'].includes(field)?'warning':
+    ['advantages','optimization_opportunities','negotiation_points'].includes(field)?'brand':'soft';
+  return <DetailGroup title={title} tone={tone}>
+    <div className="space-y-2">{items.length?items.map(({item,documentId},i)=><div key={field+i} className="rounded-lg bg-white/70 p-2.5 text-xs">
       <div><strong>{item.title||item.detail}</strong>{item.title&&item.detail?<span> · {item.detail}</span>:null}</div>
       {item.impact&&<div className="mt-1 text-[var(--muted)]">{item.impact}</div>}
       {!!item.pages?.length&&<a className="mt-1 inline-block underline" target="_blank" rel="noreferrer" href={'/api/v1/documents/'+documentId+'/file#page='+item.pages[0]}>Ver evidencia · pág. {item.pages[0]}</a>}
     </div>):<span className="text-xs text-[var(--muted)]">Sin información específica extraída.</span>}</div>
-  </div>;
+  </DetailGroup>;
 }
 
 
@@ -237,19 +240,9 @@ export default function InsurancePage(){
     </div>}
 
     {verdict.isLoading?<Loading/>:verdict.error?<ErrorState error={verdict.error}/>:data&&<>
-      <Card>
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="max-w-3xl">
-            <div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Veredicto basado en evidencia</div>
-            <h2 className="mt-1 text-xl font-bold">{status?.title}</h2>
-            <p className="mt-2 text-sm">{data.summary}</p>
-            <p className="mt-2 text-xs text-[var(--muted)]">{status?.detail} La IA, cuando se usa, solo explica el resultado; no sustituye los hechos confirmados.</p>
-          </div>
-          <div className="flex gap-2">
-            <button className="fin-button secondary" type="button" onClick={()=>{setEditingPolicyId(null);setPolicyForm(emptyPolicy);setShowPolicyForm(v=>!v)}}>{showPolicyForm&&!editingPolicyId?'Cerrar alta':'Nuevo seguro'}</button>
-            <button className="fin-button" onClick={()=>analyze.mutate()} disabled={analyze.isPending}>{analyze.isPending?'Analizando con IA…':'Explicar con IA local'}</button>
-          </div>
-        </div>
+      <SectionIntro eyebrow="Lectura rápida" title="Coste, cobertura y calidad de la evidencia" description="Primero la foto global; después cada póliza, pagos pendientes y documentación que falta."/>
+      <VisualPanel title={status?.title||'Situación de tus seguros'} description={data.summary} eyebrow="Veredicto basado en evidencia" status={data.pending_review.length?'Hay datos pendientes':'Evidencia revisada'} statusTone={data.pending_review.length?'pending':'confirmed'} action={<div className="flex gap-2"><button className="fin-button secondary" type="button" onClick={()=>{setEditingPolicyId(null);setPolicyForm(emptyPolicy);setShowPolicyForm(v=>!v)}}>{showPolicyForm&&!editingPolicyId?'Cerrar alta':'Nuevo seguro'}</button><button className="fin-button" onClick={()=>analyze.mutate()} disabled={analyze.isPending}>{analyze.isPending?'Analizando con IA…':'Explicar con IA local'}</button></div>}>
+        <p className="text-xs text-[var(--muted)]">{status?.detail} La IA, cuando se usa, solo explica el resultado; no sustituye los hechos confirmados.</p>
         {analyze.error&&<div className="mt-3"><ErrorState error={analyze.error}/></div>}
         {data.ai?.plain_summary&&<div className="mt-4 rounded-xl bg-[var(--brand-soft)] p-4 text-sm"><strong>Lectura de la IA local</strong><p className="mt-1">{data.ai.plain_summary}</p>{data.ai.priorities?.length?<div className="mt-2 text-xs"><strong>Prioridades:</strong> {data.ai.priorities.join(' · ')}</div>:null}{data.ai.questions?.length?<div className="mt-2 text-xs"><strong>Preguntas pendientes:</strong> {data.ai.questions.join(' · ')}</div>:null}<div className="mt-2 text-[11px] text-[var(--muted)]">Modelo: {data.ai.model}</div></div>}
         {data.ai?.error&&<div className="mt-3 text-xs text-[var(--muted)]">La IA local no pudo ampliar el análisis: {data.ai.error}. El veredicto determinista sigue disponible.</div>}
@@ -267,18 +260,17 @@ export default function InsurancePage(){
           <div className="sm:col-span-2 flex gap-2"><button className="fin-button" disabled={savePolicy.isPending}>{savePolicy.isPending?'Guardando…':editingPolicyId?'Guardar cambios':'Crear seguro'}</button>{editingPolicyId&&<button className="fin-button secondary" type="button" onClick={()=>{setEditingPolicyId(null);setPolicyForm(emptyPolicy);setShowPolicyForm(false)}}>Cancelar</button>}</div>
           {savePolicy.error&&<div className="sm:col-span-2"><ErrorState error={savePolicy.error}/></div>}
         </form>}
-      </Card>
+      </VisualPanel>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Card><div className="text-xs uppercase text-[var(--muted)]">Primas documentadas</div><div className="mt-2 text-2xl font-bold"><Money value={data.finances.documented_annual_premiums}/>/año</div><div className="mt-1 text-xs text-[var(--muted)]">{data.policies.length} póliza(s) registradas</div></Card>
-        <Card><div className="text-xs uppercase text-[var(--muted)]">Pagos clasificados como seguros</div><div className="mt-2 text-2xl font-bold"><Money value={data.finances.spend_reconciliation.observed_insurance_spend}/></div><div className="mt-1 text-xs text-[var(--muted)]">{data.finances.spend_reconciliation.period_start} → {data.finances.spend_reconciliation.period_end}</div></Card>
-        <Card><div className="text-xs uppercase text-[var(--muted)]">Peso sobre ingresos</div><div className="mt-2 text-2xl font-bold">{data.finances.premium_share_of_income===null?'—':(Number(data.finances.premium_share_of_income)*100).toLocaleString('es-ES',{maximumFractionDigits:1})+'%'}</div><div className="mt-1 text-xs text-[var(--muted)]">Primas equivalentes del periodo / ingresos del periodo seleccionado</div></Card>
-        <Card><div className="text-xs uppercase text-[var(--muted)]">Coberturas verificadas</div><div className="mt-2 text-2xl font-bold">{data.coverage.verified}</div><div className="mt-1 text-xs text-[var(--muted)]">{data.coverage.gaps.length} hueco(s) · {data.coverage.overlaps.length} posible(s) duplicidad(es)</div></Card>
+        <MetricTile label="Primas documentadas" value={<><Money value={data.finances.documented_annual_premiums}/><span className="text-base">/año</span></>} detail={data.policies.length+' póliza(s) registradas'} status="Documentado" statusTone="confirmed"/>
+        <MetricTile label="Pagos observados" value={<Money value={data.finances.spend_reconciliation.observed_insurance_spend}/>} detail={data.finances.spend_reconciliation.period_start+' → '+data.finances.spend_reconciliation.period_end} status="Movimientos" statusTone="calculated"/>
+        <MetricTile label="Peso sobre ingresos" value={data.finances.premium_share_of_income===null?'—':(Number(data.finances.premium_share_of_income)*100).toLocaleString('es-ES',{maximumFractionDigits:1})+'%'} detail="Primas equivalentes / ingresos del periodo"/>
+        <MetricTile label="Coberturas verificadas" value={data.coverage.verified} detail={data.coverage.gaps.length+' hueco(s) · '+data.coverage.overlaps.length+' posible(s) duplicidad(es)'} status={data.coverage.gaps.length?'Revisar':'Verificadas'} statusTone={data.coverage.gaps.length?'pending':'confirmed'} emphasis={data.coverage.gaps.length>0}/>
       </div>
 
-      <Card className="mt-4">
-        <h2 className="font-bold">Pólizas consolidadas</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">Una póliza puede tener varios PDFs, anexos o condiciones. Financito los reúne en una sola ficha; la documentación y su lectura están dentro del detalle.</p>
+      <div className="mt-6"><SectionIntro eyebrow="Detalle" title="Pólizas consolidadas" description="Una póliza puede tener varios PDFs, anexos o condiciones. Financito los reúne en una sola ficha."/></div>
+      <VisualPanel title="Tus pólizas" description="Abre una ficha para ver coste, pagos, coberturas, riesgos, obligaciones, oportunidades y evidencia en una sola vista.">
         <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">{data.policies.length?data.policies.map(p=><div key={p.id} onClick={()=>setSelectedPolicyId(p.id)} className="cursor-pointer rounded-xl bg-[var(--surface-2)] p-4 hover:ring-1 hover:ring-[var(--brand)]">
           <div className="flex items-start justify-between gap-3"><div><strong>{insuranceLabel[p.insurance_type]||p.insurance_type}</strong><div className="text-xs text-[var(--muted)]">{p.contract?.provider_name||p.source_document_name||'Proveedor pendiente'}</div></div><strong className="shrink-0"><Money value={p.annual_premium}/>/año</strong></div>
           <div className="mt-3 grid gap-1 text-xs">
@@ -294,15 +286,11 @@ export default function InsurancePage(){
             <button className="text-xs underline" type="button" onClick={e=>{e.stopPropagation();if(window.confirm('¿Eliminar este seguro? Los documentos no se borrarán del Vault.'))deletePolicy.mutate(p.id)}}>Eliminar</button>
           </div>
         </div>):<EmptyState>Crea tu primer seguro y después asocia su documentación desde la propia póliza.</EmptyState>}</div>
-      </Card>
+      </VisualPanel>
 
-      <Card className="mt-4">
+      <VisualPanel className="mt-4" title="Comparar seguros con el mercado" description="Las referencias públicas solo sirven para descubrir alternativas. La decisión exige precio y cobertura personalizados." action={<button className="fin-button" type="button" onClick={()=>market.refetch()} disabled={market.isFetching}>{market.isFetching?'Consultando…':'Buscar alternativas públicas'}</button>}>
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="max-w-3xl">
-            <h2 className="font-bold">Comparar seguros con el mercado</h2>
-            <p className="mt-1 text-sm text-[var(--muted)]">Financito consulta referencias públicas solo para descubrir alternativas. Una web genérica nunca se considera mejor que tu póliza sin precio personalizado, franquicia, coberturas, límites, exclusiones y condiciones de cancelación equivalentes.</p>
-          </div>
-          <button className="fin-button" type="button" onClick={()=>market.refetch()} disabled={market.isFetching}>{market.isFetching?'Consultando…':'Buscar alternativas públicas'}</button>
+          <div className="text-xs text-[var(--muted)]">Una web genérica nunca se considera mejor que tu póliza sin precio personalizado, franquicia, coberturas, límites, exclusiones y cancelación equivalentes.</div>
         </div>
         {market.error&&<div className="mt-3"><ErrorState error={market.error}/></div>}
         {market.data&&<>
@@ -315,7 +303,7 @@ export default function InsurancePage(){
           </div>):<EmptyState>No se han podido recuperar referencias públicas de seguros en esta consulta.</EmptyState>}</div>
           <div className="mt-3 text-[11px] text-[var(--muted)]">Consulta realizada bajo demanda. No se envían tus pólizas ni tus datos privados a estas páginas.</div>
         </>}
-      </Card>
+      </VisualPanel>
 
       {data.finances.spend_reconciliation.needs_attention&&<Card className="mt-4">
         <h2 className="font-bold">Pagos de seguros por revisar</h2>
@@ -371,14 +359,20 @@ export default function InsurancePage(){
       {selectedPolicy&&<div className="fixed inset-0 z-50 overflow-y-auto bg-black/45 p-4 md:p-8" role="dialog" aria-modal="true" aria-label="Detalle del seguro">
         <div className="mx-auto max-w-5xl">
           <Card>
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Seguro</div>
-                <h2 className="mt-1 text-xl font-bold">{insuranceLabel[selectedPolicy.insurance_type]||selectedPolicy.insurance_type}</h2>
-                <div className="mt-1 text-sm text-[var(--muted)]">{selectedPolicy.contract?.provider_name||selectedProfile?.provider_name||'Proveedor pendiente'}{selectedPolicy.policy_number_masked?' · póliza '+selectedPolicy.policy_number_masked:''}</div>
-              </div>
-              <button className="fin-button secondary py-2 text-xs" type="button" onClick={()=>setSelectedPolicyId(null)}>Cerrar</button>
-            </div>
+            <ModalHero
+              eyebrow="Seguro"
+              title={insuranceLabel[selectedPolicy.insurance_type]||selectedPolicy.insurance_type}
+              description={(selectedPolicy.contract?.provider_name||selectedProfile?.provider_name||'Proveedor pendiente')+(selectedPolicy.policy_number_masked?' · póliza '+selectedPolicy.policy_number_masked:'')}
+              status={selectedPolicy.contract?.evidence_status==='confirmed'?'Evidencia confirmada':'Revisar evidencia'}
+              statusTone={selectedPolicy.contract?.evidence_status==='confirmed'?'confirmed':'pending'}
+              actions={<button className="fin-button secondary py-2 text-xs" type="button" onClick={()=>setSelectedPolicyId(null)}>Cerrar</button>}
+              metrics={[
+                {label:'Prima anual',value:<Money value={selectedPolicy.annual_premium}/>},
+                {label:'Mensual',value:<Money value={selectedPolicy.monthly_equivalent}/>},
+                {label:'Franquicia',value:<Money value={selectedPolicy.deductible}/>},
+                {label:'Renovación',value:selectedPolicy.contract?.renewal_date||'—',detail:selectedPolicy.linked_payment_count+' pago(s) vinculados'},
+              ]}
+            />
 
             <div className="mt-5 flex flex-wrap gap-2 border-b border-[var(--border)] pb-3" role="tablist" aria-label="Secciones del seguro">
               {([
@@ -389,15 +383,9 @@ export default function InsurancePage(){
             </div>
 
             {detailSection==='general'&&<>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Prima anual</div><strong><Money value={selectedPolicy.annual_premium}/></strong></div>
-                <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Equivalente mensual</div><strong><Money value={selectedPolicy.monthly_equivalent}/></strong></div>
-                <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Franquicia general</div><strong><Money value={selectedPolicy.deductible}/></strong></div>
-                <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Pagado en el periodo</div><strong><Money value={selectedPolicy.linked_payments_last_365_total}/></strong><div className="text-[11px] text-[var(--muted)]">{selectedPolicy.linked_payment_count} pago(s) vinculados en total</div></div>
-              </div>
               <div className="mt-4 grid gap-3 md:grid-cols-2">
-                <div className="rounded-xl border border-[var(--border)] p-4 text-sm"><h3 className="font-semibold">Identificación</h3><div className="mt-3 space-y-2"><div>Aseguradora: <strong>{selectedPolicy.contract?.provider_name||selectedProfile?.provider_name||'—'}</strong></div><div>Cuenta bancaria: <strong>{selectedProfile?.account_id?(selectedProfile.account_institution||'Banco')+' · '+(selectedProfile.account_name||'Cuenta'):'Sin vincular'}</strong></div><div>Nº póliza: <strong>{selectedPolicy.policy_number_masked||selectedProfile?.policy_number_masked||'—'}</strong></div><div>Tipo: <strong>{insuranceLabel[selectedPolicy.insurance_type]||selectedPolicy.insurance_type}</strong></div><div>Documentos: <strong>{selectedPolicy.source_documents?.length||0}</strong></div></div></div>
-                <div className="rounded-xl border border-[var(--border)] p-4 text-sm"><h3 className="font-semibold">Situación</h3><div className="mt-3 space-y-2"><div>Renovación: <strong>{selectedPolicy.contract?.renewal_date||'—'}</strong></div><div>Evidencia: <strong>{selectedPolicy.contract?.evidence_status||'Sin contrato consolidado'}</strong></div><div>Hipotecas vinculadas: <strong>{selectedPolicy.linked_mortgage_ids?.length||0}</strong></div><div>Objeto asegurado: <strong>{readableDetail(selectedPolicy.insured_object)}</strong></div></div></div>
+                <DetailGroup title="Identificación" description="Datos de la póliza y su vinculación bancaria."><div className="space-y-2 text-sm"><div>Aseguradora: <strong>{selectedPolicy.contract?.provider_name||selectedProfile?.provider_name||'—'}</strong></div><div>Cuenta bancaria: <strong>{selectedProfile?.account_id?(selectedProfile.account_institution||'Banco')+' · '+(selectedProfile.account_name||'Cuenta'):'Sin vincular'}</strong></div><div>Nº póliza: <strong>{selectedPolicy.policy_number_masked||selectedProfile?.policy_number_masked||'—'}</strong></div><div>Tipo: <strong>{insuranceLabel[selectedPolicy.insurance_type]||selectedPolicy.insurance_type}</strong></div><div>Documentos: <strong>{selectedPolicy.source_documents?.length||0}</strong></div></div></DetailGroup>
+                <DetailGroup title="Situación" description="Renovación, evidencia y relaciones con otros productos."><div className="space-y-2 text-sm"><div>Renovación: <strong>{selectedPolicy.contract?.renewal_date||'—'}</strong></div><div>Evidencia: <strong>{selectedPolicy.contract?.evidence_status||'Sin contrato consolidado'}</strong></div><div>Hipotecas vinculadas: <strong>{selectedPolicy.linked_mortgage_ids?.length||0}</strong></div><div>Objeto asegurado: <strong>{readableDetail(selectedPolicy.insured_object)}</strong></div></div></DetailGroup>
               </div>
 
               {editingPolicyId===selectedPolicy.id&&showPolicyForm&&<form className="mt-5 grid gap-2 rounded-xl border border-[var(--border)] p-4 sm:grid-cols-2" onSubmit={e=>{e.preventDefault();savePolicy.mutate()}}>
@@ -416,14 +404,14 @@ export default function InsurancePage(){
               </form>}
             </>}
 
-            {detailSection==='transactions'&&<div className="mt-4 rounded-xl border border-[var(--border)] p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold">Transacciones del seguro</h3><p className="mt-1 text-xs text-[var(--muted)]">Pagos bancarios vinculados explícitamente a esta póliza. No crean un segundo gasto.</p></div><Link className="text-xs underline" href="/transactions/">Ir a Movimientos</Link></div>
+            {detailSection==='transactions'&&<DetailGroup title="Transacciones del seguro" description="Pagos bancarios vinculados explícitamente a esta póliza. No crean un segundo gasto." className="mt-4">
+              <div className="flex justify-end"><Link className="text-xs underline" href="/transactions/">Ir a Movimientos</Link></div>
               <div className="mt-3 space-y-2">{selectedPolicy.linked_payments.length?selectedPolicy.linked_payments.map(payment=><div key={payment.transaction_id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-[var(--surface-2)] p-3 text-sm">
                 <div><strong>{payment.merchant||payment.description}</strong><div className="mt-0.5 text-xs text-[var(--muted)]">{new Date(payment.booking_date).toLocaleDateString('es-ES')} · {payment.description}{payment.account_name?' · '+payment.account_name:''}{payment.institution_name?' · '+payment.institution_name:''}</div></div>
                 <div className="text-right"><strong><Money value={payment.amount} currency={payment.currency}/></strong><div><button className="mt-1 text-xs underline" type="button" disabled={unlinkPayment.isPending} onClick={()=>unlinkPayment.mutate(payment.transaction_id)}>Desvincular</button></div></div>
               </div>):<EmptyState>No hay pagos vinculados todavía. Puedes vincularlos desde Movimientos o desde los pagos pendientes de esta misma pantalla.</EmptyState>}</div>
               {unlinkPayment.error&&<div className="mt-3"><ErrorState error={unlinkPayment.error}/></div>}
-            </div>}
+            </DetailGroup>}
 
             {detailSection==='details'&&<>
               <div className="mt-4 rounded-xl border border-[var(--border)] p-4">
