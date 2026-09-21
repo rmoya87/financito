@@ -902,3 +902,32 @@ Los hechos con `status=confirmed` y `user_verified=true` no se quedan como infor
 - Los datos ambiguos, inferidos o conflictivos siguen fuera de cálculos hasta la confirmación del usuario.
 
 Biblioteca documental es una superficie de revisión, no un duplicado de las fichas de producto. El bloque antes llamado “Evidencia extraída” no muestra hechos ya confirmados. Solo se muestran “Datos por confirmar”; al confirmar un hecho desaparece de esa lista y se utiliza en su área funcional correspondiente.
+
+
+## Mercados: noticias seleccionadas y lectura de inversión
+
+“Noticias guardadas” no es un feed completo. Las noticias vinculadas a activos seguidos se estructuran primero y, cuando la IA local está disponible, se le entrega el conjunto junto con histórico, P&L, volatilidad y drawdown para seleccionar un máximo de seis noticias materialmente útiles.
+
+Por cada activo seguido, Financito distingue entre orientación de seguimiento y dos conclusiones explícitas:
+- si los datos disponibles dan base suficiente para **considerar** una entrada, considerar con cautela, no considerarla ahora o declarar datos insuficientes;
+- el nivel de riesgo futuro observable: limitado con los datos actuales, moderado, elevado o no determinado.
+
+Estas conclusiones son informativas: no son órdenes de compra/venta ni predicciones de rentabilidad. La IA no puede inventar noticias, precios, objetivos ni probabilidades; los IDs seleccionados se validan contra noticias locales existentes.
+
+## Comparación hipotecaria contra la situación real
+
+“Comparar con el mercado” no muestra cualquier hipoteca con un TIN inferior como una oferta mejor. Para aparecer en “mejores ofertas”, una referencia pública debe:
+- mejorar el TIN actual;
+- producir una cuota comparable inferior a la cuota real guardada;
+- disponer de una penalización/coste de salida confirmado;
+- conservar ahorro neto conocido positivo después de esa penalización;
+- recuperar la penalización antes de que termine el plazo restante;
+- no depender de un seguro de hogar/vida vinculado cuyo coste no esté publicado.
+
+El punto de equilibrio se calcula con la cuota actual guardada y la penalización confirmada. Referencias con menor tipo que no cumplen estas condiciones se conservan como evidencia de mercado, pero no se presentan como mejores.
+
+## Seguros desde “Para ti” y detalle de póliza
+
+Las acciones de “Para ti” relacionadas con seguros abren un modal sin abandonar Inicio. Si la acción identifica una póliza, abre directamente su detalle; si es genérica, muestra el resumen global y permite entrar en Hogar, Vida u otra póliza dentro del mismo modal.
+
+La modal de cada póliza y la ficha de “Seguros y coberturas” reutilizan todos los análisis de sus documentos asociados, incluso cuando el documento principal está clasificado como hipoteca. Deben incluir, como mínimo: ventajas/coberturas, penalizaciones, obligaciones, riesgos, exclusiones/límites, productos vinculados, oportunidades de optimizar, puntos para negociar, requisitos para comparar ofertas, impactos en otras áreas e información pendiente.
