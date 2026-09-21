@@ -10,6 +10,7 @@ import {PageHeader} from '@/components/page-header';
 import {Card} from '@/components/ui/card';
 import {Money} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
+import {DataStatus} from '@/components/data-status';
 import {InsurancePolicyDetailModal} from '@/components/insurance-policy-detail-modal';
 import {GlobalFinancialFilters} from '@/components/financial-filters';
 
@@ -23,6 +24,15 @@ interface Dashboard{
   spending_by_category:{category:string;system_key:string;amount:string}[];
   upcoming_commitments:{id:string;title:string;amount:string|null;due_date:string;type:'commitment'|'recurring'|'renewal';confidence:string|null;basis:string|null}[];
   actions:{id:string;title:string;action_type:string;priority:string;due_date:string|null;status:string;notes:string|null;related_entity_type:string|null;related_entity_id:string|null}[];
+  financial_health:{
+    generated_at:string;
+    safe_to_spend:{amount:string;liquidity:string;reserved_goals:string;obligations_until_next_income:string;minimum_buffer:string;buffer_gap:string;horizon_date:string;next_income:null|{date:string;amount:string;label:string;confidence:string;basis:string};explanation:string};
+    emergency_fund:{essential_monthly:string;allocated:string;coverage_months:string|null;minimum_buffer:string};
+    indicators:{status:'good'|'warning'|'risk'|'unknown';title:string;value:string|null;detail:string|null;rule:string}[];
+    changes:{current:{start:string;end:string};previous:{start:string;end:string};expenses_delta:string;income_delta:string;savings_delta:string;categories:{category:string;current:string;previous:string;delta:string;delta_pct:string|null}[]};
+    alerts:{id:string;kind:string;severity:'high'|'medium'|'low';title:string;detail:string;action_path:string;source_id:string|null}[];
+    data_status:{calculated_at:string;latest_transaction_date:string|null;basis:string};
+  };
 }
 interface Wealth{net_worth:string}
 
@@ -65,6 +75,11 @@ export default function DashboardPage(){
   const savingsRate=d.savings_rate===null?undefined:`${(Number(d.savings_rate)*100).toFixed(1)}% de los ingresos`;
   const maxCategory=Math.max(1,...d.spending_by_category.map(row=>Number(row.amount)));
 
+  const health=d.financial_health;
+  const statusTone=(status:string)=>status==='good'?'confirmed':status==='warning'||status==='risk'?'pending':'neutral' as const;
+  const expenseDelta=Number(health.changes.expenses_delta||0);
+  const savingsDelta=Number(health.changes.savings_delta||0);
+
   return <>
     <PageHeader
       title="Inicio"
@@ -72,13 +87,52 @@ export default function DashboardPage(){
       action={<GlobalFinancialFilters compact/>}
     />
 
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+    <div className="mb-4 flex flex-wrap gap-2"><DataStatus label="Calculado ahora" detail={health.data_status.latest_transaction_date?'movimientos hasta '+health.data_status.latest_transaction_date:health.data_status.basis} tone="calculated"/></div>
+
+    <section>
+      <h2 className="mb-3 text-lg font-bold">Tu situación ahora</h2>
+      <div className="grid gap-4 xl:grid-cols-[1.35fr_2fr]">
+        <Card className="border-[var(--brand)]">
+          <div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Disponible para gastar</div>
+          <div className="mt-2 text-3xl font-bold"><Money value={health.safe_to_spend.amount}/></div>
+          <p className="mt-2 text-sm text-[var(--muted)]">Hasta {health.safe_to_spend.horizon_date}, sin tocar objetivos reservados, compromisos previstos ni el colchón mínimo.</p>
+          <div className="mt-4 grid grid-cols-2 gap-2 text-xs"><div className="rounded-xl bg-[var(--surface-2)] p-3">Reservado objetivos<br/><strong><Money value={health.safe_to_spend.reserved_goals}/></strong></div><div className="rounded-xl bg-[var(--surface-2)] p-3">Compromisos previstos<br/><strong><Money value={health.safe_to_spend.obligations_until_next_income}/></strong></div></div>
+          {health.safe_to_spend.next_income&&<div className="mt-3 text-xs text-[var(--muted)]">Siguiente ingreso estimado: <strong>{health.safe_to_spend.next_income.date}</strong> · <Money value={health.safe_to_spend.next_income.amount}/>. {health.safe_to_spend.next_income.basis}.</div>}
+        </Card>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {health.indicators.map(item=><Card key={item.title}>
+            <div className="flex items-start justify-between gap-3"><div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">{item.title}</div><DataStatus label={item.status==='good'?'Bien':item.status==='warning'?'Atención':item.status==='risk'?'Riesgo':'Sin datos'} tone={statusTone(item.status)}/></div>
+            <div className="mt-2 text-xl font-bold">{item.value&&item.title!=='Liquidez'&&item.title!=='Ahorro'&&item.title!=='Deuda'&&item.title!=='Compromisos'?item.value:item.value&&/^[-\d.]+$/.test(item.value)?<Money value={item.value}/>:item.value||'—'}</div>
+            {item.detail&&<div className="mt-1 text-xs text-[var(--muted)]">{item.detail}</div>}
+            <details className="mt-2 text-[11px] text-[var(--muted)]"><summary className="cursor-pointer">Cómo se interpreta</summary><div className="mt-1">{item.rule}</div></details>
+          </Card>)}
+        </div>
+      </div>
+    </section>
+
+    <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
       <Metric label="Disponible" value={d.liquidity} detail="Liquidez consolidada"/>
       <Metric label="Ingresos" value={d.income} detail={`${d.period.start} — ${d.period.end}`}/>
       <Metric label="Gasto" value={d.expenses} detail={`${d.period.start} — ${d.period.end}`}/>
       <Metric label="Ahorro" value={d.savings} detail={savingsRate}/>
       {wealth.data?<Metric label="Patrimonio neto" value={wealth.data.net_worth} detail="Activos menos deuda"/>:
         <Card><div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Patrimonio neto</div><div className="mt-2 text-2xl font-bold">—</div><div className="mt-1 text-xs text-[var(--muted)]">Calculando patrimonio</div></Card>}
+    </div>
+
+    <div className="mt-5 grid gap-4 xl:grid-cols-2">
+      <Card>
+        <h2 className="font-bold">Qué ha cambiado</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">Compara el periodo elegido con el periodo inmediatamente anterior de la misma duración.</p>
+        <div className="mt-4 space-y-2 text-sm">
+          <div className="rounded-xl bg-[var(--surface-2)] p-3">{expenseDelta===0?'Tu gasto es prácticamente igual al periodo anterior.':expenseDelta<0?<>Has gastado <strong><Money value={Math.abs(expenseDelta)}/></strong> menos.</>:<>Has gastado <strong><Money value={expenseDelta}/></strong> más.</>}</div>
+          <div className="rounded-xl bg-[var(--surface-2)] p-3">{savingsDelta===0?'Tu ahorro no ha cambiado de forma relevante.':savingsDelta>0?<>Tu ahorro ha mejorado <strong><Money value={savingsDelta}/></strong>.</>:<>Tu ahorro ha bajado <strong><Money value={Math.abs(savingsDelta)}/></strong>.</>}</div>
+          {health.changes.categories.slice(0,3).map(row=><div key={row.category} className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] p-3"><span>{row.category}</span><strong>{Number(row.delta)>0?'+':''}<Money value={row.delta}/>{row.delta_pct!==null?<span className="ml-1 text-xs text-[var(--muted)]">({Number(row.delta_pct)>0?'+':''}{row.delta_pct}%)</span>:null}</strong></div>)}
+        </div>
+      </Card>
+      <Card>
+        <div className="flex items-start justify-between gap-3"><div><h2 className="font-bold">Avisos útiles</h2><p className="mt-1 text-sm text-[var(--muted)]">Solo situaciones que pueden requerir una decisión o revisión.</p></div><CalendarDays size={20} className="text-[var(--brand)]"/></div>
+        <div className="mt-4 space-y-2">{health.alerts.length?health.alerts.slice(0,6).map(alert=><Link key={alert.id} href={alert.action_path} className="block rounded-xl bg-[var(--surface-2)] p-3 text-sm hover:outline hover:outline-1 hover:outline-[var(--border)]"><div className="flex items-start justify-between gap-2"><strong>{alert.title}</strong><DataStatus label={alert.severity==='high'?'Prioritario':alert.severity==='medium'?'Revisar':'Datos'} tone={alert.severity==='low'?'neutral':'pending'}/></div><div className="mt-1 text-xs text-[var(--muted)]">{alert.detail}</div></Link>):<EmptyState>No hay avisos relevantes ahora mismo.</EmptyState>}</div>
+      </Card>
     </div>
 
     {d.actions.length>0&&<section className="mt-5">

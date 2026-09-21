@@ -13,6 +13,7 @@ from ..domain.portfolio import portfolio_summary
 from .contractual_costs import switching_readiness
 from .evidence import structured_evidence_context
 from .financial_analytics import cash_flow, category_spending
+from .financial_health import financial_health_summary
 from .insurance_analysis import insurance_verdict
 from .investment_tracking import tracked_assets
 from .mortgage_cost import current_remaining_apr_estimate, rate_review_readiness
@@ -51,17 +52,24 @@ def _budget_context(
     account_type: str | None = None,
 ) -> tuple[list[dict], list[dict]]:
     categories = {row.id: row for row in session.scalars(select(Category)).all()}
-    budgets = session.scalars(select(Budget)).all()
-    spending_cache: dict[tuple[date, date], dict[str, Decimal]] = {}
+    budget_stmt=select(Budget)
+    if account_id:
+        budget_stmt=budget_stmt.where(Budget.account_id==account_id)
+    elif account_type:
+        budget_stmt=budget_stmt.where(Budget.account_id.in_(select(Account.id).where(Account.account_type==account_type)))
+    else:
+        budget_stmt=budget_stmt.where(Budget.account_id.is_(None))
+    budgets = session.scalars(budget_stmt).all()
+    spending_cache: dict[tuple[date, date, str | None], dict[str, Decimal]] = {}
     rows: list[dict] = []
     alerts: list[dict] = []
     for budget in budgets:
         start = date(today.year, 1, 1) if budget.period_type == "annual" else today.replace(day=1)
-        cache_key = (start, today)
+        cache_key = (start, today, budget.account_id)
         if cache_key not in spending_cache:
             spending_cache[cache_key] = {
                 item["category_id"]: item["amount"]
-                for item in category_spending(session, start, today, account_id, account_type)
+                for item in category_spending(session, start, today, budget.account_id, None)
             }
         actual = spending_cache[cache_key].get(budget.category_id, Decimal("0"))
         target = budget.amount
@@ -71,6 +79,8 @@ def _budget_context(
         row = {
             "id": budget.id,
             "category_id": budget.category_id,
+            "account_id":budget.account_id,
+            "scope":"account" if budget.account_id else "household",
             "category": category.name if category else "Categoría",
             "system_key": category.system_key if category else "other",
             "period_type": budget.period_type,
@@ -264,8 +274,10 @@ def live_decision_context(
             .order_by(Commitment.due_date)
         ).all()
     ]
+    financial_health=financial_health_summary(session,as_of=today,start=period_start,end=today,account_id=account_id,account_type=account_type)
+    health_alert_ids={item["id"] for item in financial_health["alerts"]}
     decision_alerts = sorted(
-        budget_alerts + anomaly_alerts,
+        financial_health["alerts"] + [item for item in anomaly_alerts if item["id"] not in health_alert_ids],
         key=lambda item: {"high": 0, "medium": 1, "low": 2}.get(item["severity"], 3),
     )
     return {
@@ -316,13 +328,15 @@ def live_decision_context(
             account_id=account_id,account_type=account_type,
         ),
         "budgets": budgets,
+        "financial_health":financial_health,
         "anomalies": anomalies,
         "commitments_next_90_days": commitments,
         "actions": actions,
         "decision_alerts": decision_alerts,
         "rules": [
             "Los cálculos deterministas usan registros guardados en Financito; no valores de ejemplo.",
-            "Hipoteca, seguros, contratos, movimientos, presupuestos, anomalías y acciones comparten este mismo contexto de decisión.",
+            "Hipoteca, seguros, contratos, movimientos, presupuestos, objetivos reservados, recurrentes, anomalías y acciones comparten este mismo contexto de decisión.",
+            "Disponible para gastar nunca reutiliza dinero reservado a otro objetivo y protege compromisos previsibles y un colchón mínimo.",
             "Los precios de mercado se identifican con proveedor y fecha. Si falta precio real, el valor se marca como no disponible.",
             "Ingresos, gastos y ahorro proceden de movimientos reales, excluyendo transferencias internas y tratando reembolsos como reducción de gasto.",
             "El coste hipotecario efectivo restante incluye únicamente costes futuros vinculados conocidos; no vuelve a cargar costes hundidos.",

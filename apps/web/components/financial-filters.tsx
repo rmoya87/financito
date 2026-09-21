@@ -24,11 +24,6 @@ type ContextValue=FinancialFilters&{
 
 const Context=createContext<ContextValue|null>(null);
 
-const typeLabels:Record<string,string>={
-  checking:'Cuenta corriente',savings:'Ahorro',brokerage:'Inversión / broker',
-  investment:'Inversión',credit:'Crédito',cash:'Efectivo',card:'Tarjeta',CACC:'Cuenta corriente',other:'Otra',
-};
-
 const visibleRanges:GlobalDateRange[]=['month','previous_month','30d','90d','180d','12m','all'];
 
 export function FinancialFiltersProvider({children}:{children:React.ReactNode}){

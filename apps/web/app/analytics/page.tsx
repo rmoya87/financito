@@ -11,8 +11,10 @@ import {useFinancialFilters} from '@/components/financial-filters';
 import {Card} from '@/components/ui/card';
 import {Money,formatMoney,formatNumber} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
+import {DataStatus} from '@/components/data-status';
 
-type Rec={id:string;merchant:string;cadence:string;expected_amount:string;next_expected_date:string;confidence:string};
+type Rec={id:string;merchant:string;cadence:string;expected_amount:string;next_expected_date:string;confidence:string;action:'keep'|'review'|'cancel'|'not_subscription';essential:boolean;essential_override:boolean|null;contract_id:string|null;contract_name:string|null;spending_class:string;projected:boolean};
+type ContractRef={id:string;provider_name:string;contract_type:string};
 type Anom={
   id:string;transaction_id:string;type:string;explanation?:string;confidence:string;status:string;
   transaction?:null|{booking_date:string;description:string;merchant:string|null;amount:string;currency:string;category_id:string|null};
@@ -29,6 +31,7 @@ type Overview={
   merchant_spending_total?:string;
   fixed_variable?:{fixed:string;variable:string};
   essential_discretionary?:{essential:string;discretionary:string};
+  spending_structure?:{total:string;fixed_essential:string;fixed_optional:string;variable_essential:string;discretionary:string};
   monthly?:{period:string;income:string;expenses:string;savings:string}[];
   daily?:{period:string;income:string;expenses:string;savings:string}[];
   budget_vs_actual?:{category:string;budget:string;actual:string;variance:string}[]
@@ -61,6 +64,7 @@ export default function AnalyticsPage(){
     queryKey:['recurring'],
     queryFn:()=>apiGet<Rec[]>('/api/v1/recurring'),
   });
+  const contracts=useQuery({queryKey:['contracts','recurring'],queryFn:()=>apiGet<ContractRef[]>('/api/v1/contracts')});
   const anomalies=useQuery({
     queryKey:['anomalies',dates.start,dates.end],
     queryFn:()=>apiGet<Anom[]>('/api/v1/anomalies'+periodParams),
@@ -87,6 +91,10 @@ export default function AnalyticsPage(){
     mutationFn:()=>apiMutate<{recurring_series:number;anomalies:number}>('/api/v1/analytics/refresh','POST'),
     onSuccess:()=>{['recurring','anomalies','analytics-overview','month-end-forecast','reconciliation','calendar'].forEach(k=>qc.invalidateQueries({queryKey:[k]}))},
   });
+  const recurringAction=useMutation({
+    mutationFn:({id,action,essential_override,contract_id}:{id:string;action:Rec['action'];essential_override:boolean|null;contract_id:string|null})=>apiMutate<Rec>('/api/v1/recurring/'+id,'PATCH',{action,essential_override,contract_id}),
+    onSuccess:()=>{qc.invalidateQueries({queryKey:['recurring']});qc.invalidateQueries({queryKey:['analytics-overview']});qc.invalidateQueries({queryKey:['calendar']});qc.invalidateQueries({queryKey:['dashboard']});qc.invalidateQueries({queryKey:['financial-health']});qc.invalidateQueries({queryKey:['actions']})},
+  });
   const anomalyAction=useMutation({
     mutationFn:({id,status}:{id:string;status:'normal'|'ignored'|'resolved'})=>apiMutate('/api/v1/anomalies/'+id,'PATCH',{status}),
     onSuccess:()=>qc.invalidateQueries({queryKey:['anomalies']}),
@@ -103,14 +111,13 @@ export default function AnalyticsPage(){
   const trendData=range==='month'?daily:monthly;
   const [merchantView,setMerchantView]=useState<'chart'|'list'>('chart');
   const mix=useMemo(()=>{
-    const fixed=overview.data?.fixed_variable;
-    const essential=overview.data?.essential_discretionary;
-    if(!fixed&&!essential)return [];
+    const s=overview.data?.spending_structure;
+    if(!s)return [];
     return [
-      {name:'Fijo',amount:Number(fixed?.fixed||0)},
-      {name:'Variable',amount:Number(fixed?.variable||0)},
-      {name:'Esencial',amount:Number(essential?.essential||0)},
-      {name:'Discrecional',amount:Number(essential?.discretionary||0)},
+      {name:'Fijo esencial',amount:Number(s.fixed_essential||0)},
+      {name:'Fijo prescindible',amount:Number(s.fixed_optional||0)},
+      {name:'Variable esencial',amount:Number(s.variable_essential||0)},
+      {name:'Discrecional',amount:Number(s.discretionary||0)},
     ];
   },[overview.data]);
 
@@ -147,6 +154,7 @@ export default function AnalyticsPage(){
       title="Análisis y resiliencia"
       description="Ingresos, gasto, ahorro, previsiones y patrones. El periodo global filtra los datos temporales y sirve como fecha de referencia para las previsiones."
     />
+    <div className="mb-4"><DataStatus label="Calculado" detail="movimientos del periodo seleccionado" tone="calculated"/></div>
 
     <div className="mb-4 flex flex-wrap gap-2">
       <button className="fin-button" onClick={()=>refresh.mutate()} disabled={refresh.isPending}>{refresh.isPending?'Recalculando…':'Recalcular patrones'}</button>
@@ -181,7 +189,8 @@ export default function AnalyticsPage(){
 
       <Card>
         <h2 className="font-bold">Estructura del gasto</h2>
-        {mix.length?<div className="mt-4 h-64"><ResponsiveContainer width="100%" height="100%"><BarChart data={mix}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="name"/><YAxis tickFormatter={(value)=>formatNumber(value,0,0)}/><Tooltip/><Bar dataKey="amount" name="€">{mix.map((x,i)=><Cell key={x.name} fill={['var(--chart-fixed)','var(--chart-variable)','var(--chart-essential)','var(--chart-discretionary)'][i%4]}/>)}</Bar></BarChart></ResponsiveContainer></div>:<EmptyState>Sin datos suficientes.</EmptyState>}
+        <p className="mt-1 text-sm text-[var(--muted)]">Cuatro grupos excluyentes: cada euro aparece una sola vez. Los recurrentes y tus decisiones sobre ellos alimentan automáticamente esta clasificación.</p>
+        {mix.length?<><div className="mt-4 h-64"><ResponsiveContainer width="100%" height="100%"><BarChart data={mix}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="name" interval={0} tick={{fontSize:11}}/><YAxis tickFormatter={(value)=>formatNumber(value,0,0)}/><Tooltip formatter={value=>formatMoney(Number(value||0))}/><Bar dataKey="amount" name="€">{mix.map((x,i)=><Cell key={x.name} fill={['var(--chart-essential)','var(--chart-fixed)','var(--chart-variable)','var(--chart-discretionary)'][i%4]}/>)}</Bar></BarChart></ResponsiveContainer></div><div className="mt-2 text-xs text-[var(--muted)]">Total clasificado: <strong>{formatMoney(mix.reduce((sum,row)=>sum+row.amount,0))}</strong>.</div></>:<EmptyState>Sin datos suficientes.</EmptyState>}
       </Card>
 
       <Card>
@@ -197,10 +206,23 @@ export default function AnalyticsPage(){
           <div className="mt-3 space-y-2">{merchants.slice(0,10).map(row=>{const pct=merchantShareTotal>0?Math.min(100,Math.max(0,Number(row.amount||0)/merchantShareTotal*100)):0;return <div key={row.merchant} className="flex items-center justify-between gap-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm"><span>{row.merchant}</span><div className="text-right"><strong><Money value={row.amount}/></strong><div className="text-xs text-[var(--muted)]">{formatNumber(pct,1,1)}%</div></div></div>})}</div>}
       </Card>
 
-      {(recurring.isLoading||recurring.error||recurringRows.length>0)&&<Card>
+      {(recurring.isLoading||recurring.error||recurringRows.length>0)&&<Card className="xl:col-span-2">
         <h2 className="font-bold">Recurrentes</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">Patrones validados usando el histórico completo. El recálculo puede usar IA local para unir referencias distintas, pero importe, cadencia y próxima fecha se validan de forma determinista.</p>
-        {recurring.isLoading?<div className="mt-3"><Loading/></div>:recurring.error?<div className="mt-3"><ErrorState error={recurring.error}/></div>:<div className="mt-3 max-h-[420px] space-y-2 overflow-y-auto pr-1" tabIndex={0} role="region" aria-label="Patrones recurrentes">{recurringRows.map(row=><div key={row.id} className="flex justify-between gap-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div><strong>{row.merchant}</strong><div className="text-xs text-[var(--muted)]">{cadenceLabel(row.cadence)} · próxima {row.next_expected_date} · confianza {Math.round(Number(row.confidence||0)*100)}%</div></div><strong><Money value={row.expected_amount}/></strong></div>)}</div>}
+        <p className="mt-1 text-sm text-[var(--muted)]">Decide qué hacer con cada patrón. “No es una suscripción” deja de proyectarlo; “Es imprescindible” lo mueve a gasto fijo esencial. Las decisiones persisten aunque recalcules patrones.</p>
+        {recurring.isLoading?<div className="mt-3"><Loading/></div>:recurring.error?<div className="mt-3"><ErrorState error={recurring.error}/></div>:<div className="mt-3 grid gap-3 lg:grid-cols-2" role="region" aria-label="Patrones recurrentes">{recurringRows.map(row=><div key={row.id} className="rounded-xl bg-[var(--surface-2)] p-4 text-sm">
+          <div className="flex items-start justify-between gap-3"><div><strong>{row.merchant}</strong><div className="mt-1 text-xs text-[var(--muted)]">{cadenceLabel(row.cadence)} · próxima {row.next_expected_date} · confianza {Math.round(Number(row.confidence||0)*100)}%</div></div><div className="text-right"><strong><Money value={row.expected_amount}/></strong><div className="text-[11px] text-[var(--muted)]">{row.spending_class==='fixed_essential'?'Fijo esencial':'Fijo prescindible'}</div></div></div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <select className="fin-input text-xs" aria-label={'Acción recurrente '+row.merchant} value={row.action} disabled={recurringAction.isPending} onChange={e=>recurringAction.mutate({id:row.id,action:e.target.value as Rec['action'],essential_override:row.essential_override,contract_id:row.contract_id})}>
+              <option value="keep">Mantener</option><option value="review">Revisar</option><option value="cancel">Cancelar</option><option value="not_subscription">No es una suscripción</option>
+            </select>
+            <select className="fin-input text-xs" aria-label={'Contrato recurrente '+row.merchant} value={row.contract_id||''} disabled={recurringAction.isPending} onChange={e=>recurringAction.mutate({id:row.id,action:row.action,essential_override:row.essential_override,contract_id:e.target.value||null})}>
+              <option value="">Sin contrato vinculado</option>{contracts.data?.map(c=><option key={c.id} value={c.id}>{c.provider_name} · {c.contract_type}</option>)}
+            </select>
+          </div>
+          <label className="mt-3 flex items-center gap-2 text-xs font-medium"><input type="checkbox" checked={row.essential} onChange={e=>recurringAction.mutate({id:row.id,action:row.action,essential_override:e.target.checked,contract_id:row.contract_id})}/> Es imprescindible</label>
+          {!row.projected&&<div className="mt-2 text-xs text-[var(--muted)]">No se proyectará como gasto futuro mientras mantenga esta decisión.</div>}
+        </div>)}</div>}
+        {recurringAction.error&&<div className="mt-3"><ErrorState error={recurringAction.error}/></div>}
       </Card>}
 
       <Card>
