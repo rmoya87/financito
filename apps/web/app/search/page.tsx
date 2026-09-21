@@ -7,6 +7,7 @@ import {PageHeader} from '@/components/page-header';
 import {Card} from '@/components/ui/card';
 import {Money} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
+import {GlobalFinancialFilters} from '@/components/financial-filters';
 
 type Result={
   transactions:{id:string;date:string;description:string;amount:string}[];
@@ -20,7 +21,7 @@ export default function SearchPage(){
   const any=!!search.data&&(search.data.transactions.length+search.data.contracts.length+search.data.documents.length)>0;
 
   return <>
-    <PageHeader title="Búsqueda global" description="Busca simultáneamente en movimientos, contratos y documentos indexados. Solo se muestran los bloques que tengan resultados."/>
+    <PageHeader title="Búsqueda global" description="Busca al instante en movimientos, contratos y documentos indexados. Solo se muestran los bloques que tengan resultados." action={<GlobalFinancialFilters compact/>}/>
     <Card>
       <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(e:FormEvent)=>{e.preventDefault();if(q.trim().length>=2)search.mutate()}}>
         <input className="fin-input min-w-0 flex-1" aria-label="Búsqueda global" value={q} onChange={e=>setQ(e.target.value)} placeholder="Proveedor, comercio, cláusula, concepto…"/>

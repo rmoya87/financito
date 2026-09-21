@@ -11,6 +11,7 @@ import {Card} from '@/components/ui/card';
 import {Money} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
 import {InsurancePolicyDetailModal} from '@/components/insurance-policy-detail-modal';
+import {GlobalFinancialFilters} from '@/components/financial-filters';
 
 interface Dashboard{
   period:{start:string;end:string};
@@ -68,6 +69,7 @@ export default function DashboardPage(){
     <PageHeader
       title="Inicio"
       description="Tu situación financiera, lo que ha cambiado y lo que merece atención ahora."
+      action={<GlobalFinancialFilters compact/>}
     />
 
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
@@ -166,7 +168,7 @@ export default function DashboardPage(){
         </Link>
         <Link href="/wealth/" className="fin-card flex items-center gap-4 p-4 hover:border-[var(--brand)]">
           <div className="grid size-10 place-items-center rounded-xl bg-[var(--brand-soft)] text-[var(--brand)]"><WalletCards size={20}/></div>
-          <div><div className="font-semibold">Patrimonio</div><div className="text-xs text-[var(--muted)]">Activos, deuda e inversiones</div></div>
+          <div><div className="font-semibold">Patrimonio</div><div className="text-xs text-[var(--muted)]">Casa, hipoteca y seguros</div></div>
         </Link>
         <Link href="/actions/" className="fin-card flex items-center gap-4 p-4 hover:border-[var(--brand)]">
           <div className="grid size-10 place-items-center rounded-xl bg-[var(--brand-soft)] text-[var(--brand)]"><Sparkles size={20}/></div>

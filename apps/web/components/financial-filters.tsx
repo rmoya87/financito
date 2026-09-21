@@ -62,14 +62,17 @@ export function useFinancialFilters(){
   return value;
 }
 
-export function GlobalFinancialFilters(){
+export function GlobalFinancialFilters({compact=false}:{compact?:boolean}={}){
   const filters=useFinancialFilters();
   const accounts=useQuery({queryKey:['accounts','global-filter'],queryFn:()=>apiGet<Account[]>('/api/v1/accounts')});
   const accountTypes=Array.from(new Set((accounts.data||[]).map(a=>a.account_type).filter(Boolean))).sort();
 
-  return <div className="mb-5 flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-[var(--border)] bg-white p-3" aria-label="Filtros financieros globales">
-    <label className="block min-w-0 flex-1 text-xs font-medium text-[var(--muted)] sm:max-w-sm">Cuenta
-      <select className="fin-input mt-1 w-full" aria-label="Cuenta o tipo de cuenta global" value={filters.accountScope} onChange={e=>filters.setAccountScope(e.target.value)}>
+  return <div className={compact
+    ?"flex min-w-0 flex-wrap items-end justify-end gap-2"
+    :"mb-5 flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-[var(--border)] bg-white p-3"
+  } aria-label="Filtros financieros globales">
+    <label className={compact?"block min-w-[190px] text-xs font-medium text-[var(--muted)]":"block min-w-0 flex-1 text-xs font-medium text-[var(--muted)] sm:max-w-sm"}>Cuenta
+      <select className={compact?"fin-input mt-1 w-full py-1.5 text-xs":"fin-input mt-1 w-full"} aria-label="Cuenta o tipo de cuenta global" value={filters.accountScope} onChange={e=>filters.setAccountScope(e.target.value)}>
         <option value="all">Todas las cuentas</option>
         {accountTypes.length>0&&<optgroup label="Por tipo de cuenta">
           {accountTypes.map(type=><option key={type} value={'type:'+type}>{typeLabels[type]||type}</option>)}
@@ -82,7 +85,7 @@ export function GlobalFinancialFilters(){
 
     <div className="flex flex-wrap items-end justify-end gap-2">
       <label className="block text-xs font-medium text-[var(--muted)]">Periodo
-        <select className="fin-input mt-1 min-w-[170px]" aria-label="Periodo global" value={filters.range} onChange={e=>filters.setRange(e.target.value as GlobalDateRange)}>
+        <select className={compact?"fin-input mt-1 min-w-[150px] py-1.5 text-xs":"fin-input mt-1 min-w-[170px]"} aria-label="Periodo global" value={filters.range} onChange={e=>filters.setRange(e.target.value as GlobalDateRange)}>
           <option value="month">Este mes</option>
           <option value="30d">Últimos 30 días</option>
           <option value="90d">Últimos 90 días</option>
@@ -94,10 +97,10 @@ export function GlobalFinancialFilters(){
       </label>
       {filters.range==='custom'&&<>
         <label className="block text-xs font-medium text-[var(--muted)]">Desde
-          <input className="fin-input mt-1 w-auto" type="date" value={filters.customStart} max={filters.customEnd||undefined} onChange={e=>filters.setCustomStart(e.target.value)}/>
+          <input className={compact?"fin-input mt-1 w-auto py-1.5 text-xs":"fin-input mt-1 w-auto"} type="date" value={filters.customStart} max={filters.customEnd||undefined} onChange={e=>filters.setCustomStart(e.target.value)}/>
         </label>
         <label className="block text-xs font-medium text-[var(--muted)]">Hasta
-          <input className="fin-input mt-1 w-auto" type="date" value={filters.customEnd} min={filters.customStart||undefined} onChange={e=>filters.setCustomEnd(e.target.value)}/>
+          <input className={compact?"fin-input mt-1 w-auto py-1.5 text-xs":"fin-input mt-1 w-auto"} type="date" value={filters.customEnd} min={filters.customStart||undefined} onChange={e=>filters.setCustomEnd(e.target.value)}/>
         </label>
       </>}
     </div>

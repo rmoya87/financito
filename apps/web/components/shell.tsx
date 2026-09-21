@@ -41,13 +41,12 @@ const areas:Area[]=[
     href:'/wealth/',
     label:'Patrimonio',
     Icon:WalletCards,
-    paths:['/wealth/','/insurance/','/investments/','/markets/','/history/','/tax/'],
+    paths:['/wealth/','/mortgage/','/insurance/','/markets/','/history/'],
     secondary:[
-      {href:'/wealth/',label:'Resumen'},
-      {href:'/wealth/#casa',label:'Casa'},
-      {href:'/investments/',label:'Inversiones'},
+      {href:'/wealth/',label:'Casa'},
+      {href:'/mortgage/',label:'Hipoteca'},
+      {href:'/insurance/',label:'Seguros'},
       {href:'/markets/',label:'Mercado'},
-      {href:'/tax/',label:'Fiscalidad'},
       {href:'/history/',label:'Histórico'},
     ],
   },
@@ -84,7 +83,7 @@ function navLinkClass(active:boolean){
 
 function ContextNav({label,items,path,onHashChange}:{label:string;items:NavItem[];path:string;onHashChange?:(hash:string)=>void}){
   if(!items.length)return null;
-  return <nav aria-label={`Navegación de ${label}`} className="mb-6 overflow-x-auto">
+  return <nav aria-label={`Navegación de ${label}`} className="min-w-0 overflow-x-auto">
     <div className="inline-flex min-w-full gap-1 rounded-2xl border border-[var(--border)] bg-white p-1 sm:min-w-0">
       {items.map(item=>{
         const [itemPath,itemHash='']=item.href.split('#');
@@ -151,9 +150,14 @@ export function Shell({children}:{children:React.ReactNode}){
     </aside>
 
     <main className="min-w-0 p-4 md:p-7 lg:p-9">
-      <GlobalFinancialFilters/>
-      {activeArea&&activeArea.href!=='/'?<ContextNav label={activeArea.label} items={activeArea.secondary} path={contextPath} onHashChange={setHash}/>:null}
-      {inConfiguration?<ContextNav label="Configuración" items={configurationNav} path={path}/>:null}
+      {activeArea&&activeArea.href!=='/'&&activeArea.secondary.length>0?<div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+        <ContextNav label={activeArea.label} items={activeArea.secondary} path={contextPath} onHashChange={setHash}/>
+        <GlobalFinancialFilters compact/>
+      </div>:null}
+      {inConfiguration?<div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+        <ContextNav label="Configuración" items={configurationNav} path={path}/>
+        <GlobalFinancialFilters compact/>
+      </div>:null}
       {children}
     </main>
   </div></FinancialFiltersProvider>;

@@ -7,6 +7,7 @@ import {apiMutate} from '@/lib/api';
 import {PageHeader} from '@/components/page-header';
 import {Card} from '@/components/ui/card';
 import {ErrorState,Loading} from '@/components/ui/states';
+import {GlobalFinancialFilters} from '@/components/financial-filters';
 
 type Answer={
   result:string;
@@ -20,13 +21,13 @@ export default function ChatPage(){
   const ask=useMutation({mutationFn:()=>apiMutate<Answer>('/api/v1/chat','POST',{question:q.trim()})});
 
   return <>
-    <PageHeader title="Preguntar" description="Pregunta sobre tus finanzas. Financito usa primero datos y cálculos verificables y, cuando el modelo local está disponible, usa IA para explicarlos."/>
+    <PageHeader title="Preguntar" description="Pregunta sobre tus finanzas. Financito usa primero datos y cálculos verificables y, cuando el modelo local está disponible, usa IA para explicarlos." action={<GlobalFinancialFilters compact/>}/>
     <Card>
       <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(e:FormEvent)=>{e.preventDefault();if(q.trim().length>=2)ask.mutate()}}>
         <input className="fin-input min-w-0 flex-1" aria-label="Pregunta financiera" value={q} onChange={e=>setQ(e.target.value)} placeholder="¿Cuánto gasté? ¿Qué contratos renuevan? ¿Qué dice mi póliza?"/>
         <button className="fin-button sm:min-w-28" disabled={q.trim().length<2||ask.isPending}>{ask.isPending?'Pensando…':'Preguntar'}</button>
       </form>
-      <div className="mt-2 text-xs text-[var(--muted)]">La cuenta y el periodo seleccionados arriba se aplican también a esta consulta financiera.</div>
+      <div className="mt-2 text-xs text-[var(--muted)]">La cuenta y el periodo seleccionados en la cabecera se aplican también a esta consulta. Si la IA local tarda o no está disponible, Financito devuelve una respuesta basada en datos sin dejar la pantalla bloqueada.</div>
     </Card>
 
     {ask.isPending&&<div className="mt-4"><Loading/></div>}
