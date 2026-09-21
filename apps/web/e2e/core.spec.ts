@@ -140,7 +140,9 @@ test('Patrimonio incorpora Casa y permite eliminar otras deudas',async({page})=>
   await newMortgage.getByPlaceholder('Meses pendientes').fill('240');
   await newMortgage.getByRole('button',{name:'Crear hipoteca'}).click();
   await expect(page.getByText('Hipoteca E2E',{exact:true}).first()).toBeVisible();
-  await newMortgage.getByRole('button',{name:'Cerrar'}).click();
+  const createdMortgageData=page.getByRole('dialog',{name:'Datos de la hipoteca'});
+  await expect(createdMortgageData).toBeVisible();
+  await createdMortgageData.getByRole('button',{name:'Cerrar'}).click();
 
   await page.getByRole('button',{name:'Datos de la hipoteca'}).click();
   const mortgageData=page.getByRole('dialog',{name:'Datos de la hipoteca'});
