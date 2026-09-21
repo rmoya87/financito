@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date
+from datetime import date,timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy import select
@@ -133,10 +133,16 @@ def merchant_spending(session: Session, start: date, end: date, limit: int = 20)
             or tx.description_raw
         )
         totals[name] += -tx.amount
+    rows=sorted(totals.items(),key=lambda x:x[1],reverse=True)
     return [
         {"merchant": key, "amount": value.quantize(CENT)}
-        for key, value in sorted(totals.items(), key=lambda x: x[1], reverse=True)[:limit]
+        for key,value in rows[:limit]
     ]
+
+
+def merchant_spending_total(session: Session, start: date, end: date) -> Decimal:
+    txs,_ = _period_transactions(session,start,end)
+    return sum((-tx.amount for tx in txs if tx.amount<0),Decimal("0")).quantize(CENT)
 
 
 def fixed_variable(session: Session, start: date, end: date) -> dict:
@@ -191,6 +197,33 @@ def monthly_cashflow(session: Session, start: date, end: date) -> list[dict]:
     ]
 
 
+def daily_cashflow(session: Session, start: date, end: date) -> list[dict]:
+    txs, categories = _period_transactions(session, start, end)
+    refund_ids = set(_refund_links(session, [t.id for t in txs]))
+    buckets: dict[date, dict[str, Decimal]] = {}
+    current=start
+    while current<=end:
+        buckets[current]={"income":Decimal("0"),"expenses":Decimal("0")}
+        current+=timedelta(days=1)
+    for tx in txs:
+        bucket=buckets.setdefault(tx.booking_date,{"income":Decimal("0"),"expenses":Decimal("0")})
+        if _is_refund(tx,categories,refund_ids):
+            bucket["expenses"]-=tx.amount
+        elif tx.amount>=0:
+            bucket["income"]+=tx.amount
+        else:
+            bucket["expenses"]+=-tx.amount
+    return [
+        {
+            "period": key.isoformat(),
+            "income": str(max(Decimal("0"),values["income"]).quantize(CENT)),
+            "expenses": str(max(Decimal("0"),values["expenses"]).quantize(CENT)),
+            "savings": str((values["income"]-max(Decimal("0"),values["expenses"])).quantize(CENT)),
+        }
+        for key,values in sorted(buckets.items())
+    ]
+
+
 def budget_vs_actual(session: Session, start: date, end: date) -> list[dict]:
     actual = {x["category_id"]: x["amount"] for x in category_spending(session, start, end)}
     categories = {c.id: c.name for c in session.scalars(select(Category)).all()}
@@ -214,10 +247,12 @@ def overview(session: Session, start: date, end: date) -> dict:
         "cash_flow": {k: (str(v) if isinstance(v, Decimal) else v) for k, v in flow.items()},
         "by_category": [{**x, "amount": str(x["amount"])} for x in category_spending(session, start, end)],
         "by_merchant": [{**x, "amount": str(x["amount"])} for x in merchant_spending(session, start, end)],
+        "merchant_spending_total": str(merchant_spending_total(session,start,end)),
         "fixed_variable": {k: str(v) for k, v in fixed_variable(session, start, end).items()},
         "essential_discretionary": {
             k: str(v) for k, v in essential_discretionary(session, start, end).items()
         },
         "monthly": monthly_cashflow(session, start, end),
+        "daily": daily_cashflow(session,start,end) if (end-start).days<=45 else [],
         "budget_vs_actual": budget_vs_actual(session, start, end),
     }

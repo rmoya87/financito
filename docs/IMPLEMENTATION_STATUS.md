@@ -196,3 +196,12 @@ Las conclusiones de IA de varios documentos vinculados al mismo producto compart
 - En **Movimientos**, el periodo se aplica al listado/paginación y los filtros de búsqueda/categoría quedan como filtros secundarios.
 - En **Análisis**, el periodo se aplica a resumen, evolución, comercios, anomalías y recurrentes visibles. La fecha final del rango sirve además como fecha de referencia para la previsión de cierre de mes y para calcular los 90 días posteriores.
 - **Calidad de los datos** y el stress test siguen siendo controles globales/actuales porque no representan una serie histórica filtrable.
+
+
+## Ajustes de Análisis y cuentas (2026-09)
+
+- **Próximos 30 días** sustituye al horizonte visual de 90 días en Análisis y se calcula desde el día posterior al final del periodo seleccionado.
+- **Ingresos, gasto y ahorro** usa granularidad diaria cuando el selector está en `Este mes`; el backend rellena también días sin movimientos para mantener una serie continua. Los demás periodos mantienen agregación mensual.
+- **Principales comercios** ofrece por defecto una tarta con importe y porcentaje sobre el gasto total del periodo, más un conmutador a listado. El listado muestra importe y porcentaje.
+- **Recurrentes** se calcula con histórico suficiente, no con un único mes. Si no hay series validadas la tarjeta se oculta. Si la tabla está vacía pero existen gastos, el backend intenta una detección determinista ligera; el botón `Recalcular patrones` mantiene el análisis completo con IA local cuando está disponible.
+- **Cuentas** permite eliminar cuentas manuales o conectadas con confirmación. La eliminación borra los movimientos locales de esa cuenta y sus vínculos bancarios locales, deja auditoría de la operación y no cierra automáticamente otras cuentas o la autorización bancaria general.

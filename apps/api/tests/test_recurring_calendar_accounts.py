@@ -8,12 +8,14 @@ from sqlalchemy import delete,select
 
 from financito.db import SessionLocal
 from financito.domain.analytics import detect_anomalies,detect_recurring
-from financito.main import update_account
+from financito.main import delete_account,update_account
 from financito.models import Account,Category,Transaction
 from financito.models_analytics import Anomaly,RecurringSeries
 from financito.routes_analytics import anomalies as route_anomalies,recurring as route_recurring
 from financito.schemas import AccountUpdate
 from financito.services.calendar import events
+from financito.services.financial_analytics import overview as analytics_overview
+from financito.services.snapshots import record_snapshot
 from financito.services.categorization import ensure_categories
 
 
@@ -92,7 +94,7 @@ def test_manual_balance_can_be_corrected_but_connected_balance_is_bank_owned():
 
 
 
-def test_analysis_routes_filter_recurring_and_anomalies_by_period():
+def test_analysis_keeps_recurring_global_but_filters_anomalies_by_period():
     merchant="period-filter-recurring-test"
     with SessionLocal() as db:
         categories=ensure_categories(db)
@@ -116,10 +118,8 @@ def test_analysis_routes_filter_recurring_and_anomalies_by_period():
         detect_anomalies(db)
         db.commit()
 
-        recurring_august=route_recurring(date(2026,8,1),date(2026,8,31),db)
-        recurring_september=route_recurring(date(2026,9,1),date(2026,9,30),db)
-        assert any(item["merchant"]==merchant for item in recurring_august)
-        assert not any(item["merchant"]==merchant for item in recurring_september)
+        recurring_rows=route_recurring(db)
+        assert any(item["merchant"]==merchant for item in recurring_rows)
 
         anomalies_august=route_anomalies(date(2026,8,1),date(2026,8,31),db)
         anomalies_september=route_anomalies(date(2026,9,1),date(2026,9,30),db)
@@ -134,3 +134,51 @@ def test_analysis_routes_filter_recurring_and_anomalies_by_period():
         db.delete(account)
         db.delete(anomaly_category)
         db.commit()
+
+
+
+def test_daily_overview_fills_each_day_of_selected_month_range():
+    with SessionLocal() as db:
+        account=Account(name="Daily analytics test",current_balance=Decimal("1000"),source="manual")
+        db.add(account);db.flush()
+        _tx(db,account.id,date(2040,2,1),"1200","Nómina diaria test","empresa daily test")
+        _tx(db,account.id,date(2040,2,3),"-40","Compra diaria test","tienda daily test")
+        db.commit()
+
+        data=analytics_overview(db,date(2040,2,1),date(2040,2,4))
+        assert [row["period"] for row in data["daily"]]==[
+            "2040-02-01","2040-02-02","2040-02-03","2040-02-04"
+        ]
+        assert data["daily"][0]["income"]=="1200.00"
+        assert data["daily"][1]["income"]=="0.00"
+        assert data["daily"][2]["expenses"]=="40.00"
+        assert Decimal(data["merchant_spending_total"])==Decimal("40.00")
+
+        db.execute(delete(Transaction).where(Transaction.account_id==account.id))
+        db.delete(account);db.commit()
+
+
+def test_account_delete_removes_only_selected_account_and_transactions():
+    with SessionLocal() as db:
+        doomed=Account(name="Delete me",current_balance=Decimal("100"),source="manual")
+        survivor=Account(name="Keep me",current_balance=Decimal("200"),source="manual")
+        db.add_all([doomed,survivor]);db.flush()
+        _tx(db,doomed.id,date(2026,9,1),"-10","Delete tx","delete merchant")
+        _tx(db,survivor.id,date(2026,9,1),"-20","Keep tx","keep merchant")
+        record_snapshot(db,"account",doomed.id,{"balance":"100","currency":"EUR"},date(2026,9,1),"test")
+        db.commit()
+
+        doomed_id=doomed.id
+        survivor_id=survivor.id
+        result=delete_account(doomed_id,db)
+        assert result["deleted"]==doomed_id
+        assert result["transactions_deleted"]==1
+        assert db.scalar(select(Account.id).where(Account.id==doomed_id)) is None
+        assert db.scalar(select(Account.id).where(Account.id==survivor_id))==survivor_id
+        assert db.scalar(select(Transaction.id).where(Transaction.account_id==doomed_id)) is None
+        assert db.scalar(select(Transaction.id).where(Transaction.account_id==survivor_id)) is not None
+        from financito.models_analytics import EntitySnapshot
+        assert db.scalar(select(EntitySnapshot.id).where(EntitySnapshot.entity_type=="account",EntitySnapshot.entity_id==doomed_id)) is None
+
+        db.execute(delete(Transaction).where(Transaction.account_id==survivor.id))
+        db.delete(survivor);db.commit()

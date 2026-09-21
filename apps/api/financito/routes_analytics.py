@@ -4,7 +4,7 @@ from datetime import date,timedelta
 from decimal import Decimal
 from fastapi import APIRouter,Depends,HTTPException,Response
 from pydantic import BaseModel,Field
-from sqlalchemy import exists,select
+from sqlalchemy import func,select
 from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .domain.analytics import detect_anomalies,detect_recurring
@@ -25,19 +25,17 @@ def dbdep():
 def refresh(db:Session=Depends(dbdep)):
     recurring=detect_recurring(db);anomalies=detect_anomalies(db);db.commit();return {"recurring_series":len(recurring),"anomalies":len(anomalies)}
 @router.get("/recurring")
-def recurring(start:date|None=None,end:date|None=None,db:Session=Depends(dbdep)):
-    if start and end and end<start:raise HTTPException(400,"La fecha final debe ser igual o posterior a la inicial.")
-    stmt=select(RecurringSeries)
-    if start or end:
-        tx_filters=[
+def recurring(db:Session=Depends(dbdep)):
+    rows=db.scalars(select(RecurringSeries).where(RecurringSeries.status=="active").order_by(RecurringSeries.next_expected_date)).all()
+    if not rows:
+        expenses=int(db.scalar(select(func.count()).select_from(Transaction).where(
             Transaction.amount<0,
             Transaction.is_internal_transfer.is_(False),
-            Transaction.merchant_normalized==RecurringSeries.merchant_normalized,
-        ]
-        if start:tx_filters.append(Transaction.booking_date>=start)
-        if end:tx_filters.append(Transaction.booking_date<=end)
-        stmt=stmt.where(exists(select(Transaction.id).where(*tx_filters)))
-    return [{"id":r.id,"merchant":r.merchant_normalized,"cadence":r.cadence,"expected_amount":str(r.expected_amount),"next_expected_date":r.next_expected_date,"confidence":str(r.confidence)} for r in db.scalars(stmt).all()]
+        )) or 0)
+        if expenses>=3:
+            rows=detect_recurring(db,use_ai=False)
+            db.commit()
+    return [{"id":r.id,"merchant":r.merchant_normalized,"cadence":r.cadence,"expected_amount":str(r.expected_amount),"next_expected_date":r.next_expected_date,"confidence":str(r.confidence)} for r in rows]
 class AnomalyStatusIn(BaseModel):
     status:str=Field(pattern="^(open|normal|ignored|resolved)$")
 
