@@ -89,7 +89,7 @@ test('Movimientos y Análisis comparten el selector temporal de Inicio',async({p
 
 test('Análisis muestra 30 días, tarta de comercios y permite alternar a listado',async({page})=>{
   await page.goto('/analytics/');
-  await expect(page.getByText('Próximos 30 días')).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Próximos 30 días'})).toBeVisible();
   const chartButton=page.getByRole('button',{name:'Gráfica'});
   const listButton=page.getByRole('button',{name:'Listado'});
   await expect(chartButton).toHaveAttribute('aria-pressed','true');
