@@ -237,6 +237,7 @@ export default function DocumentsPage(){
   const currentAction=actions.data?.find(a=>a.id===actionId);
   const visibleFacts=facts.data?.filter(f=>f.fact_type!=='ai_insight')||[];
   const materialFacts=visibleFacts.filter(f=>MATERIAL_FACT_TYPES.has(f.fact_type));
+  const reviewFacts=materialFacts.filter(f=>!f.user_verified&&['inferred','ambiguous','conflicting'].includes(f.status));
   const looksMortgage=selectedDoc?.document_type==='mortgage'||materialFacts.some(f=>f.fact_type==='mortgage_term');
   const currentLink=selectedDoc?.evidence_links?.find(link=>
     selectedDoc.document_type==='insurance'?link.entity_type==='insurance_policy':
@@ -251,8 +252,6 @@ export default function DocumentsPage(){
     true
   );
   const pending=materialFacts.filter(f=>!f.user_verified&&['inferred','ambiguous','conflicting'].includes(f.status)).length;
-  const confirmed=materialFacts.filter(f=>f.user_verified&&f.status==='confirmed').length;
-  const ambiguous=materialFacts.filter(f=>f.status==='ambiguous'||f.status==='conflicting').length;
   const factText=(key:string)=>String(materialFacts.find(f=>f.key===key&&f.user_verified&&f.status==='confirmed')?.value?.value||'');
   const prefillMortgage=()=>{
     const termYears=factText('mortgage_term_years');
@@ -372,7 +371,7 @@ export default function DocumentsPage(){
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="font-bold">Evidencia extraída</h2>
+            <h2 className="font-bold">Detalle del documento</h2>
             {selectedDoc&&<div className="mt-1 text-sm text-[var(--muted)]">{selectedDoc.file_name}</div>}
           </div>
           {selected&&<a
@@ -396,13 +395,13 @@ export default function DocumentsPage(){
           {closeAction.error&&<div className="mt-3"><ErrorState error={closeAction.error}/></div>}
         </div>}
 
-        {selected&&materialFacts.length>0&&<div className="mt-4 rounded-xl bg-[var(--surface-2)] p-3 text-sm">
+        {selected&&reviewFacts.length>0&&<div className="mt-4 rounded-xl bg-[var(--surface-2)] p-3 text-sm">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <strong>{pending>0?pending+' dato(s) por revisar':'Revisión completada'}</strong>
-              <div className="mt-1 text-xs text-[var(--muted)]">{confirmed} confirmados · {ambiguous} dudosos. Los confirmados se sincronizan automáticamente con las áreas de Financito que pueden utilizarlos.</div>
+              <strong>{reviewFacts.length} dato(s) por confirmar</strong>
+              <div className="mt-1 text-xs text-[var(--muted)]">Aquí solo aparecen hechos que todavía necesitan una decisión tuya. Al confirmarlos desaparecen de esta revisión y se sincronizan con Hipoteca, Seguros u otra área correspondiente.</div>
             </div>
-            {pending>0&&selected&&<button className="fin-button py-1.5 text-xs" onClick={()=>confirmCoherent.mutate({documentId:selected,group:currentGroup})} disabled={confirmCoherent.isPending}>
+            {selected&&<button className="fin-button py-1.5 text-xs" onClick={()=>confirmCoherent.mutate({documentId:selected,group:currentGroup})} disabled={confirmCoherent.isPending}>
               {confirmCoherent.isPending?'Validando…':currentGroup&&currentGroup.document_count>1?'Validar los '+currentGroup.document_count+' documentos juntos':'Validar datos coherentes'}
             </button>}
           </div>
@@ -515,53 +514,31 @@ export default function DocumentsPage(){
           <div className="mt-2 text-[11px] text-[var(--muted)]">Claves habituales: provider_name, annual_cost, monthly_cost, renewal_date, cancellation_notice_days, early_exit_penalty, insurance_type, deductible, remaining_principal, nominal_rate, monthly_payment, remaining_months, interest_type, early_repayment_fee.</div>
         </div>}
 
-        <div className="mt-4 space-y-3">
-          {!selected?<EmptyState>Selecciona un documento.</EmptyState>:
-          facts.isLoading?<Loading/>:
-          facts.error?<ErrorState error={facts.error}/>:
-          visibleFacts.length?visibleFacts.map(f=>{
-            const material=MATERIAL_FACT_TYPES.has(f.fact_type);
-            return <div key={f.id} className="rounded-xl border border-[var(--border)] p-4">
+        {!selected?<div className="mt-4"><EmptyState>Selecciona un documento.</EmptyState></div>:
+          facts.isLoading?<div className="mt-4"><Loading/></div>:
+          facts.error?<div className="mt-4"><ErrorState error={facts.error}/></div>:
+          reviewFacts.length?<div className="mt-4">
+            <h3 className="font-semibold">Datos por confirmar</h3>
+            <p className="mt-1 text-xs text-[var(--muted)]">Los datos ya confirmados no se repiten aquí: se proyectan directamente al producto correspondiente.</p>
+            <div className="mt-3 space-y-3">{reviewFacts.map(f=><div key={f.id} className="rounded-xl border border-[var(--border)] p-4">
               <div className="flex justify-between gap-3">
                 <div>
                   <div className="font-medium">{f.key}</div>
-                  <div className="text-sm text-[var(--muted)]">
-                    {f.value.value} {f.value.unit||''} · confianza {Math.round(Number(f.confidence)*100)}%
-                  </div>
+                  <div className="text-sm text-[var(--muted)]">{f.value.value} {f.value.unit||''} · confianza {Math.round(Number(f.confidence)*100)}%</div>
                   {f.fact_type==='coverage_fact'&&<div className="mt-1 text-xs text-[var(--muted)]">{f.value.limit_amount?'Límite '+f.value.limit_amount+' € · ':''}{f.value.deductible?'Franquicia '+f.value.deductible+' € · ':''}{f.value.conditions||''}{f.value.exclusions?(' · Exclusiones: '+f.value.exclusions):''}</div>}
                   {f.value.source==='local_ai_proposal'&&<div className="mt-1 text-[11px] font-medium text-[var(--muted)]">Propuesto por IA local; confirma solo si coincide con el documento.</div>}
                   {f.source_section&&<div className="mt-1 text-xs text-[var(--muted)]">{f.source_section}</div>}
-                  {f.source_page&&selected&&<a
-                    className="mt-1 inline-block text-xs underline"
-                    href={'/api/v1/documents/'+selected+'/file#page='+f.source_page}
-                    target="_blank"
-                    rel="noreferrer"
-                  >Abrir evidencia · pág. {f.source_page}</a>}
+                  {f.source_page&&selected&&<a className="mt-1 inline-block text-xs underline" href={'/api/v1/documents/'+selected+'/file#page='+f.source_page} target="_blank" rel="noreferrer">Abrir evidencia · pág. {f.source_page}</a>}
                 </div>
-                <span className="text-xs">{f.status}</span>
+                <span className="text-xs">{f.status==='conflicting'?'Conflicto':f.status==='ambiguous'?'Dudoso':'Pendiente'}</span>
               </div>
-
-              {material&&!f.user_verified&&['inferred','ambiguous','conflicting'].includes(f.status)&&<div className="mt-3">
-                {f.status==='conflicting'&&<div className="mb-2 text-xs font-medium">Este valor entra en conflicto con otro documento del mismo producto. Confirma este valor solo si has comprobado que es el vigente/correcto.</div>}
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    className="fin-button py-1.5 text-xs"
-                    onClick={()=>update.mutate({id:f.id,status:'confirmed'})}
-                    disabled={update.isPending}
-                  >{f.status==='conflicting'?'Confirmar este valor':'Confirmar'}</button>
-                  <button
-                    className="fin-button secondary py-1.5 text-xs"
-                    onClick={()=>update.mutate({id:f.id,status:'ambiguous'})}
-                    disabled={update.isPending}
-                  >Mantener como dudoso</button>
-                </div>
-              </div>}
-
-              {material&&f.user_verified&&<div className="mt-3 text-xs font-medium text-[var(--muted)]">
-                {f.status==='confirmed'?'Confirmado por ti':'Revisado por ti'}
-              </div>}
-            </div>;
-          }):<EmptyState>No se extrajeron hechos estructurados de este documento.</EmptyState>}
+              {f.status==='conflicting'&&<div className="mt-3 text-xs font-medium">Este valor entra en conflicto con otro documento del mismo producto. Confirma este valor solo si has comprobado que es el vigente/correcto.</div>}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button className="fin-button py-1.5 text-xs" onClick={()=>update.mutate({id:f.id,status:'confirmed'})} disabled={update.isPending}>{f.status==='conflicting'?'Confirmar este valor':'Confirmar'}</button>
+                <button className="fin-button secondary py-1.5 text-xs" onClick={()=>update.mutate({id:f.id,status:'ambiguous'})} disabled={update.isPending}>Mantener como dudoso</button>
+              </div>
+            </div>)}</div>
+          </div>:null}
         </div>
       </Card>
     </div>
