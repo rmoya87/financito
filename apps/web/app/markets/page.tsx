@@ -187,7 +187,7 @@ export default function MarketsPage(){
       </>}
     </VisualPanel>
 
-    <SectionIntro eyebrow="Cartera y seguimiento" title="Mis activos" description="Gestiona lo que posees, lo que sigues y las simulaciones desde un único bloque."/>
+    <SectionIntro eyebrow="Cartera y seguimiento" title="Qué tienes y qué sigues" description="Gestiona lo que posees, lo que sigues y las simulaciones desde un único bloque."/>
     <Card className="mb-4">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Mis activos</h2><p className="mt-1 text-sm text-[var(--muted)]">Registra una tenencia real o sigue un activo. Si no lo tienes puedes iniciar una compra simulada y ver cómo habría evolucionado.</p></div><button className="fin-button secondary" disabled={refreshAll.isPending||!tracked.data?.length} onClick={()=>refreshAll.mutate()}>{refreshAll.isPending?'Actualizando…':'Actualizar precios e histórico'}</button></div>
       <form className="mt-4 grid gap-2 md:grid-cols-4" onSubmit={(e:FormEvent)=>{e.preventDefault();saveTracked.mutate()}}>
