@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import {useEffect,useState} from 'react';
 import {useQuery} from '@tanstack/react-query';
 import {apiGet} from '@/lib/api';
 import {Card} from '@/components/ui/card';
@@ -24,7 +25,12 @@ type Policy={
 };
 type Missing={field:string;label:string;policy_id:string|null;document_id:string|null;why:string};
 type Pending=Missing&{value:any;unit?:string|null};
-type Verdict={status:string;summary:string;policies:Policy[];pending_review:Pending[];missing_information:Missing[]};
+type Verdict={
+  status:string;summary:string;policies:Policy[];pending_review:Pending[];missing_information:Missing[];
+  finances:{documented_annual_premiums:string;observed_insurance_spend:string;premium_share_of_income?:string|null;spend_reconciliation?:{observed_insurance_spend:string}};
+  linked_products:{document_id:string;document_name:string|null;key:string;value:any;page:number|null}[];
+  issues:{code:string;severity:string;title:string;detail:string}[];
+};
 
 const insuranceLabel:Record<string,string>={home:'Hogar',car:'Coche',life:'Vida',health:'Salud',pet:'Mascota',travel:'Viaje',other:'Otro',unknown:'Seguro'};
 type InsightKey='advantages'|'penalties'|'obligations'|'risks'|'exclusions_or_limits'|'linked_products'|'optimization_opportunities'|'negotiation_points'|'comparison_requirements'|'cross_area_impacts'|'missing_information';
@@ -49,11 +55,13 @@ function InsightBlock({title,rows,field}:{title:string;rows:DocInsight[];field:I
 }
 
 export function InsurancePolicyDetailModal({open,onClose,policyId}:{open:boolean;onClose:()=>void;policyId:string|null}){
+  const [activePolicyId,setActivePolicyId]=useState<string|null>(policyId);
+  useEffect(()=>{if(open)setActivePolicyId(policyId)},[open,policyId]);
   const verdict=useQuery({queryKey:['insurance-verdict-modal'],queryFn:()=>apiGet<Verdict>('/api/v1/insurance/verdict'),enabled:open});
   const insights=useQuery({queryKey:['document-insights-modal'],queryFn:()=>apiGet<DocInsight[]>('/api/v1/document-insights'),enabled:open});
   if(!open)return null;
 
-  const policy=policyId?verdict.data?.policies.find(item=>item.id===policyId)||null:null;
+  const policy=activePolicyId?verdict.data?.policies.find(item=>item.id===activePolicyId)||null:null;
   const rows=policy? (insights.data||[]).filter(item=>new Set(policy.source_document_ids||[]).has(item.document_id)) : [];
   const pending=policy?verdict.data?.pending_review.filter(item=>item.policy_id===policy.id)||[]:[];
   const missing=policy?verdict.data?.missing_information.filter(item=>item.policy_id===policy.id)||[]:[];
@@ -67,7 +75,10 @@ export function InsurancePolicyDetailModal({open,onClose,policyId}:{open:boolean
             <h2 className="mt-1 text-xl font-bold">{policy?insuranceLabel[policy.insurance_type]||policy.insurance_type:'Detalle completo'}</h2>
             {policy?<div className="mt-1 text-sm text-[var(--muted)]">{policy.contract?.provider_name||'Proveedor pendiente'}{policy.policy_number_masked?' · póliza '+policy.policy_number_masked:''}</div>:<p className="mt-1 text-sm text-[var(--muted)]">{verdict.data?.summary||'Cargando situación global de seguros…'}</p>}
           </div>
-          <button className="fin-button secondary py-2 text-xs" type="button" onClick={onClose}>Cerrar</button>
+          <div className="flex gap-2">
+            {policy&&policyId===null&&<button className="fin-button secondary py-2 text-xs" type="button" onClick={()=>setActivePolicyId(null)}>Volver al resumen</button>}
+            <button className="fin-button secondary py-2 text-xs" type="button" onClick={onClose}>Cerrar</button>
+          </div>
         </div>
 
         {verdict.isLoading||insights.isLoading?<div className="mt-4"><Loading/></div>:verdict.error||insights.error?<div className="mt-4"><ErrorState error={(verdict.error||insights.error)!}/></div>:policy?<>
@@ -128,7 +139,16 @@ export function InsurancePolicyDetailModal({open,onClose,policyId}:{open:boolean
           <Link className="fin-button mt-5 inline-flex" href={'/insurance/?policy='+encodeURIComponent(policy.id)}>Abrir en Seguros y coberturas</Link>
         </>:<div className="mt-4">
           <p className="text-sm">{verdict.data?.summary}</p>
-          <div className="mt-3 grid gap-2 md:grid-cols-2">{verdict.data?.policies.length?verdict.data.policies.map(item=><div key={item.id} className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><strong>{insuranceLabel[item.insurance_type]||item.insurance_type}</strong><div className="mt-1 text-xs text-[var(--muted)]">{item.contract?.provider_name||'Proveedor pendiente'} · <Money value={item.annual_premium}/> / año</div></div>):<EmptyState>Sin pólizas consolidadas.</EmptyState>}</div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="text-xs text-[var(--muted)]">Primas documentadas</div><strong><Money value={verdict.data?.finances.documented_annual_premiums}/>/año</strong></div>
+            <div className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="text-xs text-[var(--muted)]">Pólizas consolidadas</div><strong>{verdict.data?.policies.length||0}</strong></div>
+            <div className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="text-xs text-[var(--muted)]">Alertas detectadas</div><strong>{verdict.data?.issues.length||0}</strong></div>
+          </div>
+          {verdict.data?.issues.length?<div className="mt-4"><h3 className="font-semibold">Riesgos y puntos a revisar</h3><div className="mt-2 grid gap-2 md:grid-cols-2">{verdict.data.issues.map((issue,i)=><div key={issue.code+i} className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><strong>{issue.title}</strong><div className="mt-1 text-xs text-[var(--muted)]">{issue.detail}</div></div>)}</div></div>:null}
+          {verdict.data?.linked_products.length?<div className="mt-4"><h3 className="font-semibold">Productos vinculados</h3><div className="mt-2 space-y-2">{verdict.data.linked_products.map((item,i)=><div key={item.document_id+i} className="rounded-xl bg-[var(--surface-2)] p-3 text-xs"><strong>{String(item.value||item.key)}</strong>{item.document_name?<span> · {item.document_name}</span>:null}</div>)}</div></div>:null}
+          <div className="mt-4"><h3 className="font-semibold">Pólizas</h3><p className="mt-1 text-xs text-[var(--muted)]">Selecciona una para ver coberturas, obligaciones, riesgos, oportunidades, productos vinculados y puntos para negociar sin salir de Inicio.</p>
+            <div className="mt-3 grid gap-2 md:grid-cols-2">{verdict.data?.policies.length?verdict.data.policies.map(item=><button type="button" onClick={()=>setActivePolicyId(item.id)} key={item.id} className="rounded-xl bg-[var(--surface-2)] p-3 text-left text-sm hover:ring-1 hover:ring-[var(--brand)]"><strong>{insuranceLabel[item.insurance_type]||item.insurance_type}</strong><div className="mt-1 text-xs text-[var(--muted)]">{item.contract?.provider_name||'Proveedor pendiente'} · <Money value={item.annual_premium}/> / año</div><div className="mt-2 text-xs underline">Ver detalle completo</div></button>):<EmptyState>Sin pólizas consolidadas.</EmptyState>}</div>
+          </div>
           <Link className="fin-button mt-4 inline-flex" href="/insurance/">Abrir Seguros y coberturas</Link>
         </div>}
       </Card>
