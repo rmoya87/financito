@@ -11,6 +11,8 @@ import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
 import {EntityDocumentsModal} from '@/components/entity-documents-modal';
 import {DataStatus} from '@/components/data-status';
 import {DetailGroup,MetricTile,ModalHero,SectionIntro} from '@/components/finance-ui';
+import {InsurancePolicyDetailModal} from '@/components/insurance-policy-detail-modal';
+import {InsuranceCoverageChips} from '@/components/insurance-coverage-chips';
 
 type WealthSummary={
   accounts:string;manual_assets:string;investments:string;liabilities:string;mortgages:string;
@@ -23,7 +25,7 @@ type Liability={id:string;type:string;name:string;amount:string;currency:string;
 type Mortgage={id:string;account_id:string|null;lender:string;remaining_principal:string;currency:string;interest_type:string;nominal_rate:string;monthly_payment:string;remaining_months:number;early_repayment_fee?:string|null;source_document_id?:string|null;source_document_ids?:string[];document_count?:number};
 type MortgagePayment={id:string;transaction_id:string;booking_date:string;description:string;merchant:string|null;payment_amount:string;principal_amount:string;interest_amount:string;currency:string;balance_before:string;balance_after:string;applied_to_balance:boolean;calculation_method:string;account_id:string;account_name:string|null;institution_name:string|null};
 type Investment={security_id:string;name:string;identifier:string|null;asset_class:string;currency:string;quantity:string;cost_basis:string;current_value:string|null;current_price:string|null;price_provider:string|null};
-type Policy={id:string;insurance_type:string;annual_premium:string;currency:string;deductible:string|null;provider:string|null;contract_id:string|null};
+type Policy={id:string;insurance_type:string;annual_premium:string;currency:string;deductible:string|null;provider:string|null;contract_id:string|null;coverages:{id:string;coverage_type:string;limit_amount:string|null;deductible:string|null;user_verified:boolean}[]};
 type WealthDetails={summary:WealthSummary;accounts:Account[];assets:Asset[];liabilities:Liability[];mortgages:Mortgage[];investments:Investment[];insurance:{annual_premium_total:string;policies:Policy[]}};
 
 type PrepaymentRestriction={
@@ -107,6 +109,7 @@ export function WealthPage({mode='home'}:{mode?:'home'|'mortgage'}={}){
   const [showMortgageDocuments,setShowMortgageDocuments]=useState(false);
   const [showMortgageEdit,setShowMortgageEdit]=useState(false);
   const [mortgageSection,setMortgageSection]=useState<'general'|'transactions'|'details'>('general');
+  const [selectedCasaPolicyId,setSelectedCasaPolicyId]=useState<string|null>(null);
 
   useEffect(()=>{
     if(creatingMortgage||!mortgages.data)return;
@@ -300,14 +303,29 @@ export function WealthPage({mode='home'}:{mode?:'home'|'mortgage'}={}){
               <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Coste anual</div><strong><Money value={d.insurance.annual_premium_total}/></strong></div>
               <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Pólizas</div><strong>{d.insurance.policies.length}</strong></div>
             </div>
-            <div className="mt-3 space-y-2">{d.insurance.policies.slice(0,4).map(policy=><div key={policy.id} className="flex items-center justify-between gap-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm">
-              <div><strong>{policy.provider||'Aseguradora pendiente'}</strong><div className="text-xs text-[var(--muted)]">{policy.insurance_type}</div></div>
-              <strong><Money value={policy.annual_premium} currency={policy.currency}/>/año</strong>
-            </div>)}</div>
+            <div className="mt-3 space-y-2">{d.insurance.policies.slice(0,4).map(policy=><button
+              key={policy.id}
+              type="button"
+              onClick={()=>setSelectedCasaPolicyId(policy.id)}
+              className="block w-full rounded-xl bg-[var(--surface-2)] p-3 text-left text-sm transition hover:ring-1 hover:ring-[var(--brand)]"
+              aria-label={'Ver detalle de '+(policy.provider||policy.insurance_type)}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div><strong>{policy.provider||'Aseguradora pendiente'}</strong><div className="text-xs text-[var(--muted)]">{policy.insurance_type}</div></div>
+                <strong><Money value={policy.annual_premium} currency={policy.currency}/>/año</strong>
+              </div>
+              <div className="mt-2"><InsuranceCoverageChips coverages={policy.coverages||[]} limit={5} emptyText="Coberturas aún no estructuradas"/></div>
+              <div className="mt-2 text-xs font-medium text-[var(--brand)]">Ver detalle completo</div>
+            </button>)}</div>
             {!d.insurance.policies.length&&<div className="mt-4"><EmptyState>No hay seguros registrados.</EmptyState></div>}
           </Card>
         </div>
       </>}
+      <InsurancePolicyDetailModal
+        open={selectedCasaPolicyId!==null}
+        onClose={()=>setSelectedCasaPolicyId(null)}
+        policyId={selectedCasaPolicyId}
+      />
     </>;
   }
 
