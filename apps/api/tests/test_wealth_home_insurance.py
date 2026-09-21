@@ -412,7 +412,7 @@ def test_insurance_payment_rule_backfills_same_concept_and_applies_future_import
         policy_row=next(row for row in verdict["policies"] if row["id"]==policy.id)
         assert policy_row["linked_payment_count"]==2
 
-        future_day=date.today()+timedelta(days=1)
+        future_day=date.today()+timedelta(days=31)
         csv=(
             "Fecha;Concepto;Importe;Moneda;Comercio\n"
             f"{future_day.isoformat()};{concept};-120;EUR;{contract.provider_name}\n"
@@ -486,7 +486,7 @@ def test_mortgage_payment_rule_backfills_history_without_double_reducing_and_app
         assert historical_allocation.applied_to_balance is False
         assert source_allocation.applied_to_balance is True
 
-        future_day=date.today()+timedelta(days=1)
+        future_day=date.today()+timedelta(days=31)
         csv=(
             "Fecha;Concepto;Importe;Moneda;Comercio\n"
             f"{future_day.isoformat()};{concept};-600;EUR;{mortgage.lender}\n"
