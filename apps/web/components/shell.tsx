@@ -82,7 +82,7 @@ function navLinkClass(active:boolean){
   return `flex min-w-max items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium ${active?'bg-[var(--brand)] text-white':'text-[var(--muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]'}`;
 }
 
-function ContextNav({label,items,path}:{label:string;items:NavItem[];path:string}){
+function ContextNav({label,items,path,onHashChange}:{label:string;items:NavItem[];path:string;onHashChange?:(hash:string)=>void}){
   if(!items.length)return null;
   return <nav aria-label={`Navegación de ${label}`} className="mb-6 overflow-x-auto">
     <div className="inline-flex min-w-full gap-1 rounded-2xl border border-[var(--border)] bg-white p-1 sm:min-w-0">
@@ -93,6 +93,7 @@ function ContextNav({label,items,path}:{label:string;items:NavItem[];path:string
         return <Link
           key={item.href}
           href={item.href}
+          onClick={()=>onHashChange?.(itemHash)}
           aria-current={active?'page':undefined}
           className={`rounded-xl px-3 py-2 text-sm font-semibold ${active?'bg-[var(--brand)] text-white':'text-[var(--muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]'}`}
         >
@@ -150,7 +151,7 @@ export function Shell({children}:{children:React.ReactNode}){
     </aside>
 
     <main className="min-w-0 p-4 md:p-7 lg:p-9">
-      {activeArea&&activeArea.href!=='/'?<ContextNav label={activeArea.label} items={activeArea.secondary} path={contextPath}/>:null}
+      {activeArea&&activeArea.href!=='/'?<ContextNav label={activeArea.label} items={activeArea.secondary} path={contextPath} onHashChange={setHash}/>:null}
       {inConfiguration?<ContextNav label="Configuración" items={configurationNav} path={path}/>:null}
       {children}
     </main>
