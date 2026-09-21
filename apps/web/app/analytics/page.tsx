@@ -6,6 +6,7 @@ import {useMutation,useQuery,useQueryClient} from '@tanstack/react-query';
 import {Bar,BarChart,CartesianGrid,Cell,Legend,Line,LineChart,ResponsiveContainer,Tooltip,XAxis,YAxis} from 'recharts';
 import {apiGet,apiMutate} from '@/lib/api';
 import {PageHeader} from '@/components/page-header';
+import {DateRangeSelector,DateRangeKey,isoDate,resolveDateRange} from '@/components/date-range-selector';
 import {Card} from '@/components/ui/card';
 import {Money,formatNumber} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
@@ -38,14 +39,50 @@ type MonthEnd={
   accounts?:MonthEndAccount[]
 };
 
+function shiftDate(value:string,days:number){
+  const parsed=new Date(value+'T12:00:00');
+  parsed.setDate(parsed.getDate()+days);
+  return isoDate(parsed);
+}
+
 export default function AnalyticsPage(){
   const qc=useQueryClient();
-  const recurring=useQuery({queryKey:['recurring'],queryFn:()=>apiGet<Rec[]>('/api/v1/recurring')});
-  const anomalies=useQuery({queryKey:['anomalies'],queryFn:()=>apiGet<Anom[]>('/api/v1/anomalies')});
+  const defaults=resolveDateRange('month');
+  const [range,setRange]=useState<DateRangeKey>('month');
+  const [customStart,setCustomStart]=useState(defaults.start);
+  const [customEnd,setCustomEnd]=useState(defaults.end);
+  const dates=resolveDateRange(range,customStart,customEnd);
+  const periodReady=Boolean(dates.start&&dates.end);
+  const forecastStart=periodReady?shiftDate(dates.end,1):'';
+  const forecastEnd=periodReady?shiftDate(dates.end,90):'';
+  const periodParams=periodReady?'?start='+dates.start+'&end='+dates.end:'';
+
+  const recurring=useQuery({
+    queryKey:['recurring',dates.start,dates.end],
+    queryFn:()=>apiGet<Rec[]>('/api/v1/recurring'+periodParams),
+    enabled:periodReady,
+  });
+  const anomalies=useQuery({
+    queryKey:['anomalies',dates.start,dates.end],
+    queryFn:()=>apiGet<Anom[]>('/api/v1/anomalies'+periodParams),
+    enabled:periodReady,
+  });
   const recon=useQuery({queryKey:['reconciliation'],queryFn:()=>apiGet<Recon>('/api/v1/reconciliation')});
-  const calendar=useQuery({queryKey:['calendar'],queryFn:()=>apiGet<Cal>('/api/v1/calendar')});
-  const overview=useQuery({queryKey:['analytics-overview'],queryFn:()=>apiGet<Overview>('/api/v1/analytics/overview')});
-  const monthEnd=useQuery({queryKey:['month-end-forecast'],queryFn:()=>apiGet<MonthEnd>('/api/v1/forecast/month-end')});
+  const calendar=useQuery({
+    queryKey:['calendar',forecastStart,forecastEnd],
+    queryFn:()=>apiGet<Cal>('/api/v1/calendar?start='+forecastStart+'&end='+forecastEnd),
+    enabled:periodReady,
+  });
+  const overview=useQuery({
+    queryKey:['analytics-overview',dates.start,dates.end],
+    queryFn:()=>apiGet<Overview>('/api/v1/analytics/overview'+periodParams),
+    enabled:periodReady,
+  });
+  const monthEnd=useQuery({
+    queryKey:['month-end-forecast',dates.end],
+    queryFn:()=>apiGet<MonthEnd>('/api/v1/forecast/month-end?as_of='+dates.end),
+    enabled:periodReady,
+  });
 
   const refresh=useMutation({
     mutationFn:()=>apiMutate<{recurring_series:number;anomalies:number}>('/api/v1/analytics/refresh','POST'),
@@ -90,7 +127,19 @@ export default function AnalyticsPage(){
   }[value]||value);
 
   return <>
-    <PageHeader title="Análisis y resiliencia" description="Ingresos, gasto, ahorro, previsiones y patrones. Si una fuente falla, el resto de la página sigue disponible."/>
+    <PageHeader
+      title="Análisis y resiliencia"
+      description="Ingresos, gasto, ahorro, previsiones y patrones. El periodo seleccionado filtra los datos temporales y sirve como fecha de referencia para las previsiones."
+      action={<DateRangeSelector
+        range={range}
+        customStart={customStart}
+        customEnd={customEnd}
+        onRangeChange={setRange}
+        onCustomStartChange={setCustomStart}
+        onCustomEndChange={setCustomEnd}
+        ariaLabel="Periodo de Análisis"
+      />}
+    />
 
     <div className="mb-4 flex flex-wrap gap-2">
       <button className="fin-button" onClick={()=>refresh.mutate()} disabled={refresh.isPending}>{refresh.isPending?'Recalculando…':'Recalcular patrones'}</button>
@@ -135,7 +184,7 @@ export default function AnalyticsPage(){
 
       <Card>
         <h2 className="font-bold">Recurrentes</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">Se detectan por fechas e importes repetidos. El recálculo completo usa además la IA local para unir conceptos que cambian de referencia o comercio y después valida matemáticamente el patrón.</p>
+        <p className="mt-1 text-sm text-[var(--muted)]">Muestra patrones recurrentes presentes en el periodo seleccionado. El recálculo completo usa además la IA local para unir conceptos que cambian de referencia o comercio y después valida matemáticamente el patrón.</p>
         {recurring.error?<div className="mt-3"><ErrorState error={recurring.error}/></div>:<div className="mt-3 space-y-2">{recurringRows.length?recurringRows.map(row=><div key={row.id} className="flex justify-between gap-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div><strong>{row.merchant}</strong><div className="text-xs text-[var(--muted)]">{cadenceLabel(row.cadence)} · próxima {row.next_expected_date} · confianza {Math.round(Number(row.confidence||0)*100)}%</div></div><strong><Money value={row.expected_amount}/></strong></div>):<EmptyState>No se han validado patrones recurrentes todavía. Importa histórico suficiente o pulsa “Recalcular patrones”.</EmptyState>}</div>}
       </Card>
 
@@ -156,13 +205,13 @@ export default function AnalyticsPage(){
 
       <Card>
         <h2 className="font-bold">Calidad de los datos</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">Aquí no se analiza si gastas bien o mal: solo si faltan datos, hay clasificaciones dudosas, documentos conflictivos o cuentas bancarias sin actualizar.</p>
+        <p className="mt-1 text-sm text-[var(--muted)]">Aquí no se analiza si gastas bien o mal: solo si faltan datos, hay clasificaciones dudosas, documentos conflictivos o cuentas bancarias sin actualizar. Es una comprobación global y no depende del periodo.</p>
         {recon.error?<div className="mt-3"><ErrorState error={recon.error}/></div>:<div className="mt-3 space-y-2">{issues.length?issues.map(issue=><div key={issue.type} className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="flex items-start justify-between gap-3"><strong>{issue.label||issue.type.replaceAll('_',' ')}</strong><strong>{formatNumber(issue.count,0,0)}</strong></div>{issue.detail&&<div className="mt-1 text-xs text-[var(--muted)]">{issue.detail}</div>}{issue.action_href&&<Link className="mt-2 inline-block text-xs underline" href={issue.action_href}>Revisar</Link>}</div>):<EmptyState>Los datos necesarios para los análisis principales están coherentes.</EmptyState>}</div>}
       </Card>
 
       <Card>
         <h2 className="font-bold">Próximos 90 días</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">Incluye obligaciones conocidas, cada próxima ocurrencia de gastos recurrentes y estimaciones mensuales de categorías previsibles como alimentación, colegio, suministros, transporte o suscripciones.</p>
+        <p className="mt-1 text-sm text-[var(--muted)]">Incluye los 90 días posteriores al final del periodo seleccionado ({forecastStart||'—'}): obligaciones conocidas, recurrencias y estimaciones de categorías previsibles como alimentación, colegio, suministros, transporte o suscripciones.</p>
         {calendar.error?<div className="mt-3"><ErrorState error={calendar.error}/></div>:<div className="mt-3 max-h-[560px] space-y-2 overflow-y-auto pr-1" tabIndex={0} role="region" aria-label="Previsión de los próximos 90 días">{events.length?events.slice(0,30).map(e=><div key={e.type+e.entity_id+e.date} className="flex justify-between gap-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div><strong>{e.title}</strong><div className="text-xs text-[var(--muted)]">{e.date} · {eventTypeLabel(e.type)}{e.confidence?' · '+Math.round(Number(e.confidence)*100)+'% confianza':''}</div>{e.basis&&<div className="mt-1 text-[11px] text-[var(--muted)]">{e.basis}</div>}</div>{e.amount&&<strong><Money value={e.amount}/></strong>}</div>):<EmptyState>No hay histórico suficiente ni compromisos registrados para proyectar los próximos 90 días.</EmptyState>}</div>}
       </Card>
 
