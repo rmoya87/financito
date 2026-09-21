@@ -28,7 +28,7 @@ interface Dashboard{
     generated_at:string;
     safe_to_spend:{
       mode:'current'|'historical';amount:string;liquidity:string;reserved_goals:string;obligations_until_next_income:string;
-      expected_income_before_horizon:string;expected_incomes:{date:string;amount:string;label:string;confidence:string;basis:string;occurrences:number;last_received_date:string;received_this_month:boolean}[];
+      expected_income_before_horizon:string;expected_incomes:{date:string;expected_date:string;amount:string;label:string;confidence:string;basis:string;occurrences:number;last_received_date:string;received_this_month:boolean;overdue:boolean}[];
       projected_resources_after_goals:string;minimum_buffer:string;buffer_gap:string;horizon_date:string;
       selected_period_start:string;selected_period_end:string;selected_monthly_spending:string;selected_spending_floor:string;
       recent_spending_floor:string;seasonal_spending_floor:string;historical_pattern_floor:string;known_future_outflows:string;
@@ -147,7 +147,7 @@ export default function DashboardPage(){
             </div>
             {health.safe_to_spend.expected_incomes.length>0&&<div className="mt-3 space-y-1.5 rounded-xl bg-[var(--brand-soft)] p-3 text-xs">
               <div className="font-semibold">Ingresos recurrentes todavía no cobrados este mes</div>
-              {health.safe_to_spend.expected_incomes.map((income,index)=><div key={income.label+income.date+index} className="flex items-center justify-between gap-3"><span>{income.date} · {income.label} · confianza {Math.round(Number(income.confidence)*100)}%</span><strong><Money value={income.amount}/></strong></div>)}
+              {health.safe_to_spend.expected_incomes.map((income,index)=><div key={income.label+income.date+index} className="flex items-center justify-between gap-3"><span>{income.overdue?'Esperado '+income.expected_date+' · retrasado':'Previsto '+income.expected_date} · {income.label} · confianza {Math.round(Number(income.confidence)*100)}%</span><strong><Money value={income.amount}/></strong></div>)}
             </div>}
             <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
               <div className="rounded-xl bg-white/70 p-3"><div className="text-[var(--muted)]">Ritmo mensual del periodo</div><strong><Money value={health.safe_to_spend.selected_monthly_spending}/> / mes</strong><div className="mt-1 text-[11px] text-[var(--muted)]">{health.safe_to_spend.selected_period_start} → {health.safe_to_spend.selected_period_end}</div></div>
