@@ -30,10 +30,11 @@ const areas:Area[]=[
     href:'/transactions/',
     label:'Movimientos',
     Icon:ArrowLeftRight,
-    paths:['/transactions/','/analytics/','/accounts/','/banking/','/cost-centers/'],
+    paths:['/transactions/','/analytics/','/budgets/','/accounts/','/banking/','/cost-centers/'],
     secondary:[
       {href:'/transactions/',label:'Movimientos'},
       {href:'/analytics/',label:'Análisis'},
+      {href:'/budgets/',label:'Presupuestos'},
       {href:'/accounts/',label:'Cuentas'},
     ],
   },

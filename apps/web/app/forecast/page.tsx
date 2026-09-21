@@ -8,6 +8,7 @@ import {PageHeader} from '@/components/page-header';
 import {Card} from '@/components/ui/card';
 import {Money} from '@/components/ui/money';
 import {EmptyState,ErrorState} from '@/components/ui/states';
+import {DataStatus} from '@/components/data-status';
 
 type Account={id:string;name:string;institution_name:string};
 type Commitment={id:string;account_id:string|null;account_name?:string|null;account_institution?:string|null;title:string;amount:string;due_date:string;status:string;confidence:string};
@@ -23,20 +24,22 @@ export default function ForecastPage(){
   const [amount,setAmount]=useState('');
   const [due,setDue]=useState(iso(future));
   const [accountId,setAccountId]=useState('');
+  const [recurrence,setRecurrence]=useState('');
   const filters=useFinancialFilters();
   const qc=useQueryClient();
   const accounts=useQuery({queryKey:['accounts','forecast'],queryFn:()=>apiGet<Account[]>('/api/v1/accounts')});
   const commitments=useQuery({queryKey:['commitments'],queryFn:()=>apiGet<Commitment[]>('/api/v1/commitments')});
   const calc=useMutation({mutationFn:()=>apiMutate<Forecast>('/api/v1/forecast','POST',{start,end})});
   const create=useMutation({
-    mutationFn:()=>apiMutate('/api/v1/commitments','POST',{account_id:accountId||null,commitment_type:'manual',title,amount,due_date:due,currency:'EUR',mandatory:true,cancellable:false}),
-    onSuccess:()=>{setTitle('');setAmount('');qc.invalidateQueries({queryKey:['commitments']})},
+    mutationFn:()=>apiMutate('/api/v1/commitments','POST',{account_id:accountId||null,commitment_type:'manual',title,amount,due_date:due,currency:'EUR',recurrence:recurrence||null,mandatory:true,cancellable:false}),
+    onSuccess:()=>{setTitle('');setAmount('');setRecurrence('');qc.invalidateQueries({queryKey:['commitments']});qc.invalidateQueries({queryKey:['dashboard']});qc.invalidateQueries({queryKey:['financial-health']});qc.invalidateQueries({queryKey:['calendar']})},
   });
 
   useEffect(()=>{
     if(filters.accountScope.startsWith('account:'))setAccountId(filters.accountScope.slice('account:'.length));
   },[filters.accountScope]);
 
+  const removeCommitment=useMutation({mutationFn:(id:string)=>apiMutate('/api/v1/commitments/'+id,'DELETE'),onSuccess:()=>{qc.invalidateQueries({queryKey:['commitments']});qc.invalidateQueries({queryKey:['dashboard']});qc.invalidateQueries({queryKey:['financial-health']})}});
   function submit(e:FormEvent){e.preventDefault();calc.mutate()}
 
   return <>
@@ -57,7 +60,7 @@ export default function ForecastPage(){
             <Card><div className="text-xs uppercase text-[var(--muted)]">Ahorro previsto</div><div className="mt-2 text-2xl font-bold"><Money value={calc.data.predicted_savings}/></div><div className="mt-2 text-xs text-[var(--muted)]">Liquidez mínima estimada: <Money value={calc.data.predicted_min_liquidity}/></div></Card>
           </div>
           <Card>
-            <h2 className="font-bold">Explicación del cálculo</h2>
+            <div className="flex flex-wrap items-start justify-between gap-3"><h2 className="font-bold">Explicación del cálculo</h2><DataStatus label="Calculado" detail="histórico + compromisos conocidos" tone="calculated"/></div>
             <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
               <div><dt className="text-[var(--muted)]">Baseline año anterior</dt><dd><Money value={calc.data.historical_baseline}/> · {calc.data.baseline_start} — {calc.data.baseline_end}</dd></div>
               <div><dt className="text-[var(--muted)]">Compromisos conocidos</dt><dd><Money value={calc.data.known_commitments}/></dd></div>
@@ -70,17 +73,19 @@ export default function ForecastPage(){
       <Card>
         <h2 className="font-bold">Añadir compromiso</h2>
         <form className="mt-4 space-y-3" onSubmit={e=>{e.preventDefault();create.mutate()}}>
-          <select className="fin-input" aria-label="Cuenta del compromiso" value={accountId} onChange={e=>setAccountId(e.target.value)} required>
-            <option value="">Cuenta bancaria…</option>
+          <select className="fin-input" aria-label="Cuenta del compromiso" value={accountId} onChange={e=>setAccountId(e.target.value)}>
+            <option value="">Hogar · sin cuenta concreta</option>
             {accounts.data?.map(a=><option key={a.id} value={a.id}>{a.institution_name} · {a.name}</option>)}
           </select>
           <input className="fin-input" placeholder="Seguro, impuesto, reserva…" value={title} onChange={e=>setTitle(e.target.value)} required/>
           <input className="fin-input" type="number" step="0.01" placeholder="Importe" value={amount} onChange={e=>setAmount(e.target.value)} required/>
           <input className="fin-input" aria-label="Fecha del compromiso" type="date" value={due} onChange={e=>setDue(e.target.value)} required/>
-          <button className="fin-button w-full">Guardar</button>
+          <select className="fin-input" aria-label="Repetición del compromiso" value={recurrence} onChange={e=>setRecurrence(e.target.value)}><option value="">Una vez</option><option value="monthly">Mensual</option><option value="quarterly">Trimestral</option><option value="annual">Anual</option></select>
+          <button className="fin-button w-full" disabled={create.isPending||!title.trim()||!amount||!due}>{create.isPending?'Guardando…':'Guardar compromiso'}</button>
         </form>
+        {create.isSuccess&&<div className="mt-3 rounded-xl bg-[var(--brand-soft)] p-3 text-sm">Compromiso guardado y añadido a la previsión.</div>}
         {create.error&&<div className="mt-3"><ErrorState error={create.error}/></div>}
-        <div className="mt-5 space-y-3">{commitments.data?.length?commitments.data.slice(0,8).map(c=><div key={c.id} className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="font-medium">{c.title}</div><div className="mt-1 text-xs text-[var(--muted)]">{c.account_id?(c.account_institution||'Banco')+' · '+(c.account_name||'Cuenta'):'Sin cuenta vinculada'}</div><div className="mt-1 flex justify-between text-xs text-[var(--muted)]"><span>{c.due_date}</span><strong><Money value={c.amount}/></strong></div></div>):<EmptyState>No hay compromisos.</EmptyState>}</div>
+        <div className="mt-5 space-y-3">{commitments.data?.length?commitments.data.slice(0,8).map(c=><div key={c.id} className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="flex items-start justify-between gap-3"><div><div className="font-medium">{c.title}</div><div className="mt-1 text-xs text-[var(--muted)]">{c.account_id?(c.account_institution||'Banco')+' · '+(c.account_name||'Cuenta'):'Hogar'}</div></div><button className="text-xs underline" type="button" onClick={()=>removeCommitment.mutate(c.id)}>Eliminar</button></div><div className="mt-1 flex justify-between text-xs text-[var(--muted)]"><span>{c.due_date}</span><strong><Money value={c.amount}/></strong></div></div>):<EmptyState>No hay compromisos.</EmptyState>}</div>
       </Card>
     </div>
   </>;

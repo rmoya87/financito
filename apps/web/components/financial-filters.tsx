@@ -180,25 +180,21 @@ function PeriodRangePicker({compact}:{compact:boolean}){
 export function GlobalFinancialFilters({compact=false}:{compact?:boolean}={}){
   const filters=useFinancialFilters();
   const accounts=useQuery({queryKey:['accounts','global-filter'],queryFn:()=>apiGet<Account[]>('/api/v1/accounts')});
-  const accountTypes=Array.from(new Set((accounts.data||[]).map(a=>a.account_type).filter(Boolean))).sort();
-
-  const accountSelect=<div className={compact?"relative min-w-[190px]":"relative w-full"}>
-    <Landmark size={16} className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[var(--brand)]"/>
+  const accountSelect=<div className={compact
+    ?"flex min-h-10 min-w-[190px] items-center rounded-xl border border-[var(--border)] bg-white shadow-sm"
+    :"flex min-h-11 w-full items-center rounded-xl border border-[var(--border)] bg-white"
+  }>
+    <Landmark size={16} className="ml-3 shrink-0 text-[var(--brand)]"/>
     <select
-      className={compact?"fin-input min-h-10 w-full appearance-none py-2 pl-9 pr-8 text-sm font-semibold":"fin-input w-full appearance-none pl-9 pr-8"}
-      aria-label="Cuenta o tipo de cuenta global"
+      className="min-h-9 min-w-0 flex-1 appearance-none bg-transparent px-2 pr-8 text-sm font-semibold outline-none"
+      aria-label="Cuenta global"
       value={filters.accountScope}
       onChange={e=>filters.setAccountScope(e.target.value)}
     >
       <option value="all">Todas las cuentas</option>
-      {accountTypes.length>0&&<optgroup label="Por tipo de cuenta">
-        {accountTypes.map(type=><option key={type} value={'type:'+type}>{typeLabels[type]||type}</option>)}
-      </optgroup>}
-      {(accounts.data?.length||0)>0&&<optgroup label="Cuenta concreta">
-        {accounts.data?.map(account=><option key={account.id} value={'account:'+account.id}>{account.institution_name} · {account.name}</option>)}
-      </optgroup>}
+      {accounts.data?.map(account=><option key={account.id} value={'account:'+account.id}>{account.institution_name} · {account.name}</option>)}
     </select>
-    <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"/>
+    <ChevronDown size={14} className="mr-3 shrink-0 text-[var(--muted)]"/>
   </div>;
 
   if(compact){
