@@ -6,7 +6,7 @@ from fastapi import APIRouter,Depends,File,HTTPException,UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .db import SessionLocal
-from .models import Account,Contract,FinancialGoal,Mortgage,Portfolio,Security
+from .models import Account,Contract,ExtractedFact,FinancialGoal,Mortgage,Portfolio,Security
 from .models_extended import Asset,BackupRecord,CoverageFact,InsurancePolicy,Liability,MortgageProfileExtra,RepairIssue,Trade,TrackedAsset
 from .models_analytics import EntityLink
 from .schemas_extended import AssetCreate,AssetSimulationStart,BackupCreate,BackupRestore,ChatRequest,ContractCreate,CoverageCompareRequest,CoverageCreate,CorporateActionCreate,GoalCreate,GoalProgressUpdate,InsuranceCreate,LiabilityCreate,MortgageExtraUpdate,MortgageProfileCreate,MortgageProfileUpdate,PortfolioCreate,RagSearchRequest,SecurityCreate,StoredMortgagePrepaymentRequest,StoredMortgageRatePathRequest,StoredMortgageScenarioRequest,StressRequest,TaxEstimateRequest,TaxProfileUpdate,TrackedAssetCreate,TradeCreate
@@ -573,7 +573,43 @@ def contracts(db:Session=Depends(dbdep)):
     rows=db.scalars(select(Contract).where(
         Contract.contract_type.notin_(["insurance","mortgage"])
     ).order_by(Contract.provider_name)).all()
-    return [{"id":r.id,"provider_name":r.provider_name,"contract_type":r.contract_type,"renewal_date":r.renewal_date,"cancellation_notice_days":r.cancellation_notice_days,"early_exit_penalty":None if r.early_exit_penalty is None else str(r.early_exit_penalty),"annual_cost":None if r.annual_cost is None else str(r.annual_cost),"evidence_status":r.evidence_status,"source_document_id":(sources.get(r.id) or [None])[0],"source_document_ids":sources.get(r.id,[]),"document_count":len(sources.get(r.id,[]))} for r in rows]
+    result=[]
+    for r in rows:
+        document_ids=sources.get(r.id,[])
+        pending=[]
+        if document_ids:
+            facts=db.scalars(select(ExtractedFact).where(
+                ExtractedFact.document_id.in_(document_ids),
+                ExtractedFact.fact_type.in_(["contract_term","linked_product","investment_term"]),
+                ExtractedFact.user_verified.is_(False),
+                ExtractedFact.status.in_(["inferred","ambiguous","conflicting"]),
+            ).order_by(ExtractedFact.updated_at.desc())).all()
+            seen=set()
+            for fact in facts:
+                if fact.key in seen:continue
+                seen.add(fact.key)
+                try:
+                    payload=json.loads(fact.value_json)
+                    value=payload.get("value") if isinstance(payload,dict) else payload
+                    unit=payload.get("unit") if isinstance(payload,dict) else None
+                    source=payload.get("source") if isinstance(payload,dict) else None
+                except Exception:
+                    value=fact.value_json;unit=None;source=None
+                pending.append({
+                    "key":fact.key,"value":value,"unit":unit,"document_id":fact.document_id,
+                    "page":fact.source_page,"status":fact.status,
+                    "source":source or "deterministic_extractor",
+                })
+        result.append({
+            "id":r.id,"provider_name":r.provider_name,"contract_type":r.contract_type,
+            "renewal_date":r.renewal_date,"cancellation_notice_days":r.cancellation_notice_days,
+            "early_exit_penalty":None if r.early_exit_penalty is None else str(r.early_exit_penalty),
+            "annual_cost":None if r.annual_cost is None else str(r.annual_cost),
+            "evidence_status":r.evidence_status,"source_document_id":(document_ids or [None])[0],
+            "source_document_ids":document_ids,"document_count":len(document_ids),
+            "pending_review":pending,
+        })
+    return result
 @router.post("/contracts")
 def add_contract(p:ContractCreate,db:Session=Depends(dbdep)):r=Contract(**p.model_dump());db.add(r);db.flush();refresh_contract_actions(db);db.commit();return {"id":r.id}
 
