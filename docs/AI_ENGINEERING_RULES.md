@@ -250,3 +250,7 @@ Prohibido:
 - inventar coberturas, exclusiones o límites;
 - usar una cobertura propuesta para declarar equivalencia hasta su confirmación;
 - enviar documentos privados a un LLM cloud.
+
+## IA local en Mercado
+
+El análisis de Mercado es una capa de síntesis sobre datos deterministas. El código calcula valoración/P&L y métricas históricas; la IA local solo relaciona esos datos con noticias estructuradas y explica posibles implicaciones. No puede convertir sentimiento de noticias en probabilidad de subida/bajada, inventar objetivos de precio ni emitir órdenes de compra/venta. Las únicas orientaciones permitidas son “estudiar entrada”, “mantener/observar”, “revisar exposición” o “datos insuficientes”, y todas deben acompañarse de razones, riesgos y aspectos a vigilar derivados del contexto suministrado.
