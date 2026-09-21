@@ -205,3 +205,13 @@ Las conclusiones de IA de varios documentos vinculados al mismo producto compart
 - **Principales comercios** ofrece por defecto una tarta con importe y porcentaje sobre el gasto total del periodo, más un conmutador a listado. El listado muestra importe y porcentaje.
 - **Recurrentes** se calcula con histórico suficiente, no con un único mes. Si no hay series validadas la tarjeta se oculta. Si la tabla está vacía pero existen gastos, el backend intenta una detección determinista ligera; el botón `Recalcular patrones` mantiene el análisis completo con IA local cuando está disponible.
 - **Cuentas** permite eliminar cuentas manuales o conectadas con confirmación. La eliminación borra los movimientos locales de esa cuenta y sus vínculos bancarios locales, deja auditoría de la operación y no cierra automáticamente otras cuentas o la autorización bancaria general.
+
+
+## Casa, recurrentes y evolución patrimonial (2026-09)
+
+- **Principales comercios** normaliza cada porcentaje sobre un total común de gasto, limita cada participación al intervalo 0–100 % y usa una tarta con margen/radio suficientes para no recortar etiquetas superiores.
+- **Recurrentes** tiene scroll interno. Una serie deja de considerarse activa cuando su siguiente ocurrencia esperada ha quedado atrás más allá de una tolerancia dependiente de la cadencia (semanal, mensual, trimestral o anual). La vista la marca inactiva y el calendario también la ignora; una nueva transacción real puede hacer que el detector la cree de nuevo.
+- **Patrimonio > Casa** agrupa vivienda, hipoteca, seguros relacionados con la vivienda y el acceso al conjunto de seguros y protección. La navegación de Patrimonio expone `Casa` y `Seguros y protección`.
+- **Detalle de seguro**: al pulsar una póliza se abre una ficha con prima, franquicia, objeto asegurado, fechas y condiciones contractuales, permanencia/preaviso/penalización, coberturas, límites, vigencia, condiciones, exclusiones, documentos asociados, análisis documental, datos pendientes y huecos de información.
+- **Deudas** permite eliminar pasivos manuales desde Patrimonio. Antes del borrado se conserva un snapshot histórico del saldo pendiente.
+- **Bienes y evolución de valor** sustituye a la presentación meramente estática de vivienda/coche/otros bienes. Las valoraciones manuales siguen siendo la fuente de verdad y la UI compara la valoración actual con la anterior para mostrar revalorización o depreciación; no se inventan precios de mercado.
