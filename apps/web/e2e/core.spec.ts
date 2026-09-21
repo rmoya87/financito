@@ -21,7 +21,7 @@ test('onboarding crea demo y el dashboard sigue navegable',async({page})=>{
 
   await page.getByRole('link',{name:'Inicio'}).click();
   await expect(page.getByRole('heading',{name:'Inicio'})).toBeVisible();
-  await expect(page.getByText('Disponible')).toBeVisible();
+  await expect(page.getByText('Disponible para gastar',{exact:true})).toBeVisible();
   await expect(page.getByText('En qué se está yendo tu dinero')).toBeVisible();
   await expectAccessible(page);
 });
@@ -543,7 +543,7 @@ test('todas las rutas principales pasan auditoría WCAG AA automatizada',async({
   test.setTimeout(90000);
   await page.route('**/api/v1/banking/aspsps?country=ES',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({aspsps:[]})}));
   const routes=[
-    '/','/search/','/accounts/','/transactions/','/forecast/','/analytics/','/wealth/','/history/',
+    '/','/search/','/accounts/','/transactions/','/forecast/','/analytics/','/budgets/','/wealth/','/history/',
     '/cost-centers/','/investments/','/markets/','/documents/','/contracts/','/insurance/','/tools/',
     '/decisions/','/chat/','/banking/','/actions/','/system/','/settings/','/developer/','/onboarding/'
   ];
