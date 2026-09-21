@@ -156,3 +156,12 @@ Las conclusiones de IA de varios documentos vinculados al mismo producto compart
 - Las comisiones completadas en Casa alimentan de verdad los motores de amortización y cambio de hipoteca, incluido el cálculo de costes de salida y punto de equilibrio.
 - La comparación de mercado se ejecuta bajo demanda y mantiene capital pendiente y plazo para hacer comparables las cuotas. Las referencias públicas se tratan como benchmark; el ahorro neto definitivo exige incorporar la oferta personalizada/FEIN, seguros vinculados y demás costes.
 - La agrupación documental por número de póliza/contrato puede corregir una clasificación inicial distinta y reagrupar anexos procesados antes o después del documento principal.
+
+
+### Completado documental asistido por IA local
+- La IA local recibe una lista de hechos esperables según el dominio y busca de forma sistemática los que todavía no están representados.
+- Una clave ya extraída (por ejemplo `differential_rate`) deja de aparecer como simplemente ausente: si aún no está confirmada se presenta como **encontrada, pendiente de validar** con trazabilidad al documento/página.
+- Los hechos hipotecarios confirmados completan también el perfil ampliado (`MortgageProfileExtra`): TAE, índice, diferencial, plazo original derivable, revisiones y comisiones. Los valores manuales existentes no se sobrescriben silenciosamente.
+- Seguros separa datos encontrados pendientes de revisión de datos realmente no encontrados para prima, franquicia, renovación, preaviso y coste de salida.
+- El mismo patrón de búsqueda se aplica a préstamos, energía, telecomunicaciones, contratos generales e informes de inversión, manteniendo confirmación humana para cualquier hecho material antes de usarlo en cálculos.
+- No se ha añadido IA cloud ni confirmación automática de condiciones financieras.
