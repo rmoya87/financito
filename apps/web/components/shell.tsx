@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import {useEffect,useState} from 'react';
 import {usePathname} from 'next/navigation';
@@ -7,7 +8,6 @@ import {FinancialFiltersProvider,GlobalFinancialFilters} from '@/components/fina
 import {
   ArrowLeftRight,
   Bot,
-  Gauge,
   LayoutDashboard,
   Search,
   Settings,
@@ -119,13 +119,10 @@ export function Shell({children}:{children:React.ReactNode}){
 
   return <FinancialFiltersProvider><div className="min-h-screen lg:grid lg:grid-cols-[224px_1fr]">
     <aside className="border-b border-[var(--border)] bg-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:border-b-0 lg:border-r">
-      <div className="flex items-center gap-3 px-5 py-5">
-        <div className="grid size-10 place-items-center rounded-xl bg-[var(--brand)] text-white"><Gauge size={22}/></div>
-        <div>
-          <div className="font-bold">Financito</div>
-          <div className="text-xs text-[var(--muted)]">Privado · local</div>
-        </div>
-      </div>
+      <Link href="/" aria-label="Ir a Inicio" className="flex items-center gap-3 px-5 py-5">
+        <Image src="/financito-logo.png" alt="" width={40} height={40} priority className="size-10 rounded-xl"/>
+        <div className="font-bold">Financito</div>
+      </Link>
 
       <nav aria-label="Navegación principal" className="flex gap-1 overflow-x-auto px-3 pb-3 lg:flex-col lg:overflow-visible">
         {areas.map(area=>{
