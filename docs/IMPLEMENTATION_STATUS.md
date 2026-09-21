@@ -167,3 +167,13 @@ Las conclusiones de IA de varios documentos vinculados al mismo producto compart
 - No se ha añadido IA cloud ni confirmación automática de condiciones financieras.
 
 - Los análisis documentales están versionados; con Ollama disponible, el arranque reanaliza en segundo plano documentos con análisis antiguo o ausente para aplicar la estrategia de extracción vigente sin volver a subir archivos.
+
+
+### Gestión contextual de hipotecas, seguros y documentos
+- Patrimonio permite mantener varias hipotecas, seleccionar cuál se está revisando, crear nuevas, editar y eliminar la ficha sin borrar los archivos documentales.
+- El botón **Documentación** de una hipoteca abre únicamente sus archivos asociados; las subidas desde esa vista quedan vinculadas directamente a esa hipoteca.
+- Seguros permite crear una póliza, categorizarla (hogar, coche, vida, salud, mascota, viaje u otro), editarla, eliminarla y abrir exclusivamente su documentación.
+- Las pólizas manuales mantienen aseguradora, prima, franquicia, número de póliza, renovación, preaviso y penalización de salida en una única ficha.
+- La vista contextual permite asociar un documento existente o desvincularlo del producto sin borrar el archivo del Vault.
+- En **Información que falta**, hipotecas y seguros pueden relanzar la IA local solo sobre sus documentos. Si el dato continúa sin encontrarse, los campos compatibles pueden completarse manualmente desde la propia sección y editarse después desde la ficha.
+- La biblioteca documental global queda como inventario/entrada para archivos sin asociar, no como gestor principal de hipotecas o pólizas.
