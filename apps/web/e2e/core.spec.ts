@@ -159,7 +159,7 @@ test('Patrimonio incorpora Casa y permite eliminar otras deudas',async({page})=>
     mimeType:'text/plain',
     buffer:Buffer.from('Hipoteca E2E. Capital pendiente 150000 euros. Cuota mensual 800 euros. TIN 2,5%.'),
   });
-  await expect(mortgageDocs.getByText('hipoteca-e2e.txt',{exact:true})).toBeVisible();
+  await expect(mortgageDocs.getByText('hipoteca-e2e.txt',{exact:true}).first()).toBeVisible();
   await expect(mortgageDocs.getByRole('link',{name:'Visualizar documento'})).toBeVisible();
   await mortgageDocs.getByRole('button',{name:'Cerrar'}).click();
 
@@ -205,7 +205,7 @@ test('al pulsar un seguro se abre su ficha completa',async({page})=>{
     mimeType:'text/plain',
     buffer:Buffer.from('Seguro de hogar. Cubre daños por agua. Prima anual 500 euros. Franquicia 100 euros.'),
   });
-  await expect(policyDocs.getByText('seguro-e2e.txt',{exact:true})).toBeVisible();
+  await expect(policyDocs.getByText('seguro-e2e.txt',{exact:true}).first()).toBeVisible();
   await expect(policyDocs.getByRole('link',{name:'Visualizar documento'})).toBeVisible();
   await policyDocs.getByRole('button',{name:'Cerrar'}).click();
 
