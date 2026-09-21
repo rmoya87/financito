@@ -332,3 +332,155 @@ def test_insurance_verdict_surfaces_ai_found_terms_as_pending_review():
         missing_fields={x["field"] for x in result["missing_information"] if x.get("policy_id")==policy.id}
         assert "deductible" not in missing_fields
         assert "renewal_date" not in missing_fields
+
+
+def test_wealth_home_can_select_between_multiple_mortgages():
+    with SessionLocal() as db:
+        first=Mortgage(
+            lender=f"Banco A {uuid4().hex[:6]}",
+            remaining_principal=Decimal("100000"),currency="EUR",interest_type="fixed",
+            nominal_rate=Decimal("0.03"),monthly_payment=Decimal("600"),remaining_months=180,
+        )
+        second=Mortgage(
+            lender=f"Banco B {uuid4().hex[:6]}",
+            remaining_principal=Decimal("200000"),currency="EUR",interest_type="variable",
+            nominal_rate=Decimal("0.04"),monthly_payment=Decimal("1000"),remaining_months=240,
+        )
+        db.add_all([first,second]);db.commit()
+        first_id=first.id;second_id=second.id
+
+    with TestClient(app) as client:
+        client.get("/api/v1/session")
+        first_response=client.get("/api/v1/wealth/home",params={"mortgage_id":first_id})
+        second_response=client.get("/api/v1/wealth/home",params={"mortgage_id":second_id})
+        assert first_response.status_code==200
+        assert second_response.status_code==200
+        assert first_response.json()["mortgage"]["id"]==first_id
+        assert second_response.json()["mortgage"]["id"]==second_id
+
+
+def test_deleting_mortgage_unlinks_documents_but_keeps_files():
+    with SessionLocal() as db:
+        mortgage=Mortgage(
+            lender=f"Banco borrar {uuid4().hex[:6]}",
+            remaining_principal=Decimal("80000"),currency="EUR",interest_type="fixed",
+            nominal_rate=Decimal("0.025"),monthly_payment=Decimal("500"),remaining_months=160,
+        )
+        db.add(mortgage);db.flush()
+        document=_doc(db,"hipoteca-borrar.pdf")
+        document.document_type="mortgage"
+        db.add(EntityLink(
+            from_type="document",from_id=document.id,relation_type="evidence_for",
+            to_type="mortgage",to_id=mortgage.id,confidence=Decimal("1"),
+            source_type="user",source_ref=document.id,
+        ))
+        db.commit();mortgage_id=mortgage.id;document_id=document.id
+
+    with TestClient(app) as client:
+        session=client.get("/api/v1/session")
+        response=client.delete(f"/api/v1/mortgages/{mortgage_id}",headers={"X-CSRF-Token":session.json()["csrf_token"]})
+        assert response.status_code==200
+
+    with SessionLocal() as db:
+        assert db.get(Mortgage,mortgage_id) is None
+        assert db.get(Document,document_id) is not None
+        assert db.scalar(select(EntityLink.id).where(
+            EntityLink.from_type=="document",EntityLink.from_id==document_id,
+            EntityLink.to_type=="mortgage",EntityLink.to_id==mortgage_id,
+        )) is None
+
+
+def test_insurance_profile_crud_includes_category_contract_and_safe_document_unlink():
+    with TestClient(app) as client:
+        session=client.get("/api/v1/session")
+        headers={"X-CSRF-Token":session.json()["csrf_token"]}
+        created=client.post("/api/v1/insurance",headers=headers,json={
+            "provider_name":"Aseguradora Unit",
+            "insurance_type":"car",
+            "annual_premium":"420",
+            "deductible":"200",
+            "currency":"EUR",
+            "policy_number_masked":"POL-123",
+            "renewal_date":"2027-05-01",
+            "cancellation_notice_days":30,
+            "early_exit_penalty":"25",
+            "contract_id":None,
+        })
+        assert created.status_code==200
+        policy=created.json()
+        policy_id=policy["id"]
+        assert policy["insurance_type"]=="car"
+        assert policy["provider_name"]=="Aseguradora Unit"
+        assert policy["renewal_date"]=="2027-05-01"
+
+        updated=client.patch(f"/api/v1/insurance/{policy_id}",headers=headers,json={
+            "provider_name":"Aseguradora Editada",
+            "insurance_type":"home",
+            "annual_premium":"500",
+            "deductible":"150",
+            "currency":"EUR",
+            "policy_number_masked":"POL-123",
+            "renewal_date":"2027-06-01",
+            "cancellation_notice_days":45,
+            "early_exit_penalty":"10",
+            "contract_id":None,
+        })
+        assert updated.status_code==200
+        assert updated.json()["insurance_type"]=="home"
+        assert updated.json()["provider_name"]=="Aseguradora Editada"
+        assert updated.json()["cancellation_notice_days"]==45
+
+    with SessionLocal() as db:
+        document=_doc(db,"seguro-contextual.pdf")
+        document.document_type="insurance"
+        db.add(EntityLink(
+            from_type="document",from_id=document.id,relation_type="evidence_for",
+            to_type="insurance_policy",to_id=policy_id,confidence=Decimal("1"),
+            source_type="user",source_ref=document.id,
+        ))
+        db.commit();document_id=document.id
+
+    with TestClient(app) as client:
+        session=client.get("/api/v1/session")
+        filtered=client.get("/api/v1/documents",params={"entity_type":"insurance_policy","entity_id":policy_id})
+        assert filtered.status_code==200
+        assert [row["id"] for row in filtered.json()]==[document_id]
+        deleted=client.delete(f"/api/v1/insurance/{policy_id}",headers={"X-CSRF-Token":session.json()["csrf_token"]})
+        assert deleted.status_code==200
+
+    with SessionLocal() as db:
+        assert db.get(InsurancePolicy,policy_id) is None
+        assert db.get(Document,document_id) is not None
+        assert db.scalar(select(EntityLink.id).where(
+            EntityLink.from_type=="document",EntityLink.from_id==document_id,
+            EntityLink.to_type=="insurance_policy",EntityLink.to_id==policy_id,
+        )) is None
+
+
+def test_contextual_document_list_only_returns_selected_product():
+    with SessionLocal() as db:
+        first=Mortgage(
+            lender=f"Filtro A {uuid4().hex[:6]}",remaining_principal=Decimal("70000"),
+            currency="EUR",interest_type="fixed",nominal_rate=Decimal("0.02"),
+            monthly_payment=Decimal("450"),remaining_months=150,
+        )
+        second=Mortgage(
+            lender=f"Filtro B {uuid4().hex[:6]}",remaining_principal=Decimal("90000"),
+            currency="EUR",interest_type="fixed",nominal_rate=Decimal("0.025"),
+            monthly_payment=Decimal("550"),remaining_months=170,
+        )
+        db.add_all([first,second]);db.flush()
+        first_doc=_doc(db,"first-mortgage.pdf");first_doc.document_type="mortgage"
+        second_doc=_doc(db,"second-mortgage.pdf");second_doc.document_type="mortgage"
+        db.add_all([
+            EntityLink(from_type="document",from_id=first_doc.id,relation_type="evidence_for",to_type="mortgage",to_id=first.id,confidence=Decimal("1"),source_type="user",source_ref=first_doc.id),
+            EntityLink(from_type="document",from_id=second_doc.id,relation_type="evidence_for",to_type="mortgage",to_id=second.id,confidence=Decimal("1"),source_type="user",source_ref=second_doc.id),
+        ])
+        db.commit();first_id=first.id;first_doc_id=first_doc.id
+
+    with TestClient(app) as client:
+        client.get("/api/v1/session")
+        response=client.get("/api/v1/documents",params={"entity_type":"mortgage","entity_id":first_id})
+        assert response.status_code==200
+        ids={row["id"] for row in response.json()}
+        assert ids=={first_doc_id}
