@@ -165,3 +165,5 @@ Las conclusiones de IA de varios documentos vinculados al mismo producto compart
 - Seguros separa datos encontrados pendientes de revisión de datos realmente no encontrados para prima, franquicia, renovación, preaviso y coste de salida.
 - El mismo patrón de búsqueda se aplica a préstamos, energía, telecomunicaciones, contratos generales e informes de inversión, manteniendo confirmación humana para cualquier hecho material antes de usarlo en cálculos.
 - No se ha añadido IA cloud ni confirmación automática de condiciones financieras.
+
+- Los análisis documentales están versionados; con Ollama disponible, el arranque reanaliza en segundo plano documentos con análisis antiguo o ausente para aplicar la estrategia de extracción vigente sin volver a subir archivos.
