@@ -20,7 +20,10 @@ MAX_CHUNKS = 18
 
 CONTRACT_FACT_KEYS = {
     "cancellation_notice_days","early_exit_penalty","annual_cost","monthly_cost","deductible",
-    "permanence_end_date","renewal_date","provider_name","insurance_type","policy_number","contract_number","insured_object",
+    "start_date","permanence_end_date","renewal_date","automatic_renewal",
+    "provider_name","insurance_type","policy_number","contract_number","insured_object",
+    "insured_value","cancellation_condition","waiting_period",
+    "promotional_price","standard_price","promotion_end_date","financed_device_balance",
 }
 MORTGAGE_FACT_KEYS = {
     "nominal_rate","apr_rate","reference_index","interest_type","differential_rate",
@@ -32,7 +35,44 @@ LINKED_FACT_KEYS = {
     "linked_salary","linked_home_insurance","linked_life_insurance","linked_card","linked_pension_plan",
     "linked_home_insurance_rate_penalty_pp","linked_life_insurance_rate_penalty_pp","linked_salary_rate_penalty_pp",
 }
-ALLOWED_MATERIAL_FACT_KEYS = CONTRACT_FACT_KEYS | MORTGAGE_FACT_KEYS | LINKED_FACT_KEYS
+INVESTMENT_FACT_KEYS = {
+    "product_name","isin","management_fee_percent","ongoing_costs_percent","custody_fee",
+    "subscription_fee_percent","redemption_fee_percent",
+}
+ALLOWED_MATERIAL_FACT_KEYS = CONTRACT_FACT_KEYS | MORTGAGE_FACT_KEYS | LINKED_FACT_KEYS | INVESTMENT_FACT_KEYS
+
+EXPECTED_MATERIAL_KEYS_BY_TYPE = {
+    "insurance": {
+        "provider_name","policy_number","insurance_type","annual_cost","monthly_cost","deductible",
+        "renewal_date","cancellation_notice_days","early_exit_penalty","insured_object","insured_value",
+        "cancellation_condition","waiting_period",
+    },
+    "mortgage": (
+        MORTGAGE_FACT_KEYS
+        | LINKED_FACT_KEYS
+        | {"provider_name","contract_number","early_exit_penalty"}
+    ),
+    "loan": {
+        "provider_name","contract_number","nominal_rate","apr_rate","remaining_principal",
+        "monthly_payment","remaining_months","early_repayment_fee_percent","early_exit_penalty",
+        "renewal_date","cancellation_notice_days",
+    },
+    "energy": {
+        "provider_name","contract_number","annual_cost","monthly_cost","renewal_date",
+        "cancellation_notice_days","early_exit_penalty","permanence_end_date",
+        "promotional_price","standard_price","promotion_end_date","automatic_renewal",
+    },
+    "telecom": {
+        "provider_name","contract_number","annual_cost","monthly_cost","renewal_date",
+        "cancellation_notice_days","early_exit_penalty","permanence_end_date",
+        "promotional_price","standard_price","promotion_end_date","financed_device_balance",
+    },
+    "contract": {
+        "provider_name","contract_number","annual_cost","monthly_cost","start_date","renewal_date",
+        "cancellation_notice_days","early_exit_penalty","permanence_end_date","automatic_renewal",
+    },
+    "investment_statement": INVESTMENT_FACT_KEYS | {"provider_name"},
+}
 
 TYPE_FOCUS = {
     "insurance": (
@@ -280,8 +320,10 @@ def _replace_ai_proposals(session:Session,document:Document,analysis:dict)->None
             continue
         if key in LINKED_FACT_KEYS:
             fact_type="linked_product"
-        elif key in MORTGAGE_FACT_KEYS:
+        elif document.document_type=="mortgage" and key in MORTGAGE_FACT_KEYS:
             fact_type="mortgage_term"
+        elif document.document_type=="investment_statement" and key in INVESTMENT_FACT_KEYS:
+            fact_type="investment_term"
         else:
             fact_type="contract_term"
         session.add(ExtractedFact(
@@ -454,6 +496,9 @@ def analyze_document(session: Session, document: Document) -> dict:
     context = _context(session, document)
     facts = _structured_facts(session, document.id)
     focus = TYPE_FOCUS.get(document.document_type, TYPE_FOCUS["contract"])
+    represented_keys = {str(item.get("key") or "") for item in facts}
+    expected_keys = EXPECTED_MATERIAL_KEYS_BY_TYPE.get(document.document_type, set())
+    search_keys = sorted(key for key in expected_keys if key not in represented_keys)
     prompt = f"""
 Analiza un documento financiero personal en español. Documento: {document.file_name}
 Tipo detectado: {document.document_type}
@@ -470,7 +515,10 @@ REGLAS OBLIGATORIAS:
 - En negotiation_points incluye cláusulas o condiciones concretas que convenga usar al renegociar o pedir ofertas.
 - En comparison_requirements indica qué condiciones deben igualarse para comparar alternativas de forma equivalente (coberturas, franquicias, bonificaciones, plazo, comisiones, etc.).
 - No decidas por el usuario. Explica oportunidades y riesgos de forma neutral.
-- Los hechos con status=confirmed y user_verified=true son confirmados. Los demás son indicios.
+- Los hechos con status=confirmed y user_verified=true son confirmados. Los demás son indicios pendientes de revisión.
+- Si una clave ya aparece en HECHOS ESTRUCTURADOS, aunque esté inferred/ambiguous, NO digas que falta: indica que está pendiente de validar si es material.
+- Busca de forma sistemática en todo el contexto disponible estas claves todavía no representadas para este tipo de documento: {', '.join(search_keys) if search_keys else 'ninguna; ya hay un hecho estructurado para todas las claves esperadas'}.
+- Si una de esas claves no aparece explícitamente, no la inventes ni generes un fact vacío; puedes indicarla en missing_information.
 - En proposed_material_facts incluye SOLO condiciones numéricas/textuales explícitas de estas claves: {', '.join(sorted(ALLOWED_MATERIAL_FACT_KEYS))}.
 - Cada proposed_material_fact requiere una página concreta; si no puedes citarla, no lo propongas.
 - En coverage_facts incluye SOLO coberturas explícitas del seguro, con página concreta. No inventes límites, franquicias, condiciones ni exclusiones ausentes.
