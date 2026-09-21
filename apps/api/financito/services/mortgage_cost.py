@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from calendar import monthrange
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -10,6 +12,7 @@ from ..models import Mortgage
 from ..models_analytics import LinkedProduct
 from ..models_extended import InsurancePolicy,MortgageProfileExtra
 from .contractual_costs import mortgage_contract_context
+from ..providers.macro import EcbMacroProvider
 
 
 def _monthly_irr(principal:Decimal,payment:Decimal,months:int)->Decimal|None:
@@ -31,7 +34,7 @@ def _monthly_irr(principal:Decimal,payment:Decimal,months:int)->Decimal|None:
     return (low+high)/Decimal("2")
 
 
-def current_remaining_apr_estimate(session:Session,mortgage:Mortgage)->dict:
+def current_remaining_apr_estimate(session:Session,mortgage:Mortgage,annual_rate:Decimal|None=None)->dict:
     """Estimate the effective annual cost of the remaining mortgage cash flows.
 
     This is deliberately separate from the contractual/original APR (TAE). It
@@ -39,9 +42,10 @@ def current_remaining_apr_estimate(session:Session,mortgage:Mortgage)->dict:
     that are actually structured in Financito. Sunk origination costs are not
     charged again.
     """
+    applied_rate=mortgage.nominal_rate if annual_rate is None else annual_rate
     scenario=MortgageEngine.amortization(
         mortgage.remaining_principal,
-        mortgage.nominal_rate,
+        applied_rate,
         mortgage.remaining_months,
     )
     linked_ids=list(session.scalars(select(LinkedProduct.linked_product_id).where(
@@ -58,7 +62,9 @@ def current_remaining_apr_estimate(session:Session,mortgage:Mortgage)->dict:
         return {
             "rate":None,
             "status":"not_available",
-            "monthly_payment":str(scenario.monthly_payment),
+            "nominal_rate":str(applied_rate),
+            "nominal_rate":str(applied_rate),
+        "monthly_payment":str(scenario.monthly_payment),
             "known_linked_annual_cost":str(annual_linked_cost.quantize(Decimal("0.01"))),
             "known_linked_monthly_cost":str(monthly_linked),
             "basis":"No se ha podido resolver la tasa efectiva de los flujos restantes.",
@@ -116,4 +122,111 @@ def rate_review_readiness(session:Session,mortgage:Mortgage)->dict:
             "La actualización automática del tipo solo puede activarse cuando la regla temporal del índice "
             "está confirmada en documentación; nunca se presupone el mes de Euríbor."
         ),
+    }
+
+
+def _shift_month(value:date,months:int)->date:
+    index=value.year*12+(value.month-1)+months
+    year,month_index=divmod(index,12)
+    month=month_index+1
+    return date(year,month,min(value.day,monthrange(year,month)[1]))
+
+
+def _parse_iso_date(value:object)->date|None:
+    if isinstance(value,date):
+        return value
+    try:return date.fromisoformat(str(value))
+    except Exception:return None
+
+
+def _ecb_euribor_12m_for_month(target:date,provider:EcbMacroProvider)->dict:
+    period=f"{target.year:04d}-{target.month:02d}"
+    rows=provider.series(
+        "FM",
+        "M.U2.EUR.RT.MM.EURIBOR1YD_.HSTA",
+        start=period,
+        end=period,
+        last_n=None,
+    )
+    if not rows:
+        raise RuntimeError("El BCE no devolvió Euríbor 12 meses para el mes contractual.")
+    row=rows[-1]
+    raw=row.get("OBS_VALUE") or row.get("Obs Value") or row.get("VALUE")
+    if raw in {None,""}:
+        raise RuntimeError("La serie oficial del BCE no contiene OBS_VALUE.")
+    return {
+        "value_percent":Decimal(str(raw)),
+        "period":str(row.get("TIME_PERIOD") or row.get("Time period") or period),
+        "provider":"ECB",
+        "series":"FM.M.U2.EUR.RT.MM.EURIBOR1YD_.HSTA",
+    }
+
+
+def due_rate_review_estimate(
+    session:Session,
+    mortgage:Mortgage,
+    as_of:date|None=None,
+    provider:EcbMacroProvider|None=None,
+)->dict:
+    """Automatically calculate a due variable-rate review without mutating facts.
+
+    The calculation runs only when the contract rule is complete and the review
+    date has arrived. It deliberately leaves mortgage.nominal_rate/payment
+    unchanged until the bank statement/document or the user confirms the result.
+    """
+    as_of=as_of or date.today()
+    readiness=rate_review_readiness(session,mortgage)
+    if readiness["status"]!="ready":
+        return {**readiness,"estimate":None}
+    review_date=_parse_iso_date(readiness.get("next_review_date"))
+    if review_date is None:
+        return {**readiness,"status":"needs_more_data","automatic":False,"missing":["next_review_date"],"estimate":None}
+    if as_of<review_date:
+        return {**readiness,"status":"scheduled","estimate":None}
+
+    index_name=str(readiness.get("reference_index") or "").lower()
+    if "eur" not in index_name or not any(token in index_name for token in ("12","año","ano","year")):
+        return {
+            **readiness,
+            "status":"unsupported_index",
+            "automatic":False,
+            "estimate":None,
+            "message":"La actualización automática está implementada de forma segura para Euríbor a 12 meses; otros índices requieren su serie oficial específica.",
+        }
+
+    lag=int(readiness["reference_index_lag_months"])
+    reference_month=_shift_month(date(review_date.year,review_date.month,1),-lag)
+    provider=provider or EcbMacroProvider()
+    try:
+        index=_ecb_euribor_12m_for_month(reference_month,provider)
+    except Exception as exc:
+        return {
+            **readiness,
+            "status":"source_unavailable",
+            "estimate":None,
+            "message":str(exc)[:300],
+        }
+
+    differential=Decimal(str(readiness["differential_rate"]))
+    estimated_tin=(index["value_percent"]/Decimal("100")+differential).quantize(Decimal("0.000001"))
+    scenario=MortgageEngine.amortization(mortgage.remaining_principal,estimated_tin,mortgage.remaining_months)
+    effective=current_remaining_apr_estimate(session,mortgage,estimated_tin)
+    return {
+        **readiness,
+        "status":"estimated_due",
+        "estimate":{
+            "review_date":review_date.isoformat(),
+            "reference_month":reference_month.strftime("%Y-%m"),
+            "reference_index_value_percent":str(index["value_percent"]),
+            "reference_source":index["provider"],
+            "reference_series":index["series"],
+            "reference_period":index["period"],
+            "estimated_nominal_rate":str(estimated_tin),
+            "estimated_monthly_payment":str(scenario.monthly_payment),
+            "estimated_remaining_interest":str(scenario.total_interest),
+            "estimated_current_apr":effective["rate"],
+            "known_linked_annual_cost":effective["known_linked_annual_cost"],
+            "confirmation_required":True,
+            "notice":"Cálculo automático informativo. No sustituye el TIN/cuota guardados hasta confirmar la revisión comunicada por la entidad.",
+        },
     }
