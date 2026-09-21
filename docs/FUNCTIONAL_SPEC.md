@@ -1062,3 +1062,14 @@ Las condiciones encontradas automáticamente se muestran como pendientes de vali
 - Cada fila muestra fecha, concepto, categoría, tratamiento, importe y un botón de opciones.
 - El menú de opciones agrupa **Vincular seguro**, **Vincular hipoteca**, **Crear regla** y **Dividir movimiento**. Los productos ya vinculados se resumen bajo el concepto.
 - La tabla usa ancho disponible sin un `min-width` que fuerce desbordamiento horizontal en escritorio.
+
+
+## Navegación financiera simplificada (2026-09-21)
+
+- Patrimonio se organiza en **Casa**, **Hipoteca**, **Seguros**, **Mercado** e **Histórico**. Casa es un resumen y no duplica la ficha hipotecaria.
+- Hipoteca concentra deuda, cuota, condiciones, documentación, pagos vinculados y comparación de mercado. Las simulaciones de amortización permanecen en **Simular**.
+- Seguros conserva la gestión específica de pólizas, coberturas, pagos y documentación.
+- Inversiones y Fiscalidad se retiran de la navegación de usuario; sus datos internos no se borran para no alterar cálculos históricos.
+- Cuenta y Periodo son filtros globales persistentes y se muestran a la derecha del submenú o del título cuando no existe submenú.
+- Importar extracto se abre desde un modal en Movimientos para priorizar la tabla.
+- Buscar usa SQL/FTS como camino inmediato y no espera a Ollama para devolver coincidencias. Preguntar degrada a datos deterministas si embeddings o generación local no responden con rapidez.
