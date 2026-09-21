@@ -450,6 +450,7 @@ def wealth_details(db:Session=Depends(dbdep)):
         "currency":row.currency,
         "valuation_date":row.valuation_date,
         "valuation_source":row.valuation_source,
+        "ownership_type":row.ownership_type,
         "ownership_percentage":str(row.ownership_percentage),
     } for row in db.scalars(select(Asset).order_by(Asset.asset_type,Asset.name)).all()]
     liabilities=[{
