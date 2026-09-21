@@ -26,7 +26,7 @@ interface Dashboard{
   actions:{id:string;title:string;action_type:string;priority:string;due_date:string|null;status:string;notes:string|null;related_entity_type:string|null;related_entity_id:string|null}[];
   financial_health:{
     generated_at:string;
-    safe_to_spend:{amount:string;liquidity:string;reserved_goals:string;obligations_until_next_income:string;minimum_buffer:string;buffer_gap:string;horizon_date:string;selected_period_start:string;selected_period_end:string;selected_monthly_spending:string;selected_spending_floor:string;known_future_outflows:string;next_income:null|{date:string;amount:string;label:string;confidence:string;basis:string};explanation:string};
+    safe_to_spend:{amount:string;liquidity:string;reserved_goals:string;obligations_until_next_income:string;minimum_buffer:string;buffer_gap:string;horizon_date:string;selected_period_start:string;selected_period_end:string;selected_monthly_spending:string;selected_spending_floor:string;recent_spending_floor:string;seasonal_spending_floor:string;historical_pattern_floor:string;known_future_outflows:string;projection_basis:string;projection_method:string;next_income:null|{date:string;amount:string;label:string;confidence:string;basis:string};explanation:string};
     emergency_fund:{essential_monthly:string;allocated:string;coverage_months:string|null;minimum_buffer:string};
     indicators:{status:'good'|'warning'|'risk'|'unknown';title:string;value:string|null;detail:string|null;rule:string}[];
     changes:{current:{start:string;end:string};previous:{start:string;end:string};expenses_delta:string;income_delta:string;savings_delta:string;categories:{category:string;current:string;previous:string;delta:string;delta_pct:string|null}[]};
@@ -95,7 +95,7 @@ export default function DashboardPage(){
         <Card className="border-[var(--brand)]">
           <div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Disponible para gastar</div>
           <div className="mt-2 text-3xl font-bold"><Money value={health.safe_to_spend.amount}/></div>
-          <p className="mt-2 text-sm text-[var(--muted)]">Es dinero libre estimado <strong>hoy</strong>, usando como ritmo de gasto el periodo que tengas seleccionado. Por eso cambia cuando cambias el periodo.</p>
+          <p className="mt-2 text-sm text-[var(--muted)]">Es una estimación prudente de lo que parece libre <strong>hoy</strong> después de proteger objetivos, gasto probable hasta el siguiente ingreso y tu colchón mínimo.</p>
           <div className="mt-4 rounded-xl border border-[var(--border)] bg-white p-3 text-xs">
             <div className="mb-2 font-semibold">Cómo se calcula</div>
             <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5">
@@ -106,10 +106,28 @@ export default function DashboardPage(){
               <span className="border-t border-[var(--border)] pt-2 font-semibold">= Disponible</span><strong className="border-t border-[var(--border)] pt-2"><Money value={health.safe_to_spend.amount}/></strong>
             </div>
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-            <div className="rounded-xl bg-white/70 p-3"><div className="text-[var(--muted)]">Ritmo de gasto usado</div><strong><Money value={health.safe_to_spend.selected_monthly_spending}/> / mes</strong><div className="mt-1 text-[11px] text-[var(--muted)]">{health.safe_to_spend.selected_period_start} → {health.safe_to_spend.selected_period_end}</div></div>
-            <div className="rounded-xl bg-white/70 p-3"><div className="text-[var(--muted)]">Cargos futuros conocidos</div><strong><Money value={health.safe_to_spend.known_future_outflows}/></strong><div className="mt-1 text-[11px] text-[var(--muted)]">Se usa el mayor entre estos cargos y el ritmo de gasto del periodo.</div></div>
+          <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+            <div className="rounded-xl bg-white/70 p-3"><div className="text-[var(--muted)]">Ritmo mensual del periodo</div><strong><Money value={health.safe_to_spend.selected_monthly_spending}/> / mes</strong><div className="mt-1 text-[11px] text-[var(--muted)]">{health.safe_to_spend.selected_period_start} → {health.safe_to_spend.selected_period_end}</div></div>
+            <div className="rounded-xl bg-white/70 p-3"><div className="text-[var(--muted)]">Señal que protege más</div><strong>{({
+              selected_period:'Periodo seleccionado',
+              recent_90_days:'Últimos 90 días',
+              same_period_last_year:'Mismo tramo del año anterior',
+              known_future:'Cargos futuros conocidos',
+              category_patterns:'Patrones por categoría',
+              horizon_closed:'Horizonte cerrado',
+            } as Record<string,string>)[health.safe_to_spend.projection_basis]||health.safe_to_spend.projection_basis}</strong><div className="mt-1 text-[11px] text-[var(--muted)]">No se suman señales que puedan representar el mismo gasto.</div></div>
           </div>
+          <details className="mt-3 rounded-xl border border-[var(--border)] bg-white/70 p-3 text-xs">
+            <summary className="cursor-pointer font-semibold">Ver señales de la estimación</summary>
+            <div className="mt-3 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5 text-[11px]">
+              <span>Periodo seleccionado hasta el próximo ingreso</span><strong><Money value={health.safe_to_spend.selected_spending_floor}/></strong>
+              <span>Ritmo de los últimos 90 días</span><strong><Money value={health.safe_to_spend.recent_spending_floor}/></strong>
+              <span>Mismo tramo del año anterior</span><strong><Money value={health.safe_to_spend.seasonal_spending_floor}/></strong>
+              <span>Cargos futuros conocidos</span><strong><Money value={health.safe_to_spend.known_future_outflows}/></strong>
+              <span>Patrones históricos por categoría</span><strong><Money value={health.safe_to_spend.historical_pattern_floor}/></strong>
+            </div>
+            <p className="mt-3 text-[11px] text-[var(--muted)]">{health.safe_to_spend.projection_method}</p>
+          </details>
           {health.safe_to_spend.next_income&&<div className="mt-3 text-xs text-[var(--muted)]">Siguiente ingreso estimado: <strong>{health.safe_to_spend.next_income.date}</strong> · <Money value={health.safe_to_spend.next_income.amount}/>. {health.safe_to_spend.next_income.basis}.</div>}
         </Card>
         <div className="grid gap-3 sm:grid-cols-2">
