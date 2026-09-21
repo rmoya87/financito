@@ -320,7 +320,7 @@ export function WealthPage({mode='home'}:{mode?:'home'|'mortgage'}={}){
     </div>}
 
     {details.isLoading?<Loading/>:details.error?<ErrorState error={details.error}/>:d&&<>
-      <SectionIntro eyebrow="Lectura rápida" title="Tu hipoteca hoy" description="Deuda, cuota, coste y relación con el valor de la vivienda antes de entrar en condiciones o documentación."/>
+      <SectionIntro eyebrow="Lectura rápida" title="Situación de la hipoteca" description="Deuda, cuota, coste y relación con el valor de la vivienda antes de entrar en condiciones o documentación."/>
       {home.data&&<div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricTile label="Capital pendiente" value={home.data.mortgage?<Money value={home.data.mortgage.remaining_principal}/>:<>—</>} detail={home.data.mortgage?.lender||'Sin hipoteca seleccionada'} status="Saldo actual" statusTone="confirmed"/>
         <MetricTile label="Cuota mensual" value={home.data.mortgage?<Money value={home.data.mortgage.monthly_payment}/>:<>—</>} detail={home.data.mortgage?home.data.mortgage.remaining_months+' meses pendientes':'Sin datos'} status="Guardado" statusTone="confirmed"/>
