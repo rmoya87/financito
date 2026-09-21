@@ -134,6 +134,38 @@ def _identity_values(session: Session, document_id: str) -> dict[str, str]:
     return result
 
 
+def _fact_has_insurance_context(session: Session, fact: ExtractedFact) -> bool:
+    """Return True when a generic identifier sits in an insurance section.
+
+    This prevents an insurance contract number embedded in a mortgage PDF from
+    becoming a mortgage identity key for sibling-document grouping.
+    """
+    rows = _facts(session, fact.document_id)
+    for candidate in rows:
+        same_page = (
+            fact.source_page is None
+            or candidate.source_page is None
+            or candidate.source_page == fact.source_page
+        )
+        if not same_page:
+            continue
+        if candidate.fact_type == "coverage_fact":
+            return True
+        if candidate.key in {
+            "insurance_type",
+            "insured_object",
+            "policy_number",
+            "linked_insurance",
+            "linked_life_insurance",
+            "linked_home_insurance",
+            "linked_mortgage_insurance",
+        }:
+            return True
+        if candidate.fact_type == "linked_product" and "insurance" in candidate.key.lower():
+            return True
+    return False
+
+
 def _linked_document_ids(session: Session, to_type: str, to_id: str) -> list[str]:
     return list(session.scalars(
         select(EntityLink.from_id).where(
@@ -276,6 +308,43 @@ def auto_link_document_entity(session: Session, document: Document) -> dict | No
         ).all()
         for fact in other_facts:
             if _normalize_identity(_payload(fact).get("value")) != contract_number:
+                continue
+
+            if _fact_has_insurance_context(session, fact):
+                linked_policy = _entity_link(session, fact.document_id, "insurance_policy")
+                if linked_policy is not None:
+                    document.document_type = "insurance"
+                    _add_evidence_link(
+                        session, document.id, "insurance_policy", linked_policy.to_id,
+                        confidence=Decimal("0.98"), source_type="document_identity",
+                    )
+                    policy = session.get(InsurancePolicy, linked_policy.to_id)
+                    if policy is not None and policy.contract_id:
+                        _add_evidence_link(
+                            session, document.id, "contract", policy.contract_id,
+                            confidence=Decimal("0.98"), source_type="document_identity",
+                        )
+                    return {
+                        "entity_type": "insurance_policy",
+                        "entity_id": linked_policy.to_id,
+                        "matched_by": "contract_number_insurance_context",
+                    }
+
+                insurance_contract = _insurance_contract_for_document(session, fact.document_id)
+                if insurance_contract is not None:
+                    document.document_type = "insurance"
+                    _add_evidence_link(
+                        session, document.id, "contract", insurance_contract.id,
+                        confidence=Decimal("0.96"), source_type="document_identity",
+                    )
+                    return {
+                        "entity_type": "contract",
+                        "entity_id": insurance_contract.id,
+                        "matched_by": "contract_number_insurance_context",
+                    }
+                # The identifier is visibly part of an insurance section. Do
+                # not fall through and reuse the mortgage link of the container
+                # document as the identity target.
                 continue
 
             linked_mortgage = _entity_link(session, fact.document_id, "mortgage")
