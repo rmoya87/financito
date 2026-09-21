@@ -237,7 +237,7 @@ test('al pulsar un seguro se abre su ficha completa',async({page})=>{
   await expect(dialog.getByRole('tab',{name:'Detalles'})).toBeVisible();
   await dialog.getByRole('tab',{name:'Detalles'}).click();
   await expect(dialog.getByRole('heading',{name:'Condiciones contractuales'})).toBeVisible();
-  await expect(dialog.getByRole('heading',{name:'Documentación'})).toBeVisible();
+  await expect(dialog.getByRole('heading',{name:'Documentación',exact:true})).toBeVisible();
   await expect(dialog.getByRole('heading',{name:'Coberturas, límites y exclusiones'})).toBeVisible();
   await expect(dialog.getByRole('heading',{name:'Lectura de la documentación'})).toBeVisible();
   await expect(dialog.getByRole('heading',{name:'Obligaciones'})).toBeVisible();
@@ -250,6 +250,7 @@ test('al pulsar un seguro se abre su ficha completa',async({page})=>{
   await dialog.getByPlaceholder('Prima anual (€)').fill('500');
   await dialog.getByRole('button',{name:'Guardar cambios'}).click();
   await expect(dialog.getByRole('heading',{name:'Editar seguro'})).not.toBeVisible();
+  await dialog.getByRole('tab',{name:'Detalles'}).click();
 
   await dialog.getByRole('button',{name:'Gestionar documentación'}).click();
   const policyDocs=page.getByRole('dialog',{name:/Documentos del seguro/});
@@ -295,6 +296,7 @@ test('Movimientos permite vincular un pago a un seguro y verlo en su detalle',as
   await expect(page.getByText('Pago Seguro Vinculado E2E',{exact:true})).toBeVisible();
 
   await page.getByRole('combobox',{name:'Categoría para Pago Seguro Vinculado E2E'}).selectOption({label:'Seguros'});
+  await expect(page.getByText(/Categoría aplicada al concepto/)).toBeVisible();
   await page.goto('/insurance/');
   await expect(page.getByRole('heading',{name:'Lectura de los documentos de las pólizas'})).toHaveCount(0);
   const pendingInsurance=page.getByRole('combobox',{name:'Vincular Pago Seguro Vinculado E2E a seguro'});
