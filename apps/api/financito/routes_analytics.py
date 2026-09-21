@@ -10,9 +10,10 @@ from .db import SessionLocal
 from .domain.analytics import detect_anomalies,detect_recurring,recurring_is_current
 from .domain.backtest import amortize_vs_invest,backtest_ma
 from .domain.recommendations import score
-from .models import Account,Transaction
-from .models_analytics import Anomaly,EntityLink,RecurringSeries
+from .models import Account,ActionItem,Category,Contract,Transaction
+from .models_analytics import Anomaly,EntityLink,RecurringPreference,RecurringSeries
 from .services.calendar import events
+from .services.financial_analytics import ESSENTIAL
 from .services.data_quality import reconciliation
 from .services.demo import seed
 from .services.search_export import export_json,global_search,transactions_csv
@@ -24,29 +25,76 @@ def dbdep():
 @router.post("/analytics/refresh")
 def refresh(db:Session=Depends(dbdep)):
     recurring=detect_recurring(db);anomalies=detect_anomalies(db);db.commit();return {"recurring_series":len(recurring),"anomalies":len(anomalies)}
+def _recurring_row(db:Session,r:RecurringSeries)->dict:
+    key=r.merchant_normalized.strip().lower()
+    pref=db.scalar(select(RecurringPreference).where(RecurringPreference.merchant_key==key))
+    tx=db.scalar(select(Transaction).where(Transaction.merchant_normalized==r.merchant_normalized).order_by(Transaction.booking_date.desc()).limit(1))
+    category=db.get(Category,tx.category_id) if tx and tx.category_id else None
+    essential=bool(category and category.system_key in ESSENTIAL)
+    if pref and pref.essential_override is not None:essential=bool(pref.essential_override)
+    contract=db.get(Contract,pref.contract_id) if pref and pref.contract_id else None
+    return {
+        "id":r.id,"merchant":r.merchant_normalized,"cadence":r.cadence,
+        "expected_amount":str(r.expected_amount),"next_expected_date":r.next_expected_date,
+        "confidence":str(r.confidence),"action":pref.action if pref else "keep",
+        "essential":essential,"essential_override":None if pref is None else pref.essential_override,
+        "contract_id":None if pref is None else pref.contract_id,
+        "contract_name":None if contract is None else contract.provider_name,
+        "spending_class":"fixed_essential" if essential else "fixed_optional",
+        "projected":not bool(pref and pref.action=="not_subscription"),
+    }
+
+
 @router.get("/recurring")
 def recurring(db:Session=Depends(dbdep)):
     stored=db.scalars(select(RecurringSeries).where(RecurringSeries.status=="active").order_by(RecurringSeries.next_expected_date)).all()
-    rows=[]
-    changed=False
+    rows=[];changed=False
     for row in stored:
-        if recurring_is_current(row):
-            rows.append(row)
-        else:
-            row.status="inactive"
-            changed=True
-    if changed:
-        db.flush()
+        if recurring_is_current(row):rows.append(row)
+        else:row.status="inactive";changed=True
+    if changed:db.flush()
     if not rows:
-        expenses=int(db.scalar(select(func.count()).select_from(Transaction).where(
-            Transaction.amount<0,
-            Transaction.is_internal_transfer.is_(False),
-        )) or 0)
-        if expenses>=3:
-            rows=detect_recurring(db,use_ai=False)
-    if changed or (not stored and rows):
-        db.commit()
-    return [{"id":r.id,"merchant":r.merchant_normalized,"cadence":r.cadence,"expected_amount":str(r.expected_amount),"next_expected_date":r.next_expected_date,"confidence":str(r.confidence)} for r in rows if recurring_is_current(r)]
+        expenses=int(db.scalar(select(func.count()).select_from(Transaction).where(Transaction.amount<0,Transaction.is_internal_transfer.is_(False))) or 0)
+        if expenses>=3:rows=detect_recurring(db,use_ai=False)
+    if changed or (not stored and rows):db.commit()
+    return [_recurring_row(db,r) for r in rows if recurring_is_current(r)]
+
+
+class RecurringPreferenceIn(BaseModel):
+    action:str=Field(pattern="^(keep|review|cancel|not_subscription)$")
+    essential_override:bool|None=None
+    contract_id:str|None=None
+
+
+@router.patch("/recurring/{series_id}")
+def update_recurring(series_id:str,p:RecurringPreferenceIn,db:Session=Depends(dbdep)):
+    row=db.get(RecurringSeries,series_id)
+    if not row:raise HTTPException(404,"Recurring series not found")
+    if p.contract_id and not db.get(Contract,p.contract_id):raise HTTPException(404,"Contract not found")
+    key=row.merchant_normalized.strip().lower()
+    pref=db.scalar(select(RecurringPreference).where(RecurringPreference.merchant_key==key))
+    if pref is None:
+        pref=RecurringPreference(merchant_key=key);db.add(pref)
+    pref.action=p.action;pref.essential_override=p.essential_override;pref.contract_id=p.contract_id
+    existing=db.scalar(select(ActionItem).where(
+        ActionItem.source_type=="recurring",ActionItem.source_ref==key,
+        ActionItem.status.in_(["pending","in_progress"]),
+    ))
+    if p.action in {"review","cancel"}:
+        title=("Cancelar " if p.action=="cancel" else "Revisar ")+row.merchant_normalized
+        if existing is None:
+            db.add(ActionItem(
+                action_type="recurring_"+p.action,title=title,priority="medium",
+                related_entity_type="contract" if p.contract_id else None,
+                related_entity_id=p.contract_id,source_type="recurring",source_ref=key,
+                notes="Acción elegida desde el patrón recurrente.",
+            ))
+        else:
+            existing.title=title;existing.action_type="recurring_"+p.action
+            existing.related_entity_type="contract" if p.contract_id else None;existing.related_entity_id=p.contract_id
+    elif existing is not None:
+        existing.status="dismissed"
+    db.commit();return _recurring_row(db,row)
 class AnomalyStatusIn(BaseModel):
     status:str=Field(pattern="^(open|normal|ignored|resolved)$")
 
@@ -88,8 +136,8 @@ def update_anomaly(anomaly_id:str,p:AnomalyStatusIn,db:Session=Depends(dbdep)):
 @router.get("/reconciliation")
 def reconcile(db:Session=Depends(dbdep)):return {"issues":reconciliation(db)}
 @router.get("/calendar")
-def calendar(start:date|None=None,end:date|None=None,db:Session=Depends(dbdep)):
-    start=start or date.today();end=end or start+timedelta(days=90);return {"events":events(db,start,end)}
+def calendar(start:date|None=None,end:date|None=None,db:Session=Depends(dbdep),account_id:str|None=None,account_type:str|None=None):
+    start=start or date.today();end=end or start+timedelta(days=90);return {"events":events(db,start,end,account_id,account_type)}
 @router.get("/search")
 def search(q:str,db:Session=Depends(dbdep),start:date|None=None,end:date|None=None,account_id:str|None=None,account_type:str|None=None):
     if len(q)<2:raise HTTPException(400,"Query too short")

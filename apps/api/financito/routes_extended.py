@@ -24,7 +24,7 @@ from .services.rag import index_document_chunks,search
 from .services.repair import repair,scan
 from .services.tax import estimate,get_profile,profile_dict,upsert_profile
 from .services.wealth import summary as wealth_summary
-from .services.financial_analytics import cash_flow
+from .services.financial_analytics import cash_flow,essential_monthly_average
 from .services.snapshots import record_snapshot
 from .services.decision_context import live_decision_context,mortgage_row
 from .services.decision_support import decision_overview
@@ -907,14 +907,41 @@ def contracts(db:Session=Depends(dbdep)):
 @router.post("/contracts")
 def add_contract(p:ContractCreate,db:Session=Depends(dbdep)):r=Contract(**p.model_dump());db.add(r);db.flush();refresh_contract_actions(db);db.commit();return {"id":r.id}
 
+def _account_liquidity(account:Account)->Decimal:
+    return account.available_balance if account.available_balance is not None else account.current_balance
+
+
+def _goal_target(db:Session,r:FinancialGoal)->Decimal:
+    if r.goal_type=="emergency_fund" and r.emergency_months_target:
+        essential=essential_monthly_average(db)
+        if essential>0:
+            return (essential*Decimal(r.emergency_months_target)).quantize(Decimal("0.01"))
+    return r.target_amount
+
+
+def _validate_goal_allocation(
+    db:Session,account_id:str|None,amount:Decimal,exclude_goal_id:str|None=None
+)->None:
+    if account_id is None:
+        if amount>0: raise HTTPException(400,"Para reservar dinero debes vincular el objetivo a una cuenta.")
+        return
+    account=db.get(Account,account_id)
+    if not account: raise HTTPException(404,"Account not found")
+    stmt=select(FinancialGoal).where(FinancialGoal.account_id==account_id,FinancialGoal.status=="active")
+    if exclude_goal_id:
+        stmt=stmt.where(FinancialGoal.id!=exclude_goal_id)
+    reserved=sum((g.allocated_amount or Decimal("0") for g in db.scalars(stmt).all()),Decimal("0"))
+    available=_account_liquidity(account)
+    if reserved+amount>available+Decimal("0.0001"):
+        free=max(Decimal("0"),available-reserved).quantize(Decimal("0.01"))
+        raise HTTPException(409,f"No puedes reservar {amount} €. En esta cuenta quedan {free} € sin asignar.")
+
+
 def _goal_row(db:Session,r:FinancialGoal)->dict:
     account=db.get(Account,r.account_id) if r.account_id else None
-    current=(
-        account.available_balance if account is not None and account.available_balance is not None
-        else account.current_balance if account is not None
-        else r.current_amount
-    )
-    remaining=max(Decimal("0"),r.target_amount-current)
+    current=(r.allocated_amount or Decimal("0")) if account is not None else r.current_amount
+    target=_goal_target(db,r)
+    remaining=max(Decimal("0"),target-current)
     months_left=None;monthly_required=None
     if r.target_date:
         today=date.today()
@@ -924,17 +951,33 @@ def _goal_row(db:Session,r:FinancialGoal)->dict:
     projected_months=None
     if remaining==0:projected_months=0
     elif planned>0:projected_months=int((remaining/planned).to_integral_value(rounding=ROUND_CEILING))
-    status="completed" if current>=r.target_amount else "active"
+    status="completed" if target>0 and current>=target else "active"
+    account_reserved=Decimal("0");available_to_allocate=None
+    if account is not None:
+        account_reserved=sum((g.allocated_amount or Decimal("0") for g in db.scalars(select(FinancialGoal).where(
+            FinancialGoal.account_id==account.id,FinancialGoal.status=="active"
+        )).all()),Decimal("0"))
+        available_to_allocate=max(Decimal("0"),_account_liquidity(account)-account_reserved+(r.allocated_amount or Decimal("0")))
+    emergency_essential=essential_monthly_average(db) if r.goal_type=="emergency_fund" else Decimal("0")
     return {
-        "id":r.id,"type":r.goal_type,"name":r.name,"target_amount":str(r.target_amount),
-        "current_amount":str(current),"current_amount_source":"account_liquidity" if account is not None else "manual_legacy",
+        "id":r.id,"type":r.goal_type,"name":r.name,"target_amount":str(target),
+        "stored_target_amount":str(r.target_amount),"current_amount":str(current),
+        "allocated_amount":str(r.allocated_amount or Decimal("0")),
+        "current_amount_source":"allocated_reserve" if account is not None else "manual_legacy",
         "account_id":r.account_id,"account_name":None if account is None else account.name,
         "account_institution":None if account is None else account.institution_name,
+        "account_balance":None if account is None else str(_account_liquidity(account)),
+        "account_reserved_total":None if account is None else str(account_reserved.quantize(Decimal("0.01"))),
+        "available_to_allocate":None if available_to_allocate is None else str(available_to_allocate.quantize(Decimal("0.01"))),
         "target_date":r.target_date,"priority":r.priority,"status":status,
         "planned_monthly_contribution":str(planned),"remaining_amount":str(remaining),
         "months_left":months_left,"monthly_required":None if monthly_required is None else str(monthly_required),
         "projected_months":projected_months,
+        "emergency_months_target":r.emergency_months_target,
+        "essential_monthly":str(emergency_essential) if r.goal_type=="emergency_fund" else None,
+        "coverage_months":None if r.goal_type!="emergency_fund" or emergency_essential<=0 else str((current/emergency_essential).quantize(Decimal("0.1"))),
     }
+
 
 @router.get("/goals")
 def goals(db:Session=Depends(dbdep),account_id:str|None=None,account_type:str|None=None):
@@ -944,30 +987,50 @@ def goals(db:Session=Depends(dbdep),account_id:str|None=None,account_type:str|No
         stmt=stmt.where(FinancialGoal.account_id.in_(scope))
     return [_goal_row(db,r) for r in db.scalars(stmt).all()]
 
+
 @router.post("/goals")
 def add_goal(p:GoalCreate,db:Session=Depends(dbdep)):
     try:account=validate_account(db,p.account_id)
     except LookupError as exc:raise HTTPException(404,str(exc))
     payload=p.model_dump()
+    if p.goal_type=="emergency_fund":
+        months=p.emergency_months_target or 6
+        payload["emergency_months_target"]=months
+        essential=essential_monthly_average(db)
+        if essential>0:payload["target_amount"]=(essential*Decimal(months)).quantize(Decimal("0.01"))
+    allocation=Decimal(payload.get("allocated_amount") or 0)
+    _validate_goal_allocation(db,p.account_id,allocation)
     if account is not None:
-        payload["current_amount"]=account.available_balance if account.available_balance is not None else account.current_balance
+        payload["current_amount"]=Decimal("0")
     r=FinancialGoal(**payload);db.add(r);db.commit();return _goal_row(db,r)
+
 
 @router.patch("/goals/{goal_id}")
 def progress(goal_id:str,p:GoalProgressUpdate,db:Session=Depends(dbdep)):
     r=db.get(FinancialGoal,goal_id)
     if not r:raise HTTPException(404,"Goal not found")
+    new_account_id=r.account_id
     if "account_id" in p.model_fields_set:
         try:validate_account(db,p.account_id)
         except LookupError as exc:raise HTTPException(404,str(exc))
-        r.account_id=p.account_id
-    if p.current_amount is not None and r.account_id is None:
-        r.current_amount=p.current_amount
-    if p.planned_monthly_contribution is not None:
-        r.planned_monthly_contribution=p.planned_monthly_contribution
-    row=_goal_row(db,r)
-    r.status=row["status"]
-    db.commit();return _goal_row(db,r)
+        new_account_id=p.account_id
+    new_allocation=p.allocated_amount if p.allocated_amount is not None else (r.allocated_amount or Decimal("0"))
+    if new_account_id is None:new_allocation=Decimal("0")
+    _validate_goal_allocation(db,new_account_id,new_allocation,exclude_goal_id=r.id)
+    r.account_id=new_account_id
+    r.allocated_amount=new_allocation
+    if p.current_amount is not None and r.account_id is None:r.current_amount=p.current_amount
+    if p.planned_monthly_contribution is not None:r.planned_monthly_contribution=p.planned_monthly_contribution
+    if p.emergency_months_target is not None:r.emergency_months_target=p.emergency_months_target
+    row=_goal_row(db,r);r.status=row["status"];db.commit();return _goal_row(db,r)
+
+
+@router.delete("/goals/{goal_id}")
+def delete_goal(goal_id:str,db:Session=Depends(dbdep)):
+    r=db.get(FinancialGoal,goal_id)
+    if not r:raise HTTPException(404,"Goal not found")
+    db.delete(r);db.commit();return {"deleted":True}
+
 
 @router.get("/portfolios")
 def portfolios(db:Session=Depends(dbdep),account_id:str|None=None,account_type:str|None=None):

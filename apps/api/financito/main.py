@@ -19,10 +19,11 @@ from .migrations import migrate,MIGRATION_VERSION
 from .domain.analytics import detect_recurring
 from .domain.engines import MortgageEngine, MortgagePrepaymentEngine, MortgageRatePathEngine, OptimizationEngine
 from .services.financial_analytics import cash_flow,category_spending
+from .services.financial_health import financial_health_summary
 from .models import Account, ActionItem, AuditEvent, Budget, CategorizationAudit, Category, Commitment, Contract, Document, ExtractedFact, Mortgage, Transaction
 from .models_analytics import BankingAccountLink,EntityLink,EntitySnapshot,LinkedProduct
 from .models_extended import CoverageFact,DocumentChunk,InsurancePolicy
-from .schemas import AccountCreate, AccountOut, AccountUpdate, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentClassificationUpdate, DocumentEntityLinkUpdate, DocumentIndexRequest, DocumentMortgageLinkUpdate, FactUpdate, ForecastRequest, ManualFactCreate, MortgageScenarioRequest, MortgagePrepaymentRequest, MortgageRatePathRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
+from .schemas import AccountCreate, AccountOut, AccountUpdate, ActionUpdate, BudgetCreate, BudgetUpdate, CommitmentCreate, DocumentClassificationUpdate, DocumentEntityLinkUpdate, DocumentIndexRequest, DocumentMortgageLinkUpdate, FactUpdate, ForecastRequest, ManualFactCreate, MortgageScenarioRequest, MortgagePrepaymentRequest, MortgageRatePathRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
 from .security import LocalSecurityMiddleware, create_session
 from .routes_extended import router as extended_router
 from .routes_analytics import router as analytics_router
@@ -228,7 +229,7 @@ def dashboard(start:date|None=None,end:date|None=None,db:Session=Depends(get_db)
         account_stmt=account_stmt.where(Account.account_type==account_type)
     balances=sum((a.current_balance for a in db.scalars(account_stmt).all()),Decimal("0"))
     upcoming=[
-        event for event in calendar_events(db,today,today+timedelta(days=45))
+        event for event in calendar_events(db,today,today+timedelta(days=45),account_id,account_type)
         if event["type"] in {"commitment","recurring","renewal"}
     ]
     # A manual commitment is stronger evidence than a detected recurring series.
@@ -243,6 +244,7 @@ def dashboard(start:date|None=None,end:date|None=None,db:Session=Depends(get_db)
         seen.add(key);deduped.append(event)
     actions=db.scalars(select(ActionItem).where(ActionItem.status.in_(["pending","in_progress"])).order_by(ActionItem.due_date.asc().nullslast()).limit(10)).all()
     category_rows=category_spending(db,start,end,account_id,account_type)
+    health=financial_health_summary(db,as_of=today,start=start,end=end,account_id=account_id,account_type=account_type)
     return {
         "period":{"start":start,"end":end},
         "liquidity":str(balances),"income":str(flow_data["income"]),"expenses":str(flow_data["expenses"]),
@@ -253,19 +255,77 @@ def dashboard(start:date|None=None,end:date|None=None,db:Session=Depends(get_db)
             "type":event["type"],"confidence":event.get("confidence"),"basis":event.get("basis"),
         } for event in deduped],
         "actions":[{"id":a.id,"title":a.title,"action_type":a.action_type,"priority":a.priority,"due_date":a.due_date,"status":a.status,"notes":a.notes,"related_entity_type":a.related_entity_type,"related_entity_id":a.related_entity_id} for a in actions],
+        "financial_health":health,
+    }
+
+
+def _budget_payload(db:Session,row:Budget,as_of:date|None=None)->dict:
+    as_of=as_of or date.today()
+    start=date(as_of.year,1,1) if row.period_type=="annual" else as_of.replace(day=1)
+    actual=next((x["amount"] for x in category_spending(db,start,as_of,row.account_id,None) if x["category_id"]==row.category_id),Decimal("0"))
+    category=db.get(Category,row.category_id)
+    account=db.get(Account,row.account_id) if row.account_id else None
+    utilization=Decimal("0") if row.amount<=0 else actual/row.amount
+    return {
+        "id":row.id,"category_id":row.category_id,"category":category.name if category else "Categoría",
+        "system_key":category.system_key if category else "other",
+        "account_id":row.account_id,"account_name":None if account is None else account.name,
+        "account_institution":None if account is None else account.institution_name,
+        "scope":"account" if row.account_id else "household",
+        "amount":str(row.amount),"actual":str(actual.quantize(Decimal("0.01"))),
+        "remaining":str((row.amount-actual).quantize(Decimal("0.01"))),
+        "utilization":str(utilization.quantize(Decimal("0.0001"))),
+        "period_type":row.period_type,"currency":row.currency,"alert_threshold":str(row.alert_threshold),
+        "updated_at":row.updated_at.isoformat() if row.updated_at else None,
     }
 
 
 @app.post("/api/v1/budgets")
 def create_budget(payload:BudgetCreate,db:Session=Depends(get_db)):
     if not db.get(Category,payload.category_id): raise HTTPException(404,"Category not found")
-    row=Budget(**payload.model_dump()); db.add(row); db.commit(); db.refresh(row); return {"id":row.id}
+    if payload.account_id and not db.get(Account,payload.account_id): raise HTTPException(404,"Account not found")
+    existing=db.scalar(select(Budget).where(
+        Budget.category_id==payload.category_id,
+        Budget.account_id.is_(None) if payload.account_id is None else Budget.account_id==payload.account_id,
+        Budget.period_type==payload.period_type,
+    ))
+    if existing: raise HTTPException(409,"Ya existe un presupuesto para esa categoría y ámbito.")
+    row=Budget(**payload.model_dump());db.add(row);db.commit();db.refresh(row)
+    return _budget_payload(db,row)
 
 
 @app.get("/api/v1/budgets")
-def list_budgets(db:Session=Depends(get_db)):
-    rows=db.scalars(select(Budget)).all()
-    return [{"id":r.id,"category_id":r.category_id,"amount":str(r.amount),"period_type":r.period_type,"currency":r.currency} for r in rows]
+def list_budgets(
+    db:Session=Depends(get_db),account_id:str|None=None,account_type:str|None=None,
+    management:bool=False,as_of:date|None=None,
+):
+    stmt=select(Budget).order_by(Budget.created_at)
+    if not management:
+        if account_id:
+            stmt=stmt.where(Budget.account_id==account_id)
+        elif account_type:
+            stmt=stmt.where(Budget.account_id.in_(select(Account.id).where(Account.account_type==account_type)))
+        else:
+            stmt=stmt.where(Budget.account_id.is_(None))
+    return [_budget_payload(db,row,as_of) for row in db.scalars(stmt).all()]
+
+
+@app.patch("/api/v1/budgets/{budget_id}")
+def update_budget(budget_id:str,payload:BudgetUpdate,db:Session=Depends(get_db)):
+    row=db.get(Budget,budget_id)
+    if not row: raise HTTPException(404,"Budget not found")
+    data=payload.model_dump(exclude_unset=True)
+    if "category_id" in data and not db.get(Category,data["category_id"]): raise HTTPException(404,"Category not found")
+    if "account_id" in data and data["account_id"] and not db.get(Account,data["account_id"]): raise HTTPException(404,"Account not found")
+    for key,value in data.items():setattr(row,key,value)
+    db.commit();db.refresh(row);return _budget_payload(db,row)
+
+
+@app.delete("/api/v1/budgets/{budget_id}")
+def delete_budget(budget_id:str,db:Session=Depends(get_db)):
+    row=db.get(Budget,budget_id)
+    if not row: raise HTTPException(404,"Budget not found")
+    db.delete(row);db.commit();return {"deleted":True}
 
 
 @app.post("/api/v1/commitments")
@@ -273,7 +333,19 @@ def create_commitment(payload:CommitmentCreate,db:Session=Depends(get_db)):
     if payload.account_id and not db.get(Account,payload.account_id):
         raise HTTPException(404,"Account not found")
     row=Commitment(**payload.model_dump(),source_type="manual"); db.add(row); db.commit(); db.refresh(row)
-    return {"id":row.id,"account_id":row.account_id,"title":row.title,"amount":str(row.amount),"due_date":row.due_date}
+    return {"id":row.id,"account_id":row.account_id,"title":row.title,"amount":str(row.amount),"due_date":row.due_date,"status":row.status}
+
+
+@app.delete("/api/v1/commitments/{commitment_id}")
+def delete_commitment(commitment_id:str,db:Session=Depends(get_db)):
+    row=db.get(Commitment,commitment_id)
+    if not row: raise HTTPException(404,"Commitment not found")
+    db.delete(row);db.commit();return {"deleted":True}
+
+
+@app.get("/api/v1/financial-health")
+def financial_health(start:date|None=None,end:date|None=None,db:Session=Depends(get_db),account_id:str|None=None,account_type:str|None=None):
+    return financial_health_summary(db,start=start,end=end,account_id=account_id,account_type=account_type)
 
 
 @app.get("/api/v1/commitments")

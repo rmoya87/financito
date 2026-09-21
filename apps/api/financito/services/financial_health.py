@@ -259,7 +259,7 @@ def financial_health_summary(
     days=max(1,(horizon_date-as_of).days)
     baseline_essential=(essential_monthly*Decimal(days)/Decimal("30")).quantize(CENT)
     known=Decimal("0")
-    for event in calendar_events(session,as_of,horizon_date):
+    for event in calendar_events(session,as_of,horizon_date,account_id,account_type):
         if event.get("type") not in {"commitment","recurring","historical_pattern"} or event.get("amount") is None:
             continue
         try:known+=Decimal(str(event["amount"]))
