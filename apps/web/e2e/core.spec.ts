@@ -298,9 +298,10 @@ test('Patrimonio permite eliminar directamente un seguro de hogar',async({page})
 
   await page.goto('/wealth/');
   const homeInsurance=page.getByRole('heading',{name:'Seguros relacionados con la vivienda'}).locator('..').locator('..').locator('..');
-  await expect(homeInsurance.getByText('Seguro Borrar Patrimonio E2E',{exact:true})).toBeVisible();
+  const targetInsurance=homeInsurance.locator('div.rounded-lg').filter({hasText:'Seguro Borrar Patrimonio E2E'});
+  await expect(targetInsurance.getByText('Seguro Borrar Patrimonio E2E',{exact:true})).toBeVisible();
   page.once('dialog',dialog=>dialog.accept());
-  await homeInsurance.getByRole('button',{name:'Eliminar seguro'}).click();
+  await targetInsurance.getByRole('button',{name:'Eliminar seguro'}).click();
   await expect(homeInsurance.getByText('Seguro Borrar Patrimonio E2E',{exact:true})).not.toBeVisible();
 
   await page.goto('/insurance/');
