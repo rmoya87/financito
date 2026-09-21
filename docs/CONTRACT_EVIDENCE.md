@@ -470,3 +470,5 @@ La UX distingue tres estados:
 - **no encontrado**: no existe todavía evidencia suficiente y se solicita documentación o revisión adicional.
 
 En hipotecas, los hechos confirmados de TAE, índice, diferencial, periodicidad/próxima revisión y porcentajes de comisión completan los huecos de `MortgageProfileExtra` sin sobrescribir silenciosamente valores manuales existentes. En seguros, prima, franquicia, renovación, preaviso y coste de salida siguen el mismo principio. Los contratos e inversiones conservan sus propuestas estructuradas para reutilización en sus áreas correspondientes.
+
+Los análisis de IA incluyen una versión de esquema. Al arrancar la aplicación, si el modelo local está disponible, los documentos con análisis ausente o de una versión anterior se reanalizan en segundo plano; esta actualización puede generar nuevas propuestas, pero nunca las confirma automáticamente.
