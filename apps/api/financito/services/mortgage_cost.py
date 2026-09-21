@@ -63,8 +63,7 @@ def current_remaining_apr_estimate(session:Session,mortgage:Mortgage,annual_rate
             "rate":None,
             "status":"not_available",
             "nominal_rate":str(applied_rate),
-            "nominal_rate":str(applied_rate),
-        "monthly_payment":str(scenario.monthly_payment),
+            "monthly_payment":str(scenario.monthly_payment),
             "known_linked_annual_cost":str(annual_linked_cost.quantize(Decimal("0.01"))),
             "known_linked_monthly_cost":str(monthly_linked),
             "basis":"No se ha podido resolver la tasa efectiva de los flujos restantes.",
@@ -73,6 +72,7 @@ def current_remaining_apr_estimate(session:Session,mortgage:Mortgage,annual_rate
     return {
         "rate":str(annual.quantize(Decimal("0.000001"))),
         "status":"estimated",
+        "nominal_rate":str(applied_rate),
         "monthly_payment":str(scenario.monthly_payment),
         "known_linked_annual_cost":str(annual_linked_cost.quantize(Decimal("0.01"))),
         "known_linked_monthly_cost":str(monthly_linked),
