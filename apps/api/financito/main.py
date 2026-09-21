@@ -10,7 +10,7 @@ from threading import Event,Thread
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import and_, delete, func, select
+from sqlalchemy import and_, delete, func, or_, select, text
 from sqlalchemy.orm import Session
 
 from .config import settings
@@ -20,8 +20,8 @@ from .domain.analytics import detect_recurring
 from .domain.engines import MortgageEngine, MortgagePrepaymentEngine, MortgageRatePathEngine, OptimizationEngine
 from .services.financial_analytics import cash_flow,category_spending
 from .models import Account, ActionItem, AuditEvent, Budget, CategorizationAudit, Category, Commitment, Contract, Document, ExtractedFact, Mortgage, Transaction
-from .models_analytics import BankingAccountLink,EntityLink,EntitySnapshot
-from .models_extended import InsurancePolicy
+from .models_analytics import BankingAccountLink,EntityLink,EntitySnapshot,LinkedProduct
+from .models_extended import CoverageFact,DocumentChunk,InsurancePolicy
 from .schemas import AccountCreate, AccountOut, AccountUpdate, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentClassificationUpdate, DocumentEntityLinkUpdate, DocumentIndexRequest, DocumentMortgageLinkUpdate, FactUpdate, ForecastRequest, ManualFactCreate, MortgageScenarioRequest, MortgagePrepaymentRequest, MortgageRatePathRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
 from .security import LocalSecurityMiddleware, create_session
 from .routes_extended import router as extended_router
@@ -633,6 +633,65 @@ def update_document_classification(document_id:str,payload:DocumentClassificatio
         "chunks_created":indexed.chunks_created,
         "ai_analysis_scheduled":True,
     }
+
+
+@app.delete("/api/v1/documents/{document_id}")
+def delete_document(document_id:str,db:Session=Depends(get_db)):
+    row=db.get(Document,document_id)
+    if not row: raise HTTPException(404,"Document not found")
+    file_name=row.file_name
+    file_path=Path(row.file_path)
+
+    chunks=db.scalars(select(DocumentChunk).where(DocumentChunk.document_id==document_id)).all()
+    vector_dims=set()
+    for chunk in chunks:
+        if not chunk.embedding_json:
+            continue
+        try:
+            dim=len(json.loads(chunk.embedding_json))
+            if dim>0:vector_dims.add(dim)
+        except Exception:
+            pass
+    db.execute(text("DELETE FROM document_chunk_fts WHERE document_id=:d"),{"d":document_id})
+    for dim in vector_dims:
+        try:
+            db.execute(text(f"DELETE FROM document_chunk_vec_{dim} WHERE chunk_id IN (SELECT id FROM document_chunk WHERE document_id=:d)"),{"d":document_id})
+        except Exception:
+            pass
+
+    db.execute(delete(CoverageFact).where(CoverageFact.source_document_id==document_id))
+    db.execute(delete(ActionItem).where(or_(
+        (ActionItem.related_entity_type=="document")&(ActionItem.related_entity_id==document_id),
+        ActionItem.source_ref==document_id,
+    )))
+    db.execute(delete(EntityLink).where(or_(
+        (EntityLink.from_type=="document")&(EntityLink.from_id==document_id),
+        EntityLink.source_ref==document_id,
+    )))
+    db.execute(delete(LinkedProduct).where(
+        LinkedProduct.conditions==f"Vinculado por evidencia confirmada del documento {file_name}"
+    ))
+    db.add(AuditEvent(
+        event_type="document_deleted",
+        entity_type="document",
+        entity_id=document_id,
+        metadata_json=json.dumps({"file_name":file_name}),
+    ))
+    db.delete(row)
+    db.commit()
+
+    file_deleted=False
+    try:
+        safe=safe_path(file_path)
+        if safe.is_file():
+            safe.unlink()
+            file_deleted=True
+    except FileNotFoundError:
+        pass
+    except ValueError:
+        # No se elimina nada fuera del Vault aunque una fila antigua apunte allí.
+        pass
+    return {"id":document_id,"deleted":True,"file_deleted":file_deleted}
 
 
 @app.post("/api/v1/documents/{document_id}/reprocess")

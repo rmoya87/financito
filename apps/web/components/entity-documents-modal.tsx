@@ -76,6 +76,10 @@ export function EntityDocumentsModal({
     mutationFn:()=>apiMutate('/api/v1/evidence-groups/'+entityType+'/'+entityId+'/analyze','POST'),
     onSuccess:()=>{invalidate();if(selected)qc.invalidateQueries({queryKey:['entity-document-analysis',selected]})},
   });
+  const deleteDocument=useMutation({
+    mutationFn:(id:string)=>apiMutate('/api/v1/documents/'+id,'DELETE'),
+    onSuccess:()=>{setSelected(null);invalidate();qc.invalidateQueries({queryKey:['wealth-details']});qc.invalidateQueries({queryKey:['insurance']});qc.invalidateQueries({queryKey:['mortgages']})},
+  });
   if(!open)return null;
   const selectedDoc=docs.data?.find(x=>x.id===selected);
   const ai=analysis.data?.analysis;
@@ -91,7 +95,7 @@ export function EntityDocumentsModal({
           <button className="fin-button" type="button" onClick={()=>inputRef.current?.click()} disabled={upload.isPending}>{upload.isPending?'Añadiendo…':'Añadir documentos'}</button>
           <button className="fin-button secondary" type="button" onClick={()=>analyzeAll.mutate()} disabled={analyzeAll.isPending||!docs.data?.length}>{analyzeAll.isPending?'Analizando…':'Actualizar resúmenes con IA local'}</button>
         </div>
-        {(upload.error||analyzeAll.error)&&<div className="mt-3"><ErrorState error={(upload.error||analyzeAll.error)!}/></div>}
+        {(upload.error||analyzeAll.error||deleteDocument.error)&&<div className="mt-3"><ErrorState error={(upload.error||analyzeAll.error||deleteDocument.error)!}/></div>}
         <div className="mt-5 grid gap-4 lg:grid-cols-[320px_1fr]">
           <div className="space-y-2">
             {docs.isLoading?<Loading/>:docs.error?<ErrorState error={docs.error}/>:docs.data?.length?docs.data.map(doc=><button key={doc.id} type="button" onClick={()=>setSelected(doc.id)} className={'w-full rounded-xl p-3 text-left '+(selected===doc.id?'bg-[var(--brand-soft)]':'bg-[var(--surface-2)]')}>
@@ -103,7 +107,10 @@ export function EntityDocumentsModal({
             {!selectedDoc?<EmptyState>Selecciona un documento para consultarlo.</EmptyState>:<>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div><h3 className="font-semibold">{selectedDoc.file_name}</h3><div className="mt-1 text-xs text-[var(--muted)]">{selectedDoc.document_type} · {selectedDoc.page_count} pág.</div></div>
-                <a className="fin-button secondary py-1.5 text-xs" target="_blank" rel="noreferrer" href={'/api/v1/documents/'+selectedDoc.id+'/file'}>Visualizar documento</a>
+                <div className="flex flex-wrap gap-2">
+                  <a className="fin-button secondary py-1.5 text-xs" target="_blank" rel="noreferrer" href={'/api/v1/documents/'+selectedDoc.id+'/file'}>Visualizar documento</a>
+                  <button className="fin-button secondary py-1.5 text-xs" type="button" disabled={deleteDocument.isPending} onClick={()=>{if(window.confirm('¿Eliminar '+selectedDoc.file_name+'? Se borrará el archivo del Vault y su evidencia extraída.'))deleteDocument.mutate(selectedDoc.id)}}>{deleteDocument.isPending?'Eliminando…':'Eliminar documento'}</button>
+                </div>
               </div>
               <div className="mt-4">
                 {analysis.isLoading?<Loading/>:analysis.error?<ErrorState error={analysis.error}/>:analysis.data?.status!=='ready'||!ai?<div className="rounded-xl bg-[var(--surface-2)] p-4 text-sm">Todavía no hay un resumen de IA local para este documento. Usa “Actualizar resúmenes con IA local”.</div>:<>

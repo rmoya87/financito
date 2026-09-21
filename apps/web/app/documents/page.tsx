@@ -140,6 +140,10 @@ export default function DocumentsPage(){
     mutationFn:(id:string)=>apiMutate('/api/v1/documents/'+id+'/reprocess','POST'),
     onSuccess:invalidateEvidence,
   });
+  const deleteDocument=useMutation({
+    mutationFn:(id:string)=>apiMutate('/api/v1/documents/'+id,'DELETE'),
+    onSuccess:()=>{setSelected(null);invalidateEvidence()},
+  });
   const reclassify=useMutation({
     mutationFn:({id,documentType}:{id:string;documentType:string})=>apiMutate('/api/v1/documents/'+id+'/classification','PATCH',{document_type:documentType}),
     onSuccess:invalidateEvidence,
@@ -362,13 +366,24 @@ export default function DocumentsPage(){
             </button>):
             <EmptyState>No hay documentos indexados.</EmptyState>}
         </div>
-        {selected&&<button
-          className="fin-button secondary mt-3"
-          onClick={()=>reprocess.mutate(selected)}
-          disabled={reprocess.isPending}
-        >
-          {reprocess.isPending?'Reprocesando…':'Reprocesar hechos e índice'}
-        </button>}
+        {selected&&<div className="mt-3 flex flex-wrap gap-2">
+          <button
+            className="fin-button secondary"
+            onClick={()=>reprocess.mutate(selected)}
+            disabled={reprocess.isPending||deleteDocument.isPending}
+          >
+            {reprocess.isPending?'Reprocesando…':'Reprocesar hechos e índice'}
+          </button>
+          <button
+            className="fin-button secondary"
+            type="button"
+            disabled={deleteDocument.isPending}
+            onClick={()=>{if(selectedDoc&&window.confirm('¿Eliminar '+selectedDoc.file_name+'? Se borrará el archivo del Vault, sus datos extraídos y su índice. La ficha de hipoteca o seguro asociada no se elimina.'))deleteDocument.mutate(selected)}}
+          >
+            {deleteDocument.isPending?'Eliminando…':'Eliminar documento'}
+          </button>
+        </div>}
+        {deleteDocument.error&&<div className="mt-3"><ErrorState error={deleteDocument.error}/></div>}
       </Card>
 
       <Card>

@@ -109,6 +109,30 @@ def test_manual_document_classification_survives_reprocess():
         assert rerun.json()["document_type"]=="mortgage"
 
 
+def test_document_can_be_deleted_from_library_and_vault():
+    suffix=uuid4().hex[:8]
+    path=settings.vault_dir/f"documento-borrable-{suffix}.txt"
+    path.write_text("Contrato de prueba. Coste anual 120 euros.",encoding="utf-8")
+    with SessionLocal() as db:
+        indexed=index_document(db,str(path),"unknown")
+        db.commit()
+        document_id=indexed.document.id
+        assert path.exists()
+
+    with TestClient(app) as client:
+        session=client.get("/api/v1/session")
+        headers={"X-CSRF-Token":session.json()["csrf_token"]}
+        deleted=client.delete(f"/api/v1/documents/{document_id}",headers=headers)
+        assert deleted.status_code==200
+        assert deleted.json()["deleted"] is True
+        assert deleted.json()["file_deleted"] is True
+
+    with SessionLocal() as db:
+        assert db.get(Document,document_id) is None
+        assert db.scalar(select(ExtractedFact.id).where(ExtractedFact.document_id==document_id)) is None
+    assert not path.exists()
+
+
 def test_mortgage_fein_extracts_structured_terms():
     text=(
         "FEIN préstamo hipotecario a tipo variable. Índice Euríbor a 12 meses más diferencial del 0,75 %. "

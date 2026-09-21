@@ -399,6 +399,7 @@ export default function InsurancePage(){
             <div className="mt-5 flex flex-wrap gap-2">
               <button className="fin-button" type="button" onClick={()=>editPolicy(selectedPolicy)}>Editar seguro</button>
               <button className="fin-button secondary" type="button" onClick={()=>analyzePolicyDocs.mutate(selectedPolicy.id)} disabled={analyzePolicyDocs.isPending}>Buscar datos con IA</button>
+              <button className="fin-button secondary" type="button" disabled={deletePolicy.isPending} onClick={()=>{if(window.confirm('¿Eliminar este seguro? La ficha, coberturas y vínculos se borrarán. Los archivos permanecerán en Documentación sin recrear automáticamente la póliza.'))deletePolicy.mutate(selectedPolicy.id)}}>{deletePolicy.isPending?'Eliminando…':'Eliminar seguro'}</button>
             </div>
           </Card>
         </div>

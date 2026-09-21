@@ -94,6 +94,56 @@ def sync_review_action(session: Session, document: Document) -> dict:
     return summary
 
 
+def suppress_insurance_evidence(session:Session,document:Document)->int:
+    """Keep the raw file but prevent a deleted insurance policy from reappearing.
+
+    Pure insurance documents become unclassified and their material evidence is
+    superseded. In mixed documents (for example a mortgage with a bundled life
+    policy), only the insurance domain rows are superseded.
+    """
+    rows=_facts(session,document.id)
+    targeted:list[ExtractedFact]=[]
+    if document.document_type=="insurance":
+        targeted=list(rows)
+        document.document_type="unknown"
+        session.execute(delete(ExtractedFact).where(
+            ExtractedFact.document_id==document.id,
+            ExtractedFact.fact_type=="ai_insight",
+        ))
+    else:
+        marker_pages={
+            row.source_page for row in rows
+            if (
+                row.fact_type=="coverage_fact"
+                or row.key in INSURANCE_MARKER_KEYS
+                or (row.fact_type=="linked_product" and "insurance" in row.key.lower())
+            )
+            and row.source_page is not None
+        }
+        has_insurance=any(
+            row.fact_type=="coverage_fact"
+            or row.key in INSURANCE_MARKER_KEYS
+            or (row.fact_type=="linked_product" and "insurance" in row.key.lower())
+            for row in rows
+        )
+        if has_insurance:
+            for row in rows:
+                if row.key in INSURANCE_MARKER_KEYS or row.fact_type=="coverage_fact":
+                    targeted.append(row)
+                elif row.key in INSURANCE_VALUE_KEYS and (
+                    row.source_page in marker_pages
+                    or (row.source_page is None and row.fact_type=="linked_product")
+                ):
+                    targeted.append(row)
+    for fact in targeted:
+        fact.status="superseded"
+        fact.user_verified=True
+    session.execute(delete(CoverageFact).where(CoverageFact.source_document_id==document.id))
+    sync_review_action(session,document)
+    session.flush()
+    return len(targeted)
+
+
 def _payload(fact: ExtractedFact) -> dict:
     try:
         value = json.loads(fact.value_json)
@@ -119,6 +169,7 @@ def _identity_values(session: Session, document_id: str) -> dict[str, str]:
         .where(
             ExtractedFact.document_id == document_id,
             ExtractedFact.key.in_(IDENTITY_KEYS),
+            ExtractedFact.status.notin_(["superseded","not_found"]),
         )
         .order_by(ExtractedFact.user_verified.desc(), ExtractedFact.confidence.desc())
     ).all()

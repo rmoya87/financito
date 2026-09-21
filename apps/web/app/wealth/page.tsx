@@ -213,6 +213,10 @@ export default function WealthPage(){
     mutationFn:(id:string)=>apiMutate('/api/v1/mortgages/'+id,'DELETE'),
     onSuccess:()=>{setSelectedMortgageId('');setCreatingMortgage(false);clearMortgageForms();refresh()},
   });
+  const deleteInsurance=useMutation({
+    mutationFn:(id:string)=>apiMutate('/api/v1/insurance/'+id,'DELETE'),
+    onSuccess:()=>{refresh();qc.invalidateQueries({queryKey:['insurance']});qc.invalidateQueries({queryKey:['insurance-verdict']});qc.invalidateQueries({queryKey:['switching-readiness']})},
+  });
 
   const d=details.data;
   const properties=useMemo(()=>d?sumAssets(d.assets,['property','home','house','real_estate']):0,[d]);
@@ -326,7 +330,15 @@ export default function WealthPage(){
           <div className="mt-4 grid gap-4 xl:grid-cols-2">
             <div className="rounded-xl border border-[var(--border)] p-4">
               <div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold">Seguros relacionados con la vivienda</h3><p className="mt-1 text-xs text-[var(--muted)]">Hogar y vida aparecen aquí porque pueden afectar al coste efectivo de la hipoteca o a sus bonificaciones.</p></div><Link className="text-xs underline" href="/insurance/">Seguros</Link></div>
-              <div className="mt-3 space-y-2">{home.data.insurance.length?home.data.insurance.map(x=><Link href={'/insurance/?policy='+encodeURIComponent(x.id)} key={x.id} className="flex justify-between gap-3 rounded-lg bg-[var(--surface-2)] p-3 text-sm hover:ring-1 hover:ring-[var(--brand)]"><div><div className="flex flex-wrap items-center gap-2"><strong>{x.insurance_type}</strong>{x.linked_to_mortgage&&<span className="rounded-full bg-[var(--brand-soft)] px-2 py-0.5 text-[10px] font-semibold">Vinculado a esta hipoteca</span>}</div><div className="text-xs text-[var(--muted)]">{x.provider||'Proveedor pendiente'}{x.renewal_date?' · renueva '+new Date(x.renewal_date).toLocaleDateString('es-ES'):''}</div><div className="mt-1 text-[11px] underline">Ver ficha completa</div></div><strong><Money value={x.annual_premium}/>/año</strong></Link>):<EmptyState>No hay seguros de hogar o seguros vinculados a esta hipoteca estructurados todavía.</EmptyState>}</div>
+              <div className="mt-3 space-y-2">{home.data.insurance.length?home.data.insurance.map(x=><div key={x.id} className="flex items-center justify-between gap-3 rounded-lg bg-[var(--surface-2)] p-3 text-sm">
+                <Link href={'/insurance/?policy='+encodeURIComponent(x.id)} className="min-w-0 flex-1 hover:underline">
+                  <div className="flex flex-wrap items-center gap-2"><strong>{x.insurance_type}</strong>{x.linked_to_mortgage&&<span className="rounded-full bg-[var(--brand-soft)] px-2 py-0.5 text-[10px] font-semibold">Vinculado a esta hipoteca</span>}</div>
+                  <div className="text-xs text-[var(--muted)]">{x.provider||'Proveedor pendiente'}{x.renewal_date?' · renueva '+new Date(x.renewal_date).toLocaleDateString('es-ES'):''}</div>
+                  <div className="mt-1 text-[11px] underline">Ver ficha completa</div>
+                </Link>
+                <div className="shrink-0 text-right"><strong><Money value={x.annual_premium}/>/año</strong><div><button className="mt-1 text-xs underline" type="button" disabled={deleteInsurance.isPending} onClick={()=>{if(window.confirm('¿Eliminar este seguro? La ficha, coberturas y vínculos con la hipoteca se borrarán. Sus archivos permanecerán en Documentación como evidencia anulada/sin clasificar.'))deleteInsurance.mutate(x.id)}}>{deleteInsurance.isPending?'Eliminando…':'Eliminar seguro'}</button></div></div>
+              </div>):<EmptyState>No hay seguros de hogar o seguros vinculados a esta hipoteca estructurados todavía.</EmptyState>}</div>
+              {deleteInsurance.error&&<div className="mt-3"><ErrorState error={deleteInsurance.error}/></div>}
               {home.data.source_documents.length>0&&<div className="mt-3 text-xs text-[var(--muted)]"><strong>Documentación hipotecaria vinculada:</strong> {home.data.source_documents.map(x=>x.name).join(' · ')}</div>}
             </div>
 

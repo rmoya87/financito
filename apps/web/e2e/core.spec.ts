@@ -288,6 +288,26 @@ test('Para ti abre Seguros y coberturas en modal sin salir de Inicio',async({pag
   await expect(insuranceDialog).not.toBeVisible();
 });
 
+test('Patrimonio permite eliminar directamente un seguro de hogar',async({page})=>{
+  await page.goto('/insurance/');
+  await page.getByRole('button',{name:'Nuevo seguro'}).click();
+  await page.getByPlaceholder('Aseguradora').fill('Seguro Borrar Patrimonio E2E');
+  await page.getByPlaceholder('Prima anual (€)').fill('240');
+  await page.getByRole('button',{name:'Crear seguro'}).click();
+  await expect(page.getByText('Seguro Borrar Patrimonio E2E',{exact:true})).toBeVisible();
+
+  await page.goto('/wealth/');
+  const homeInsurance=page.getByRole('heading',{name:'Seguros relacionados con la vivienda'}).locator('..').locator('..');
+  await expect(homeInsurance.getByText('Seguro Borrar Patrimonio E2E',{exact:true})).toBeVisible();
+  page.once('dialog',dialog=>dialog.accept());
+  await homeInsurance.getByRole('button',{name:'Eliminar seguro'}).click();
+  await expect(homeInsurance.getByText('Seguro Borrar Patrimonio E2E',{exact:true})).not.toBeVisible();
+
+  await page.goto('/insurance/');
+  await expect(page.getByText('Seguro Borrar Patrimonio E2E',{exact:true})).not.toBeVisible();
+});
+
+
 test('Mercado muestra análisis local arriba y agrupa evolución dentro de Mis activos',async({page})=>{
   await page.goto('/markets/');
   await expect(page.getByRole('heading',{name:'Lectura de tus activos ahora'})).toBeVisible();
@@ -317,6 +337,10 @@ test('Documentos permite subir y procesar un archivo desde la aplicación',async
   const annualFact=page.getByText('annual_cost',{exact:true}).locator('..').locator('..').locator('..');
   await annualFact.getByRole('button',{name:'Confirmar'}).click();
   await expect(page.getByText('annual_cost',{exact:true})).not.toBeVisible();
+
+  page.once('dialog',dialog=>dialog.accept());
+  await page.getByRole('button',{name:'Eliminar documento'}).click();
+  await expect(page.getByText('e2e-upload-policy.txt',{exact:true})).not.toBeVisible();
 });
 
 test('Vault indexa evidencia y conserva cita navegable',async({page})=>{

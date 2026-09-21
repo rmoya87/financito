@@ -4,10 +4,11 @@ from decimal import Decimal
 from sqlalchemy import delete,select
 
 from financito.db import SessionLocal
-from financito.models import Contract,Mortgage
-from financito.models_analytics import EntitySnapshot,LinkedProduct
+from financito.models import Contract,Document,ExtractedFact,Mortgage
+from financito.models_analytics import EntityLink,EntitySnapshot,LinkedProduct
 from financito.models_extended import Asset,CoverageFact,InsurancePolicy,Liability
-from financito.routes_extended import delete_liability,link_mortgage_insurance,unlink_mortgage_insurance,wealth_details,wealth_home
+from financito.routes_extended import delete_insurance,delete_liability,link_mortgage_insurance,unlink_mortgage_insurance,wealth_details,wealth_home
+from financito.services.evidence import synchronize_all_document_evidence
 from financito.services.insurance_analysis import insurance_verdict
 from financito.services.snapshots import record_snapshot
 
@@ -131,3 +132,67 @@ def test_life_insurance_can_be_explicitly_linked_to_mortgage_and_appears_in_casa
         home=wealth_home(mortgage_id,db)
         assert all(item["id"]!=policy_id for item in home["insurance"])
         db.delete(policy);db.delete(contract);db.delete(mortgage);db.commit()
+
+
+
+def test_deleted_insurance_does_not_reappear_from_retained_document():
+    with SessionLocal() as db:
+        contract=Contract(
+            provider_name="Seguro borrable test",contract_type="insurance",
+            annual_cost=Decimal("360"),currency="EUR",evidence_status="confirmed",
+        )
+        db.add(contract);db.flush()
+        policy=InsurancePolicy(
+            contract_id=contract.id,insurance_type="home",annual_premium=Decimal("360"),
+            currency="EUR",insured_object_json="{}",
+        )
+        db.add(policy);db.flush()
+        document=Document(
+            file_path="/tmp/financito-tests/vault/seguro-borrable-test.txt",
+            file_name="seguro-borrable-test.txt",mime_type="text/plain",
+            sha256="delete-insurance-test-"+policy.id,document_type="insurance",
+            status="indexed",page_count=1,extracted_text="Póliza hogar 360 euros",
+        )
+        db.add(document);db.flush()
+        db.add_all([
+            ExtractedFact(
+                document_id=document.id,fact_type="contract_term",key="annual_cost",
+                value_json='{"value":"360","unit":"EUR/year"}',confidence=Decimal("1"),
+                status="confirmed",source_page=1,source_section="test",user_verified=True,
+            ),
+            ExtractedFact(
+                document_id=document.id,fact_type="contract_term",key="insurance_type",
+                value_json='{"value":"home"}',confidence=Decimal("1"),
+                status="confirmed",source_page=1,source_section="test",user_verified=True,
+            ),
+            EntityLink(
+                from_type="document",from_id=document.id,relation_type="evidence_for",
+                to_type="insurance_policy",to_id=policy.id,confidence=Decimal("1"),
+                source_type="document_projection",source_ref=document.id,
+            ),
+            EntityLink(
+                from_type="document",from_id=document.id,relation_type="evidence_for",
+                to_type="contract",to_id=contract.id,confidence=Decimal("1"),
+                source_type="document_projection",source_ref=document.id,
+            ),
+        ])
+        db.commit()
+        policy_id=policy.id;document_id=document.id
+
+        result=delete_insurance(policy_id,db)
+        assert result["deleted"] is True
+        assert result["documents_retained"]==1
+        retained=db.get(Document,document_id)
+        assert retained is not None
+        assert retained.document_type=="unknown"
+        facts=db.scalars(select(ExtractedFact).where(ExtractedFact.document_id==document_id)).all()
+        assert facts
+        assert all(f.status=="superseded" for f in facts)
+
+        synchronize_all_document_evidence(db)
+        db.flush()
+        assert db.get(InsurancePolicy,policy_id) is None
+        assert db.scalar(select(InsurancePolicy.id).where(InsurancePolicy.insurance_type=="home",InsurancePolicy.annual_premium==Decimal("360"))) is None
+
+        db.delete(retained)
+        db.commit()

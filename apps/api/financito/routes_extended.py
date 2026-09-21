@@ -6,7 +6,7 @@ from fastapi import APIRouter,Depends,File,HTTPException,UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .db import SessionLocal
-from .models import Account,Contract,ExtractedFact,FinancialGoal,Mortgage,Portfolio,Security
+from .models import Account,Contract,Document,ExtractedFact,FinancialGoal,Mortgage,Portfolio,Security
 from .models_extended import Asset,BackupRecord,CoverageFact,InsurancePolicy,Liability,MortgageProfileExtra,RepairIssue,Trade,TrackedAsset
 from .models_analytics import EntityLink,EntitySnapshot,LinkedProduct
 from .schemas_extended import AssetCreate,AssetSimulationStart,BackupCreate,BackupRestore,ChatRequest,ContractCreate,CoverageCompareRequest,CoverageCreate,CorporateActionCreate,GoalCreate,GoalProgressUpdate,InsuranceCreate,InsuranceUpdate,LiabilityCreate,MortgageExtraUpdate,MortgageProfileCreate,MortgageProfileUpdate,PortfolioCreate,RagSearchRequest,SecurityCreate,StoredMortgagePrepaymentRequest,StoredMortgageRatePathRequest,StoredMortgageScenarioRequest,StressRequest,TaxEstimateRequest,TaxProfileUpdate,TrackedAssetCreate,TradeCreate
@@ -28,6 +28,7 @@ from .services.financial_analytics import cash_flow
 from .services.snapshots import record_snapshot
 from .services.decision_context import live_decision_context,mortgage_row
 from .services.contractual_costs import mortgage_contract_context,resolve_prepayment_penalty,switching_readiness
+from .services.evidence import suppress_insurance_evidence
 from .services.market_research import scan_public_market
 from .services.mortgage_cost import current_remaining_apr_estimate,due_rate_review_estimate,rate_review_readiness
 from .services.investment_tracking import remove_tracking,save_tracked_asset,simulation_history,start_simulation,tracked_assets
@@ -928,22 +929,31 @@ def delete_insurance(policy_id:str,db:Session=Depends(dbdep)):
     row=db.get(InsurancePolicy,policy_id)
     if not row:raise HTTPException(404,"Insurance policy not found")
     contract_id=row.contract_id
-    for link in db.scalars(select(EntityLink).where(
+    policy_links=db.scalars(select(EntityLink).where(
         EntityLink.from_type=="document",
         EntityLink.relation_type=="evidence_for",
         EntityLink.to_type=="insurance_policy",
         EntityLink.to_id==policy_id,
-    )).all():
+    )).all()
+    contract_links=[] if not contract_id else db.scalars(select(EntityLink).where(
+        EntityLink.from_type=="document",
+        EntityLink.relation_type=="evidence_for",
+        EntityLink.to_type=="contract",
+        EntityLink.to_id==contract_id,
+    )).all()
+    document_ids={link.from_id for link in [*policy_links,*contract_links]}
+    suppressed=0
+    for document_id in document_ids:
+        document=db.get(Document,document_id)
+        if document is not None:
+            suppressed+=suppress_insurance_evidence(db,document)
+
+    for link in [*policy_links,*contract_links]:
         db.delete(link)
-    if contract_id:
-        for link in db.scalars(select(EntityLink).where(
-            EntityLink.from_type=="document",
-            EntityLink.relation_type=="evidence_for",
-            EntityLink.to_type=="contract",
-            EntityLink.to_id==contract_id,
-        )).all():
-            db.delete(link)
-    for coverage in db.scalars(select(CoverageFact).where(CoverageFact.insurance_policy_id==policy_id)).all():
+    for coverage in db.scalars(select(CoverageFact).where(
+        (CoverageFact.insurance_policy_id==policy_id)
+        | ((CoverageFact.contract_id==contract_id) if contract_id else False)
+    )).all():
         db.delete(coverage)
     for linked in db.scalars(select(LinkedProduct).where(
         LinkedProduct.linked_product_type=="insurance_policy",
@@ -957,7 +967,12 @@ def delete_insurance(policy_id:str,db:Session=Depends(dbdep)):
         if contract is not None and other is None and contract.contract_type=="insurance":
             db.delete(contract)
     db.commit()
-    return {"id":policy_id,"deleted":True}
+    return {
+        "id":policy_id,
+        "deleted":True,
+        "documents_retained":len(document_ids),
+        "evidence_superseded":suppressed,
+    }
 @router.post("/coverage")
 def add_coverage(p:CoverageCreate,db:Session=Depends(dbdep)):r=CoverageFact(**p.model_dump(),conditions_json="{}",exclusions_json="{}");db.add(r);db.commit();return {"id":r.id}
 @router.post("/coverage/compare")

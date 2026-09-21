@@ -965,3 +965,10 @@ La clasificación automática de un documento es una propuesta inicial. Desde **
 Las pólizas de hogar, vida u otros tipos pueden vincularse o desvincularse explícitamente de una hipoteca desde **Seguros y coberturas**. La relación se guarda como `mortgage -> insurance_policy` y se reutiliza en Casa, comparaciones de mercado y preparación de cambios. Marcar una póliza como vinculada no crea por sí mismo una bonificación ni una penalización: cualquier incremento del tipo por perderla debe proceder de evidencia contractual confirmada.
 
 En **Casa > Capital pendiente**, cuando consta el capital inicial, se muestra el porcentaje de capital pendiente y amortizado. La barra usa verde para el capital pendiente y gris para el ya amortizado; los porcentajes se calculan en backend con `Decimal`.
+
+
+## Borrado de documentación y seguros
+
+- **Documentación** permite eliminar un archivo desde la biblioteca general y desde el modal de documentación de una hipoteca o seguro. El borrado elimina el archivo físico del Vault cuando está dentro del Vault gestionado, sus hechos extraídos, chunks RAG, referencias vectoriales/FTS, acciones de revisión, coberturas originadas exclusivamente en ese documento y vínculos de evidencia. La ficha de hipoteca o seguro asociada no se borra por eliminar únicamente el documento.
+- **Seguros** pueden eliminarse desde Seguros y coberturas y directamente desde **Patrimonio > Casa > Seguros relacionados con la vivienda**. Al borrar una póliza se eliminan sus coberturas, vínculos con hipotecas y contrato asegurador huérfano.
+- Los archivos que pertenecían al seguro se conservan al borrar solo la póliza. Si eran documentos de seguro puros pasan a `unknown` y su evidencia material queda `superseded`, evitando que la sincronización automática recree inmediatamente la póliza. Un reprocesado explícito del documento puede volver a extraerla si el usuario lo desea.
