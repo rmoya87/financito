@@ -9,6 +9,7 @@ import {useFinancialFilters} from '@/components/financial-filters';
 import {Card} from '@/components/ui/card';
 import {Money} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
+import {DetailGroup,MetricTile,ModalHero,SectionIntro} from '@/components/finance-ui';
 
 type AIResult={
   considered:number;reevaluated:number;learned_merchant:number;embedding:number;llm:number;
@@ -157,6 +158,9 @@ export default function TransactionsPage(){
   const currentPage=txs.data?.page||page;
   const rangeStart=total===0?0:(currentPage-1)*pageSize+1;
   const rangeEnd=Math.min(total,currentPage*pageSize);
+  const visibleIn=rows.reduce((sum,row)=>sum+(Number(row.amount)>0?Number(row.amount):0),0);
+  const visibleOut=rows.reduce((sum,row)=>sum+(Number(row.amount)<0?Math.abs(Number(row.amount)):0),0);
+  const visibleUnclassified=rows.filter(row=>!row.category_id).length;
 
   useEffect(()=>{
     setPage(1);
@@ -190,6 +194,14 @@ export default function TransactionsPage(){
       action={<button type="button" className="fin-button" onClick={()=>setShowImport(true)}>Importar extracto</button>}
     />
 
+    <SectionIntro eyebrow="Lectura rápida" title="Qué hay en estos movimientos" description="La parte superior resume el filtro actual; debajo puedes buscar, recategorizar o automatizar sin perder contexto."/>
+    <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <MetricTile label="Movimientos" value={total} detail={total?`Mostrando ${rangeStart}–${rangeEnd}`:'Sin resultados'} status="Filtro actual" statusTone="calculated"/>
+      <MetricTile label="Entradas visibles" value={<Money value={visibleIn}/>} detail="Suma de la página actual"/>
+      <MetricTile label="Salidas visibles" value={<Money value={visibleOut}/>} detail="Suma de la página actual" emphasis/>
+      <MetricTile label="Sin categoría" value={visibleUnclassified} detail="Movimientos visibles pendientes de clasificación" status={visibleUnclassified?'Revisar':'Todo clasificado'} statusTone={visibleUnclassified?'pending':'confirmed'}/>
+    </div>
+
     <div className="mb-3 flex flex-wrap gap-2">
       <button type="button" className="fin-button secondary" onClick={()=>openRuleFor()}>Nueva regla</button>
       <button type="button" className="fin-button secondary" onClick={()=>setRulesOpen(true)}>Ver reglas ({(rules.data?.length??0)+(paymentRules.data?.length??0)})</button>
@@ -207,10 +219,11 @@ export default function TransactionsPage(){
     {insuranceLink.error&&<div className="mb-3"><ErrorState error={insuranceLink.error}/></div>}
     {mortgageLink.error&&<div className="mb-3"><ErrorState error={mortgageLink.error}/></div>}
 
+    <SectionIntro eyebrow="Detalle" title="Todos los movimientos" description="Filtra por texto o categoría; las acciones de cada fila están agrupadas en Opciones para mantener la tabla limpia."/>
     <Card className="overflow-visible">
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="font-bold">Todos los movimientos</h2>
+          <div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Resultados</div>
           <p className="mt-1 text-sm text-[var(--muted)]">{total?`Mostrando ${rangeStart}–${rangeEnd} de ${total}`:'Sin movimientos para estos filtros'}.</p>
         </div>
         <div className="grid w-full gap-2 lg:w-auto lg:grid-cols-[minmax(240px,1fr)_190px_110px]">
@@ -296,10 +309,14 @@ export default function TransactionsPage(){
 
     {showImport&&<div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Importar extracto">
       <Card className="w-full max-w-2xl">
-        <div className="flex items-start justify-between gap-3">
-          <div><h2 className="text-lg font-bold">Importar extracto</h2><p className="mt-1 text-sm text-[var(--muted)]">Añade un archivo bancario a la cuenta correcta. La detección de transferencias propias, reembolsos y reglas se aplica automáticamente.</p></div>
-          <button type="button" className="text-sm underline" onClick={()=>setShowImport(false)}>Cerrar</button>
-        </div>
+        <ModalHero
+          eyebrow="Movimientos"
+          title="Importar extracto"
+          description="Añade un archivo bancario a la cuenta correcta. Financito detectará duplicados, transferencias propias, reembolsos y reglas."
+          status="Procesamiento automático"
+          statusTone="calculated"
+          actions={<button type="button" className="fin-button secondary py-2 text-xs" onClick={()=>setShowImport(false)}>Cerrar</button>}
+        />
         <form onSubmit={submit} className="mt-5 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
           <select className="fin-input" aria-label="Cuenta destino" value={accountId} onChange={e=>setAccountId(e.target.value)} required>
             <option value="">Cuenta destino…</option>
@@ -318,13 +335,18 @@ export default function TransactionsPage(){
 
     {rulesOpen&&<div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Reglas automáticas">
       <div className="max-h-[88vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-bold">Reglas automáticas</h2>
-            <p className="mt-1 text-sm text-[var(--muted)]">Aquí puedes revisar tanto las reglas de categorización como las vinculaciones automáticas de pagos. Al asociar un concepto a un seguro o hipoteca, Financito aprende ese concepto para los movimientos futuros.</p>
-          </div>
-          <button className="text-sm underline" onClick={()=>setRulesOpen(false)}>Cerrar</button>
-        </div>
+        <ModalHero
+          eyebrow="Automatización"
+          title="Reglas automáticas"
+          description="Revisa categorización y vinculaciones de pagos. Lo que confirmas aquí se reutiliza en movimientos futuros."
+          status={(rules.data?.length??0)+(paymentRules.data?.length??0)+' reglas'}
+          statusTone="confirmed"
+          actions={<button className="fin-button secondary py-2 text-xs" onClick={()=>setRulesOpen(false)}>Cerrar</button>}
+          metrics={[
+            {label:'Categorización',value:rules.data?.length??0,detail:'reglas activas o pausadas'},
+            {label:'Pagos vinculados',value:paymentRules.data?.length??0,detail:'seguros e hipotecas'},
+          ]}
+        />
 
         <form className="mt-5 grid gap-2 md:grid-cols-2" onSubmit={(e:FormEvent)=>{e.preventDefault();addRule.mutate()}}>
           <select className="fin-input" aria-label="Tipo de regla" value={rule.matcher_type} onChange={e=>setRule({...rule,matcher_type:e.target.value})}>
@@ -344,8 +366,7 @@ export default function TransactionsPage(){
         {addRule.data&&<div className="mt-2 text-xs text-[var(--muted)]">Regla guardada. {addRule.data.reclassified} movimiento(s) histórico(s) sin confirmar actualizados.</div>}
         {addRule.error&&<div className="mt-3"><ErrorState error={addRule.error}/></div>}
 
-        <div className="mt-6 border-t border-[var(--border)] pt-4">
-          <h3 className="font-semibold">Reglas de categorización</h3>
+        <DetailGroup title="Reglas de categorización" description="Cambian la categoría y pueden aplicarse también al histórico." className="mt-6">
           <div className="mt-3 space-y-2">{rules.data?.length?rules.data.map(r=>{
             const category=categoryById.get(r.category_id);
             return <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[var(--surface-2)] p-3 text-sm">
@@ -353,11 +374,9 @@ export default function TransactionsPage(){
               <div className="flex gap-3"><button className="text-xs underline" onClick={()=>toggleRule.mutate(r)}>{r.enabled?'Pausar':'Activar'}</button><button className="text-xs underline" onClick={()=>delRule.mutate(r.id)}>Eliminar</button></div>
             </div>
           }):<EmptyState>No hay reglas automáticas.</EmptyState>}</div>
-        </div>
+        </DetailGroup>
 
-        <div className="mt-6 border-t border-[var(--border)] pt-4">
-          <h3 className="font-semibold">Vinculaciones automáticas de pagos</h3>
-          <p className="mt-1 text-xs text-[var(--muted)]">Se crean al vincular un movimiento a un seguro o una hipoteca. Pausar una regla detiene las vinculaciones futuras sin borrar las ya realizadas.</p>
+        <DetailGroup title="Vinculaciones automáticas de pagos" description="Se crean al vincular un movimiento a un seguro o una hipoteca. Pausar una regla detiene las vinculaciones futuras sin borrar las ya realizadas." className="mt-4">
           <div className="mt-3 space-y-2">{paymentRules.data?.length?paymentRules.data.map(r=>{
             const policy=insurance.data?.find(p=>p.id===r.target_id);
             const mortgage=mortgages.data?.find(m=>m.id===r.target_id);
@@ -370,13 +389,19 @@ export default function TransactionsPage(){
             </div>;
           }):<EmptyState>No hay vinculaciones automáticas de pagos.</EmptyState>}</div>
           {(delPaymentRule.error||togglePaymentRule.error)&&<div className="mt-3"><ErrorState error={(delPaymentRule.error||togglePaymentRule.error)!}/></div>}
-        </div>
+        </DetailGroup>
       </div>
     </div>}
 
     {splitTx&&<div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Dividir movimiento">
       <Card className="w-full max-w-2xl">
-        <div className="flex justify-between gap-3"><div><h2 className="font-bold">Dividir movimiento</h2><div className="text-sm text-[var(--muted)]">{splitTx.description_raw} · total {Math.abs(Number(splitTx.amount)).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})} €</div></div><button className="text-sm underline" onClick={()=>setSplitTx(null)}>Cerrar</button></div>
+        <ModalHero
+          eyebrow="Movimiento"
+          title="Dividir movimiento"
+          description={splitTx.description_raw}
+          metrics={[{label:'Total',value:<Money value={Math.abs(Number(splitTx.amount))}/>}]}
+          actions={<button className="fin-button secondary py-2 text-xs" onClick={()=>setSplitTx(null)}>Cerrar</button>}
+        />
         <div className="mt-3 space-y-2">{splits.map((s,i)=><div key={i} className="grid gap-2 md:grid-cols-3">
           <input className="fin-input" aria-label={'Importe de división '+(i+1)} type="number" step=".01" placeholder="Importe" value={s.amount} onChange={e=>setSplits(splits.map((x,j)=>j===i?{...x,amount:e.target.value}:x))}/>
           <select className="fin-input" aria-label={'Categoría de división '+(i+1)} value={s.category_id} onChange={e=>setSplits(splits.map((x,j)=>j===i?{...x,category_id:e.target.value}:x))}><option value="">Categoría…</option>{cats.data?.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
