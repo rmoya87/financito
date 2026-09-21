@@ -30,7 +30,9 @@ type HomeData={
   property:null|{id:string;name:string;value:string;currency:string;valuation_date:string;valuation_source:string;ownership_percentage:string};
   mortgage:Mortgage|null;extra:MortgageExtra;document_facts:Record<string,{value:string;document_id?:string;page?:number}>;
   source_documents:{id:string;name:string}[];insurance:{id:string;insurance_type:string;annual_premium:string;provider:string|null;renewal_date:string|null}[];
-  equity:string|null;ltv:string|null;missing:{key:string;label:string;reason:string}[];
+  equity:string|null;ltv:string|null;
+  pending_review:{key:string;label:string;reason:string;value:any;unit:string|null;document_id:string|null;page:number|null;source:string|null;status:string}[];
+  missing:{key:string;label:string;reason:string}[];
 };
 type MarketLead={
   source_id:string;provider:string;kind:string;status:string;public_tin_min:number|null;benchmark_difference_pp:number|null;
@@ -256,8 +258,15 @@ export default function WealthPage(){
             </div>
           </div>
 
-          {home.data.missing.length>0&&<div className="mt-4 rounded-xl bg-[var(--brand-soft)] p-4">
-            <h3 className="font-semibold">Datos que faltan para afinar cálculos</h3>
+          {home.data.pending_review?.length>0&&<div className="mt-4 rounded-xl border border-[var(--brand)] bg-[var(--brand-soft)] p-4">
+            <h3 className="font-semibold">Datos ya encontrados pendientes de validar</h3>
+            <p className="mt-1 text-xs text-[var(--muted)]">No están ausentes: el extractor o la IA local los ha localizado. Confírmalos en el documento para que se proyecten automáticamente a la hipoteca y entren en cálculos.</p>
+            <div className="mt-2 grid gap-2 md:grid-cols-2">{home.data.pending_review.map(x=><div key={x.key} className="rounded-lg bg-white p-3 text-xs"><strong>{x.label}</strong><div className="mt-1">{String(x.value??'Dato localizado')}{x.unit?' '+x.unit:''}</div><div className="mt-1 text-[var(--muted)]">{x.reason}</div>{x.document_id&&<Link className="mt-2 inline-block underline" href={'/documents/?document='+encodeURIComponent(x.document_id)}>Revisar evidencia{x.page?' · pág. '+x.page:''}</Link>}</div>)}</div>
+          </div>}
+
+          {home.data.missing.length>0&&<div className="mt-4 rounded-xl bg-[var(--surface-2)] p-4">
+            <h3 className="font-semibold">Datos que todavía no se han encontrado</h3>
+            <p className="mt-1 text-xs text-[var(--muted)]">La IA local los busca al analizar la documentación. Solo aparecen aquí cuando no existe todavía evidencia suficiente ni un valor pendiente de revisar.</p>
             <div className="mt-2 grid gap-2 md:grid-cols-2">{home.data.missing.map(x=><div key={x.key} className="rounded-lg bg-white p-3 text-xs"><strong>{x.label}</strong><div className="mt-1 text-[var(--muted)]">{x.reason}</div></div>)}</div>
           </div>}
 

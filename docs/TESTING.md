@@ -109,3 +109,11 @@ Las regresiones cubren:
 - reagrupación de documentos procesados antes de que otro archivo identifique/materialice el producto.
 
 Los conflictos entre documentos nunca se confirman automáticamente: permanecen pendientes para decisión explícita del usuario.
+
+
+## Regresiones de completado documental local
+
+Las pruebas cubren:
+- proyección de hechos hipotecarios confirmados al perfil ampliado, incluido `differential_rate`;
+- conservación de hechos inferidos por IA como pendientes de revisión, separados de la evidencia confirmada;
+- presentación en Seguros de franquicia, renovación, preaviso y penalización localizados por IA como pendientes, sin tratarlos como ausentes ni utilizarlos todavía en cálculos.

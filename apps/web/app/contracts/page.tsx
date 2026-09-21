@@ -7,7 +7,7 @@ import {Card} from '@/components/ui/card';
 import {Money} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
 
-type Contract={id:string;provider_name:string;contract_type:string;renewal_date:string|null;cancellation_notice_days:number|null;early_exit_penalty:string|null;annual_cost:string|null;evidence_status:string;source_document_id:string|null;source_document_ids?:string[];document_count?:number};
+type Contract={id:string;provider_name:string;contract_type:string;renewal_date:string|null;cancellation_notice_days:number|null;early_exit_penalty:string|null;annual_cost:string|null;evidence_status:string;source_document_id:string|null;source_document_ids?:string[];document_count?:number;pending_review?:{key:string;value:any;unit?:string|null;document_id:string;page?:number|null;status:string;source?:string|null}[]};
 type InsightItem={title:string;detail:string;pages:number[];impact?:string};
 type DocInsight={document_id:string;file_name:string;document_type:string;analysis:{summary:string;confidence:string;penalties:InsightItem[];risks:InsightItem[];optimization_opportunities:InsightItem[];negotiation_points:InsightItem[];comparison_requirements:InsightItem[];cross_area_impacts:InsightItem[];missing_information?:InsightItem[]}};
 
@@ -39,6 +39,10 @@ export default function ContractsPage(){
             <div className="rounded-lg bg-white p-3"><span className="text-[var(--muted)]">Preaviso</span><div className="mt-1 font-medium">{c.cancellation_notice_days===null?'Sin dato confirmado':c.cancellation_notice_days+' días'}</div></div>
             <div className="rounded-lg bg-white p-3"><span className="text-[var(--muted)]">Penalización de salida</span><div className="mt-1 font-medium"><Money value={c.early_exit_penalty}/></div></div>
           </div>
+          {(c.pending_review?.length??0)>0&&<div className="mt-3 rounded-lg bg-[var(--brand-soft)] p-3 text-xs">
+            <strong>Datos ya localizados pendientes de validar</strong>
+            <div className="mt-2 space-y-1">{c.pending_review!.slice(0,6).map(x=><div key={x.key+x.document_id}>{x.key.replaceAll('_',' ')}: <strong>{String(x.value??'dato localizado')}{x.unit?' '+x.unit:''}</strong> · <Link className="underline" href={'/documents/?document='+encodeURIComponent(x.document_id)}>revisar{x.page?' pág. '+x.page:''}</Link></div>)}</div>
+          </div>}
           <div className="mt-3 flex flex-wrap gap-2">
             {c.source_document_id?<Link className="fin-button secondary py-2 text-xs" href={'/documents/?document='+encodeURIComponent(c.source_document_id)}>Ver o completar evidencia</Link>:<Link className="fin-button secondary py-2 text-xs" href="/documents/">Vincular a documentación</Link>}
             {!c.source_document_id&&<span className="self-center text-xs text-[var(--muted)]">Registro anterior sin documento canónico asociado.</span>}

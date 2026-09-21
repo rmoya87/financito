@@ -18,6 +18,7 @@ type Policy={
   coverages:{id:string;coverage_type:string;limit_amount:string|null;deductible:string|null;confidence:string;user_verified:boolean;source_page:number|null}[];
 };
 type Missing={field:string;label:string;policy_id:string|null;document_id:string|null;why:string};
+type PendingEvidence=Missing&{value:any;unit?:string|null;page?:number|null;source?:string|null;status?:string};
 type Issue={code:string;severity:string;title:string;detail:string};
 type Verdict={
   status:'insufficient_data'|'review_required'|'partial'|'consistent';summary:string;source_of_truth:string;
@@ -25,7 +26,7 @@ type Verdict={
   coverage:{verified:number;requirements:number;gaps:{requirement_id:string;coverage_type:string;insurance_type:string|null;reason:string;minimum_limit:string|null;best_verified_limit?:string}[];covered:any[];overlaps:{id:string;coverage_type:string;left_id:string;right_id:string;overlap_type:string;confidence:string}[]};
   finances:{income_last_365_days:string;expenses_last_365_days:string;savings_last_365_days:string;documented_annual_premiums:string;premium_share_of_income:string|null;spend_reconciliation:{period_start:string;period_end:string;data_coverage_days:number;observed_insurance_spend:string;documented_annual_premiums:string;difference:string|null;comparison_reliable:boolean;by_merchant:{merchant:string;amount:string}[]}};
   linked_products:{document_id:string;document_name:string|null;key:string;value:any;page:number|null}[];
-  missing_information:Missing[];issues:Issue[];
+  pending_review:PendingEvidence[];missing_information:Missing[];issues:Issue[];
   ai:null|{plain_summary?:string;priorities?:string[];questions?:string[];model?:string;error?:string};
 };
 type InsightItem={title:string;detail:string;pages:number[];impact?:string};
@@ -129,8 +130,13 @@ export default function InsurancePage(){
         {data.finances.spend_reconciliation.by_merchant.length>0&&<div className="mt-4 grid gap-2 md:grid-cols-2">{data.finances.spend_reconciliation.by_merchant.slice(0,8).map(x=><div key={x.merchant} className="flex justify-between rounded-xl bg-[var(--surface-2)] p-3 text-sm"><span>{x.merchant}</span><strong><Money value={x.amount}/></strong></div>)}</div>}
       </Card>
 
+      {data.pending_review?.length>0&&<Card className="mt-4">
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Datos encontrados pendientes de validar</h2><p className="mt-1 text-sm text-[var(--muted)]">La IA local o el extractor ya han localizado estos datos. No hace falta volver a introducirlos: revisa la página indicada y confírmalos para que alimenten Seguros, contratos y decisiones.</p></div><Link className="text-xs underline" href="/documents/">Abrir Documentos</Link></div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">{data.pending_review.map((m,i)=><div key={(m.document_id||m.policy_id||'x')+m.field+i} className="rounded-xl bg-[var(--brand-soft)] p-3 text-sm"><strong>{m.label}</strong><div className="mt-1 text-xs">{String(m.value??'Dato localizado')}{m.unit?' '+m.unit:''}</div><div className="mt-1 text-xs text-[var(--muted)]">{m.why}</div>{m.document_id&&<Link className="mt-2 inline-block text-xs underline" href={'/documents/?document='+encodeURIComponent(m.document_id)}>Revisar evidencia{m.page?' · pág. '+m.page:''}</Link>}</div>)}</div>
+      </Card>}
+
       <Card className="mt-4">
-        <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Información que falta</h2><p className="mt-1 text-sm text-[var(--muted)]">Completa estos campos en el documento correspondiente. Así el mismo dato alimenta Seguros, Para ti, Decisiones, hipoteca y cualquier simulación relacionada.</p></div><Link className="text-xs underline" href="/documents/">Abrir Documentos</Link></div>
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Información que falta</h2><p className="mt-1 text-sm text-[var(--muted)]">Aquí solo aparecen datos que todavía no se han encontrado con evidencia suficiente. La IA local los busca en cada análisis; si los localiza, pasan al bloque de revisión de arriba en vez de seguir figurando como ausentes.</p></div><Link className="text-xs underline" href="/documents/">Abrir Documentos</Link></div>
         <div className="mt-4 grid gap-3 md:grid-cols-2">{data.missing_information.length?data.missing_information.map((m,i)=><div key={(m.document_id||m.policy_id||'x')+m.field+i} className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><strong>{m.label}</strong><div className="mt-1 text-xs text-[var(--muted)]">{m.why}</div>{m.document_id&&<Link className="mt-2 inline-block text-xs underline" href={'/documents/?document='+encodeURIComponent(m.document_id)}>Completar en el documento</Link>}</div>):<EmptyState>No faltan campos documentales básicos para las pólizas proyectadas.</EmptyState>}</div>
       </Card>
     </>}

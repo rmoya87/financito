@@ -76,6 +76,39 @@ def _confirmed_facts(session: Session, document_ids: list[str], keys: set[str] |
     return out
 
 
+def _pending_facts(session: Session, document_ids: list[str], keys: set[str] | None = None) -> list[dict]:
+    if not document_ids:
+        return []
+    stmt = select(ExtractedFact).where(
+        ExtractedFact.document_id.in_(document_ids),
+        ExtractedFact.user_verified.is_(False),
+        ExtractedFact.status.in_(["inferred", "ambiguous", "conflicting"]),
+    )
+    if keys:
+        stmt = stmt.where(ExtractedFact.key.in_(keys))
+    rows = session.scalars(stmt.order_by(ExtractedFact.updated_at.desc())).all()
+    out = []
+    seen = set()
+    for row in rows:
+        if row.key in seen:
+            continue
+        seen.add(row.key)
+        payload = _payload(row)
+        out.append(
+            {
+                "key": row.key,
+                "value": payload.get("value"),
+                "unit": payload.get("unit"),
+                "document_id": row.document_id,
+                "page": row.source_page,
+                "confidence": str(row.confidence),
+                "status": row.status,
+                "source": payload.get("source") or "deterministic_extractor",
+            }
+        )
+    return out
+
+
 def _as_decimal(value) -> Decimal | None:
     if value is None:
         return None
@@ -101,6 +134,8 @@ def mortgage_contract_context(session: Session, mortgage_id: str | None = None) 
     doc_ids = [d.id for d in docs]
     facts = _confirmed_facts(session, doc_ids, MORTGAGE_KEYS)
     by_key = {x["key"]: x for x in facts}
+    pending_facts = _pending_facts(session, doc_ids, MORTGAGE_KEYS)
+    pending_by_key = {x["key"]: x for x in pending_facts}
     linked = [x for x in facts if x["key"].startswith("linked_")]
 
     return {
@@ -115,6 +150,8 @@ def mortgage_contract_context(session: Session, mortgage_id: str | None = None) 
         },
         "facts": facts,
         "by_key": by_key,
+        "pending_facts": pending_facts,
+        "pending_by_key": pending_by_key,
         "linked_product_signals": linked,
         "source_documents": [{"id": d.id, "name": d.file_name} for d in docs],
     }

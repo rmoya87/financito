@@ -6,7 +6,7 @@ from fastapi import APIRouter,Depends,File,HTTPException,UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .db import SessionLocal
-from .models import Account,Contract,FinancialGoal,Mortgage,Portfolio,Security
+from .models import Account,Contract,ExtractedFact,FinancialGoal,Mortgage,Portfolio,Security
 from .models_extended import Asset,BackupRecord,CoverageFact,InsurancePolicy,Liability,MortgageProfileExtra,RepairIssue,Trade,TrackedAsset
 from .models_analytics import EntityLink
 from .schemas_extended import AssetCreate,AssetSimulationStart,BackupCreate,BackupRestore,ChatRequest,ContractCreate,CoverageCompareRequest,CoverageCreate,CorporateActionCreate,GoalCreate,GoalProgressUpdate,InsuranceCreate,LiabilityCreate,MortgageExtraUpdate,MortgageProfileCreate,MortgageProfileUpdate,PortfolioCreate,RagSearchRequest,SecurityCreate,StoredMortgagePrepaymentRequest,StoredMortgageRatePathRequest,StoredMortgageScenarioRequest,StressRequest,TaxEstimateRequest,TaxProfileUpdate,TrackedAssetCreate,TradeCreate
@@ -187,6 +187,7 @@ def wealth_home(db:Session=Depends(dbdep)):
             "equity":None,
             "owned_equity":None,
             "ltv":None,
+            "pending_review":[],
             "missing":[
                 {"key":"mortgage","label":"Datos de la hipoteca","reason":"Necesarios para calcular cuota, intereses y escenarios de mejora."}
             ],
@@ -195,13 +196,14 @@ def wealth_home(db:Session=Depends(dbdep)):
     extra=db.scalar(select(MortgageProfileExtra).where(MortgageProfileExtra.mortgage_id==mortgage.id))
     context=mortgage_contract_context(db,mortgage.id)
     by_key=context["by_key"]
+    pending_by_key=context.get("pending_by_key",{})
     extra_payload=_mortgage_extra_payload(extra)
 
     # Confirmed document evidence fills informational gaps without silently
     # overwriting manual profile values.
     evidence_map={
         "apr_rate":"apr_rate","reference_index":"reference_index","differential_rate":"differential_rate",
-        "rate_review_months":"rate_review_months","opening_fee_percent":"opening_fee_percent",
+        "rate_review_months":"rate_review_months","next_review_date":"next_review_date","opening_fee_percent":"opening_fee_percent",
         "early_repayment_fee_percent":"early_repayment_fee_percent","subrogation_fee_percent":"subrogation_fee_percent",
         "cancellation_fee_percent":"cancellation_fee_percent",
     }
@@ -228,20 +230,43 @@ def wealth_home(db:Session=Depends(dbdep)):
         owned_equity=(owned_value-mortgage.remaining_principal).quantize(Decimal("0.01"))
 
     missing=[]
-    def need(key,label,reason,value):
-        if value in {None,""}:missing.append({"key":key,"label":label,"reason":reason})
+    pending_review=[]
+    def candidate_for(keys):
+        for candidate_key in keys:
+            candidate=pending_by_key.get(candidate_key)
+            if candidate:
+                return candidate
+        return None
+    def need(key,label,reason,value,alternatives=None):
+        if value not in {None,""}:
+            return
+        candidate=candidate_for(alternatives or [key])
+        if candidate:
+            pending_review.append({
+                "key":key,
+                "label":label,
+                "reason":"Financito ya ha localizado un valor en la documentación. Revísalo y confírmalo para que entre en cálculos.",
+                "value":candidate.get("value"),
+                "unit":candidate.get("unit"),
+                "document_id":candidate.get("document_id"),
+                "page":candidate.get("page"),
+                "source":candidate.get("source"),
+                "status":candidate.get("status"),
+            })
+        else:
+            missing.append({"key":key,"label":label,"reason":reason})
     if home is None:
         missing.append({"key":"property_value","label":"Valor actual de la vivienda","reason":"Permite calcular patrimonio inmobiliario y LTV."})
-    need("apr_rate","TAE actual","Necesaria para comparar el coste total con ofertas nuevas.",extra_payload.get("apr_rate"))
+    need("apr_rate","TAE actual","La IA local no ha encontrado todavía una TAE explícita suficiente para comparar el coste total.",extra_payload.get("apr_rate"))
     if mortgage.interest_type in {"variable","mixed"}:
-        need("reference_index","Índice de referencia","Necesario para modelar futuras revisiones.",extra_payload.get("reference_index"))
-        need("differential_rate","Diferencial","Necesario para reconstruir el tipo variable.",extra_payload.get("differential_rate"))
-        need("rate_review_months","Periodicidad de revisión","Necesaria para simular cambios de cuota.",extra_payload.get("rate_review_months"))
-        need("next_review_date","Próxima revisión","Permite saber cuándo puede cambiar la cuota.",extra_payload.get("next_review_date"))
+        need("reference_index","Índice de referencia","La IA local no ha encontrado todavía un índice de referencia explícito.",extra_payload.get("reference_index"))
+        need("differential_rate","Diferencial","La IA local no ha encontrado todavía un diferencial explícito.",extra_payload.get("differential_rate"))
+        need("rate_review_months","Periodicidad de revisión","La IA local no ha encontrado todavía la periodicidad de revisión.",extra_payload.get("rate_review_months"))
+        need("next_review_date","Próxima revisión","La IA local no ha encontrado todavía una próxima fecha de revisión explícita.",extra_payload.get("next_review_date"))
     if mortgage.early_repayment_fee is None and extra_payload.get("early_repayment_fee_percent") is None:
-        missing.append({"key":"early_repayment_fee_percent","label":"Comisión de amortización anticipada","reason":"Necesaria para calcular si amortizar compensa."})
+        need("early_repayment_fee_percent","Comisión de amortización anticipada","No consta todavía una comisión o fórmula verificable de amortización anticipada.",None,["early_repayment_fee_percent","early_exit_penalty"])
     if extra_payload.get("subrogation_fee_percent") is None and extra_payload.get("cancellation_fee_percent") is None:
-        missing.append({"key":"subrogation_fee_percent","label":"Coste/comisión de subrogación o salida","reason":"Necesario para calcular el punto de equilibrio al cambiar de banco."})
+        need("subrogation_fee_percent","Coste/comisión de subrogación o salida","No consta todavía un coste o fórmula verificable de salida/subrogación.",None,["subrogation_fee_percent","cancellation_fee_percent","early_exit_penalty"])
 
     return {
         "property":None if home is None else {
@@ -257,6 +282,7 @@ def wealth_home(db:Session=Depends(dbdep)):
         "equity":None if equity is None else str(equity),
         "owned_equity":None if owned_equity is None else str(owned_equity),
         "ltv":None if ltv is None else str(ltv),
+        "pending_review":pending_review,
         "missing":missing,
     }
 
@@ -547,7 +573,43 @@ def contracts(db:Session=Depends(dbdep)):
     rows=db.scalars(select(Contract).where(
         Contract.contract_type.notin_(["insurance","mortgage"])
     ).order_by(Contract.provider_name)).all()
-    return [{"id":r.id,"provider_name":r.provider_name,"contract_type":r.contract_type,"renewal_date":r.renewal_date,"cancellation_notice_days":r.cancellation_notice_days,"early_exit_penalty":None if r.early_exit_penalty is None else str(r.early_exit_penalty),"annual_cost":None if r.annual_cost is None else str(r.annual_cost),"evidence_status":r.evidence_status,"source_document_id":(sources.get(r.id) or [None])[0],"source_document_ids":sources.get(r.id,[]),"document_count":len(sources.get(r.id,[]))} for r in rows]
+    result=[]
+    for r in rows:
+        document_ids=sources.get(r.id,[])
+        pending=[]
+        if document_ids:
+            facts=db.scalars(select(ExtractedFact).where(
+                ExtractedFact.document_id.in_(document_ids),
+                ExtractedFact.fact_type.in_(["contract_term","linked_product","investment_term"]),
+                ExtractedFact.user_verified.is_(False),
+                ExtractedFact.status.in_(["inferred","ambiguous","conflicting"]),
+            ).order_by(ExtractedFact.updated_at.desc())).all()
+            seen=set()
+            for fact in facts:
+                if fact.key in seen:continue
+                seen.add(fact.key)
+                try:
+                    payload=json.loads(fact.value_json)
+                    value=payload.get("value") if isinstance(payload,dict) else payload
+                    unit=payload.get("unit") if isinstance(payload,dict) else None
+                    source=payload.get("source") if isinstance(payload,dict) else None
+                except Exception:
+                    value=fact.value_json;unit=None;source=None
+                pending.append({
+                    "key":fact.key,"value":value,"unit":unit,"document_id":fact.document_id,
+                    "page":fact.source_page,"status":fact.status,
+                    "source":source or "deterministic_extractor",
+                })
+        result.append({
+            "id":r.id,"provider_name":r.provider_name,"contract_type":r.contract_type,
+            "renewal_date":r.renewal_date,"cancellation_notice_days":r.cancellation_notice_days,
+            "early_exit_penalty":None if r.early_exit_penalty is None else str(r.early_exit_penalty),
+            "annual_cost":None if r.annual_cost is None else str(r.annual_cost),
+            "evidence_status":r.evidence_status,"source_document_id":(document_ids or [None])[0],
+            "source_document_ids":document_ids,"document_count":len(document_ids),
+            "pending_review":pending,
+        })
+    return result
 @router.post("/contracts")
 def add_contract(p:ContractCreate,db:Session=Depends(dbdep)):r=Contract(**p.model_dump());db.add(r);db.flush();refresh_contract_actions(db);db.commit();return {"id":r.id}
 

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from ..models import ActionItem, Contract, Document, ExtractedFact, Mortgage
 from ..models_analytics import EntityLink
-from ..models_extended import CoverageFact,InsurancePolicy
+from ..models_extended import CoverageFact,InsurancePolicy,MortgageProfileExtra
 from .document_ai import latest_analysis
 
 MATERIAL_FACT_TYPES = {"contract_term", "mortgage_term", "linked_product", "coverage_fact", "investment_term"}
@@ -707,6 +707,8 @@ def _ensure_contract_projection(
         monthly = _decimal(values["monthly_cost"].get("value"))
         if monthly is not None:
             contract.annual_cost = monthly * Decimal("12")
+    if "start_date" in values:
+        contract.start_date = _date(values["start_date"].get("value"))
     if "renewal_date" in values:
         contract.renewal_date = _date(values["renewal_date"].get("value"))
     if "permanence_end_date" in values:
@@ -727,6 +729,82 @@ def _interest_type(value: object) -> str | None:
     if "mixt" in raw:return "mixed"
     if "fijo" in raw or "fixed" in raw:return "fixed"
     return None
+
+
+def _ensure_mortgage_extra_projection(
+    session: Session,
+    mortgage: Mortgage,
+    values: dict[str, dict],
+) -> MortgageProfileExtra | None:
+    """Project confirmed mortgage evidence into the extended profile.
+
+    Document evidence fills gaps only: a previously entered profile value is not
+    silently overwritten. Percentages used as rates are converted from the
+    document's percent scale to the internal decimal scale; commission
+    percentages keep their percent scale because cost engines divide by 100.
+    """
+    mapping_keys = {
+        "apr_rate",
+        "reference_index",
+        "differential_rate",
+        "mortgage_term_years",
+        "rate_review_months",
+        "next_review_date",
+        "opening_fee_percent",
+        "early_repayment_fee_percent",
+        "subrogation_fee_percent",
+        "cancellation_fee_percent",
+    }
+    if not any(key in values for key in mapping_keys):
+        return session.scalar(
+            select(MortgageProfileExtra).where(MortgageProfileExtra.mortgage_id == mortgage.id)
+        )
+
+    row = session.scalar(
+        select(MortgageProfileExtra).where(MortgageProfileExtra.mortgage_id == mortgage.id)
+    )
+    if row is None:
+        row = MortgageProfileExtra(mortgage_id=mortgage.id)
+        session.add(row)
+        session.flush()
+
+    if row.apr_rate is None and "apr_rate" in values:
+        pct = _decimal(values["apr_rate"].get("value"))
+        if pct is not None:
+            row.apr_rate = pct / Decimal("100")
+    if not row.reference_index and "reference_index" in values:
+        value = str(values["reference_index"].get("value") or "").strip()
+        if value:
+            row.reference_index = value[:80]
+    if row.differential_rate is None and "differential_rate" in values:
+        pct = _decimal(values["differential_rate"].get("value"))
+        if pct is not None:
+            row.differential_rate = pct / Decimal("100")
+    if row.original_term_months is None and "mortgage_term_years" in values:
+        years = _integer(values["mortgage_term_years"].get("value"))
+        if years is not None and years > 0:
+            row.original_term_months = years * 12
+    if row.rate_review_months is None and "rate_review_months" in values:
+        months = _integer(values["rate_review_months"].get("value"))
+        if months is not None and months > 0:
+            row.rate_review_months = months
+    if row.next_review_date is None and "next_review_date" in values:
+        row.next_review_date = _date(values["next_review_date"].get("value"))
+
+    for key in (
+        "opening_fee_percent",
+        "early_repayment_fee_percent",
+        "subrogation_fee_percent",
+        "cancellation_fee_percent",
+    ):
+        if getattr(row, key) is not None or key not in values:
+            continue
+        pct = _decimal(values[key].get("value"))
+        if pct is not None:
+            setattr(row, key, pct)
+
+    session.flush()
+    return row
 
 
 def _ensure_mortgage_projection(
@@ -774,6 +852,7 @@ def _ensure_mortgage_projection(
         if fee is not None and mortgage.early_repayment_fee!=fee:
             mortgage.early_repayment_fee=fee;changed=True
 
+    _ensure_mortgage_extra_projection(session, mortgage, values)
     session.flush()
     if changed:
         from .snapshots import record_snapshot
