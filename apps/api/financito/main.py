@@ -235,10 +235,16 @@ async def upload_documents(
     background_tasks:BackgroundTasks,
     files:list[UploadFile]=File(...),
     document_type:str=Form("unknown"),
+    entity_type:str|None=Form(None),
+    entity_id:str|None=Form(None),
     db:Session=Depends(get_db),
 ):
     if not files:
         raise HTTPException(400,"No documents supplied")
+    if bool(entity_type) != bool(entity_id):
+        raise HTTPException(400,"entity_type y entity_id deben enviarse juntos")
+    if entity_type and entity_type not in {"insurance_policy","contract","mortgage"}:
+        raise HTTPException(400,"Unsupported evidence entity type")
     uploaded=[]
     for file in files[:20]:
         content=await file.read()
@@ -254,6 +260,12 @@ async def upload_documents(
         except Exception:
             db.rollback()
             raise
+        if entity_type and entity_id:
+            try:
+                link_document_to_entity(db,indexed.document,entity_type,entity_id)
+            except ValueError as exc:
+                db.rollback()
+                raise HTTPException(400,str(exc))
         db.add(AuditEvent(
             event_type="document_uploaded",
             entity_type="document",
@@ -283,12 +295,17 @@ def index_doc(payload:DocumentIndexRequest,db:Session=Depends(get_db)):
 
 
 @app.get("/api/v1/documents")
-def documents(db:Session=Depends(get_db)):
+def documents(entity_type:str|None=None,entity_id:str|None=None,db:Session=Depends(get_db)):
     rows=db.scalars(select(Document).order_by(Document.created_at.desc())).all()
     links=db.scalars(select(EntityLink).where(
         EntityLink.from_type=="document",
         EntityLink.relation_type=="evidence_for",
     )).all()
+    if entity_type or entity_id:
+        if not entity_type or not entity_id:
+            raise HTTPException(400,"entity_type y entity_id deben enviarse juntos")
+        allowed={link.from_id for link in links if link.to_type==entity_type and link.to_id==entity_id}
+        rows=[row for row in rows if row.id in allowed]
     by_document:dict[str,list[dict]]={}
     for link in links:
         by_document.setdefault(link.from_id,[]).append({
@@ -432,6 +449,32 @@ def confirm_group_coherent(entity_type:str,entity_id:str,db:Session=Depends(get_
         raise HTTPException(400,str(exc))
     db.commit()
     return result
+
+
+@app.post("/api/v1/evidence-groups/{entity_type}/{entity_id}/analyze")
+def analyze_evidence_group(entity_type:str,entity_id:str,db:Session=Depends(get_db)):
+    if entity_type not in {"insurance_policy","contract","mortgage"}:
+        raise HTTPException(400,"Unsupported evidence entity type")
+    document_ids=list(db.scalars(select(EntityLink.from_id).where(
+        EntityLink.from_type=="document",
+        EntityLink.relation_type=="evidence_for",
+        EntityLink.to_type==entity_type,
+        EntityLink.to_id==entity_id,
+    )).all())
+    if not document_ids:
+        return {"documents":0,"analyzed":0,"failed":0}
+    analyzed=0;failed=0
+    for document_id in document_ids:
+        try:
+            result=analyze_document_by_id(db,document_id)
+            if result.get("status")=="ready":analyzed+=1
+            else:failed+=1
+        except RuntimeError as exc:
+            raise HTTPException(503,str(exc))
+        except Exception:
+            failed+=1
+    db.commit()
+    return {"documents":len(document_ids),"analyzed":analyzed,"failed":failed}
 
 
 @app.get("/api/v1/documents/{document_id}/facts")
