@@ -116,8 +116,10 @@ export default function DashboardPage(){
               {action.notes&&<div className="mt-1 line-clamp-2 text-xs text-[var(--muted)]">{action.notes}</div>}
               <div className="mt-2 text-xs text-[var(--muted)]">{action.due_date?`Antes de ${action.due_date}`:'Sin fecha límite'}</div>
             </>;
-            if(action.related_entity_type==='insurance_policy'){
-              return <button key={action.id} type="button" className="fin-card block w-full p-4 text-left transition-transform hover:-translate-y-0.5" onClick={()=>setInsuranceModalPolicyId(action.related_entity_id||null)}>{card}</button>;
+            const insuranceAction=action.related_entity_type==='insurance_policy'||action.action_type.startsWith('insurance_')||action.title.toLowerCase().includes('seguro');
+            if(insuranceAction){
+              const policyId=action.related_entity_type==='insurance_policy'?action.related_entity_id:null;
+              return <button key={action.id} type="button" className="fin-card block w-full p-4 text-left transition-transform hover:-translate-y-0.5" onClick={()=>setInsuranceModalPolicyId(policyId||null)}>{card}</button>;
             }
             return <Link key={action.id} href={destination.href} className="fin-card block p-4 transition-transform hover:-translate-y-0.5">{card}</Link>;
           })}
