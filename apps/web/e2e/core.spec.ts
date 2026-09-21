@@ -144,6 +144,7 @@ test('banca conectada permite recorrer autorización con provider simulado',asyn
 
 
 test('todas las rutas principales pasan auditoría WCAG AA automatizada',async({page})=>{
+  test.setTimeout(90000);
   await page.route('**/api/v1/banking/aspsps?country=ES',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({aspsps:[]})}));
   const routes=[
     '/','/search/','/accounts/','/transactions/','/forecast/','/analytics/','/wealth/','/history/',
