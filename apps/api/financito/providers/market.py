@@ -54,7 +54,14 @@ class StooqProvider:
                 self.BASE+"/l/",
                 params={"s":normalized,"f":"sd2t2ohlcv","h":"","e":"csv"},
             )
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 404:
+                    raise RuntimeError(
+                        f"Stooq no encontró el ticker {normalized.upper()}. Revisa el símbolo; por ejemplo, Apple es AAPL."
+                    ) from None
+                raise RuntimeError(f"Stooq no disponible (HTTP {exc.response.status_code})") from None
         rows=list(csv.DictReader(StringIO(response.text)))
         if not rows:
             raise RuntimeError("Stooq no devolvió cotización")
@@ -77,7 +84,14 @@ class StooqProvider:
         normalized=self.normalize_symbol(symbol)
         with httpx.Client(timeout=20,headers={"User-Agent":"Financito/1.0"}) as client:
             response=client.get(self.BASE+"/d/l/",params={"s":normalized,"i":"d"})
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 404:
+                    raise RuntimeError(
+                        f"Stooq no encontró histórico para {normalized.upper()}. Revisa el ticker introducido."
+                    ) from None
+                raise RuntimeError(f"Stooq no disponible (HTTP {exc.response.status_code})") from None
         rows=[]
         for row in csv.DictReader(StringIO(response.text)):
             day=(row.get("Date") or "").strip()

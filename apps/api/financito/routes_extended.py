@@ -59,8 +59,10 @@ def _document_sources_multi(db:Session,to_type:str)->dict[str,list[str]]:
     return result
 
 @router.get("/decision-lab/market-scan")
-def decision_lab_market_scan(db:Session=Depends(dbdep)):
-    return scan_public_market(db)
+def decision_lab_market_scan(mortgage_id:str|None=None,db:Session=Depends(dbdep)):
+    if mortgage_id and not db.get(Mortgage,mortgage_id):
+        raise HTTPException(404,"Mortgage not found")
+    return scan_public_market(db,mortgage_id)
 
 @router.get("/decision-lab/switching-readiness")
 def decision_lab_switching_readiness(mortgage_id:str|None=None,db:Session=Depends(dbdep)):
@@ -325,6 +327,31 @@ def mortgage_rate_path_real(p:StoredMortgageRatePathRequest,db:Session=Depends(d
 def tracked_assets_route(db:Session=Depends(dbdep)):
     return tracked_assets(db)
 
+@router.get("/tracked-assets/history")
+def tracked_assets_history(days:int=365,db:Session=Depends(dbdep)):
+    from datetime import datetime,timedelta,timezone
+    from .services.market_data import history
+    days=max(7,min(days,1825))
+    cutoff=datetime.now(timezone.utc)-timedelta(days=days)
+    result=[]
+    for item in tracked_assets(db):
+        rows=[]
+        for row in history(db,item["security_id"]):
+            stamp=row["timestamp"]
+            if stamp.tzinfo is None:
+                stamp=stamp.replace(tzinfo=timezone.utc)
+            if stamp>=cutoff:
+                rows.append(row)
+        result.append({
+            "security_id":item["security_id"],
+            "name":item["name"],
+            "identifier":item["identifier"],
+            "currency":item["currency"],
+            "owned":item["owned"],
+            "rows":rows,
+        })
+    return result
+
 @router.post("/tracked-assets")
 def tracked_asset_add(p:TrackedAssetCreate,db:Session=Depends(dbdep)):
     try:
@@ -378,14 +405,15 @@ def tracked_asset_unfollow(security_id:str,db:Session=Depends(dbdep)):
     return tracked_asset_delete(security_id,db)
 
 @router.post("/tracked-assets/refresh-all")
-def tracked_assets_refresh_all(db:Session=Depends(dbdep)):
-    from .services.market_data import refresh_security
+def tracked_assets_refresh_all(include_history:bool=False,db:Session=Depends(dbdep)):
+    from .services.market_data import refresh_history,refresh_security
     rows=tracked_assets(db)
     refreshed=[];failed=[]
     for item in rows:
         try:
             quote=refresh_security(db,item["security_id"])
-            refreshed.append({"security_id":item["security_id"],"quote":quote})
+            history_result=refresh_history(db,item["security_id"]) if include_history else None
+            refreshed.append({"security_id":item["security_id"],"quote":quote,"history":history_result})
         except Exception as exc:
             failed.append({"security_id":item["security_id"],"error":str(exc)})
     db.commit()
@@ -428,6 +456,7 @@ def wealth_details(db:Session=Depends(dbdep)):
         "currency":row.currency,
         "valuation_date":row.valuation_date,
         "valuation_source":row.valuation_source,
+        "ownership_type":row.ownership_type,
         "ownership_percentage":str(row.ownership_percentage),
     } for row in db.scalars(select(Asset).order_by(Asset.asset_type,Asset.name)).all()]
     liabilities=[{
@@ -448,6 +477,7 @@ def wealth_details(db:Session=Depends(dbdep)):
         "nominal_rate":str(row.nominal_rate),
         "monthly_payment":str(row.monthly_payment),
         "remaining_months":row.remaining_months,
+        "early_repayment_fee":None if row.early_repayment_fee is None else str(row.early_repayment_fee),
     } for row in db.scalars(select(Mortgage).order_by(Mortgage.lender)).all()]
     contracts={row.id:row for row in db.scalars(select(Contract)).all()}
     policies=[]
@@ -489,6 +519,19 @@ def update_asset(asset_id:str,p:AssetCreate,db:Session=Depends(dbdep)):
     db.flush()
     record_snapshot(db,"asset",r.id,{"value":str(r.current_value),"ownership_percentage":str(r.ownership_percentage),"currency":r.currency},r.valuation_date,"asset_updated")
     db.commit();return {"id":r.id}
+
+@router.delete("/assets/{asset_id}")
+def delete_asset(asset_id:str,db:Session=Depends(dbdep)):
+    r=db.get(Asset,asset_id)
+    if not r:raise HTTPException(404,"Asset not found")
+    record_snapshot(db,"asset",r.id,{
+        "value":str(r.current_value),
+        "ownership_percentage":str(r.ownership_percentage),
+        "currency":r.currency,
+        "deleted":True,
+    },r.valuation_date,"asset_deleted")
+    db.delete(r);db.commit()
+    return {"id":asset_id,"deleted":True}
 @router.get("/liabilities")
 def liabilities(db:Session=Depends(dbdep)):return [{"id":r.id,"type":r.liability_type,"name":r.name,"amount":str(r.outstanding_amount),"currency":r.currency} for r in db.scalars(select(Liability).order_by(Liability.name)).all()]
 @router.post("/liabilities")

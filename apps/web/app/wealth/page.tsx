@@ -14,7 +14,7 @@ type WealthSummary={
   gross_assets:string;total_debt:string;net_worth:string
 };
 type Account={id:string;name:string;institution_name:string;currency:string;balance:string};
-type Asset={id:string;type:string;name:string;value:string;currency:string;valuation_date:string;valuation_source:string;ownership_percentage:string};
+type Asset={id:string;type:string;name:string;value:string;currency:string;valuation_date:string;valuation_source:string;ownership_type:string;ownership_percentage:string};
 type Liability={id:string;type:string;name:string;amount:string;currency:string;annual_rate:string|null;ownership_percentage:string};
 type Mortgage={id:string;lender:string;remaining_principal:string;currency:string;interest_type:string;nominal_rate:string;monthly_payment:string;remaining_months:number;early_repayment_fee?:string|null};
 type Investment={security_id:string;name:string;identifier:string|null;asset_class:string;currency:string;quantity:string;cost_basis:string;current_value:string|null;current_price:string|null;price_provider:string|null};
@@ -37,9 +37,10 @@ type MarketLead={
   claims:string[];url:string;retrieved_at:string;requires_personalized_quote:boolean;
   scenario:null|{estimated_payment:string;monthly_payment_difference:string;remaining_interest_difference:string|null;known_exit_penalty:string|null;break_even_months_known_penalty_only:string|null;comparison_scope:string};
 };
+type MarketConclusion={status:string;headline:string;action:string;provider:string|null;source_id:string|null;missing:string[];estimated_monthly_saving?:string;estimated_net_interest_saving_known_costs?:string;break_even_months_known_penalty_only?:string;assumptions:string[]};
 type MarketScan={
   generated_at:string;current_mortgage_rate_percent:string|null;current_monthly_payment:string|null;
-  official_sources:{id:string;provider:string;kind:string;url:string;description:string}[];leads:MarketLead[];disclaimer:string;
+  official_sources:{id:string;provider:string;kind:string;url:string;description:string}[];leads:MarketLead[];conclusion:MarketConclusion;disclaimer:string;
 };
 
 function sumAssets(rows:Asset[],types:string[]){
@@ -55,6 +56,7 @@ export default function WealthPage(){
   const details=useQuery({queryKey:['wealth-details'],queryFn:()=>apiGet<WealthDetails>('/api/v1/wealth/details')});
   const home=useQuery({queryKey:['wealth-home'],queryFn:()=>apiGet<HomeData>('/api/v1/wealth/home')});
   const [asset,setAsset]=useState({name:'',asset_type:'property',current_value:'',valuation_date:new Date().toISOString().slice(0,10)});
+  const [editingAsset,setEditingAsset]=useState<Asset|null>(null);
   const [debt,setDebt]=useState({name:'',liability_type:'loan',outstanding_amount:''});
   const [mortgageForm,setMortgageForm]=useState({lender:'',remaining_principal:'',interest_type:'fixed',nominal_rate_pct:'',monthly_payment:'',remaining_months:'',early_repayment_fee:''});
   const [extraForm,setExtraForm]=useState({
@@ -90,6 +92,21 @@ export default function WealthPage(){
   const addAsset=useMutation({
     mutationFn:()=>apiMutate('/api/v1/assets','POST',{...asset,currency:'EUR',valuation_source:'manual',ownership_percentage:'100'}),
     onSuccess:()=>{setAsset({...asset,name:'',current_value:''});refresh()},
+  });
+  const updateAsset=useMutation({
+    mutationFn:()=>{
+      if(!editingAsset)throw new Error('Selecciona un activo');
+      return apiMutate('/api/v1/assets/'+editingAsset.id,'PATCH',{
+        asset_type:editingAsset.type,name:editingAsset.name,current_value:editingAsset.value,currency:editingAsset.currency,
+        valuation_date:editingAsset.valuation_date,valuation_source:editingAsset.valuation_source||'manual',
+        ownership_type:editingAsset.ownership_type||'personal',ownership_percentage:editingAsset.ownership_percentage,
+      });
+    },
+    onSuccess:()=>{setEditingAsset(null);refresh()},
+  });
+  const removeAsset=useMutation({
+    mutationFn:(id:string)=>apiMutate('/api/v1/assets/'+id,'DELETE'),
+    onSuccess:(_,id)=>{if(editingAsset?.id===id)setEditingAsset(null);refresh()},
   });
   const addDebt=useMutation({
     mutationFn:()=>apiMutate('/api/v1/liabilities','POST',{...debt,currency:'EUR',ownership_percentage:'100'}),
@@ -152,7 +169,7 @@ export default function WealthPage(){
     onSuccess:refresh,
   });
   const marketScan=useMutation({
-    mutationFn:()=>apiGet<MarketScan>('/api/v1/decision-lab/market-scan'),
+    mutationFn:()=>apiGet<MarketScan>('/api/v1/decision-lab/market-scan'+(home.data?.mortgage?.id?'?mortgage_id='+encodeURIComponent(home.data.mortgage.id):'')),
   });
 
   const d=details.data;
@@ -256,6 +273,7 @@ export default function WealthPage(){
               {!home.data.mortgage&&<div className="mt-3 text-xs text-[var(--muted)]">Completa primero la hipoteca para poder comparar la misma deuda y plazo.</div>}
               {marketScan.error&&<div className="mt-3"><ErrorState error={marketScan.error}/></div>}
               {marketScan.data&&<>
+                <div className="mt-3 rounded-xl bg-[var(--brand-soft)] p-3 text-sm"><strong>{marketScan.data.conclusion.headline}</strong><div className="mt-1">{marketScan.data.conclusion.action}</div>{marketScan.data.conclusion.estimated_monthly_saving&&<div className="mt-2 text-xs">Ahorro mensual comparable: <strong><Money value={marketScan.data.conclusion.estimated_monthly_saving}/></strong>{marketScan.data.conclusion.break_even_months_known_penalty_only?' · break-even '+marketScan.data.conclusion.break_even_months_known_penalty_only+' meses':''}</div>}{marketScan.data.conclusion.missing?.length>0&&<div className="mt-2 text-xs text-[var(--muted)]">Pendiente: {marketScan.data.conclusion.missing.join(' · ')}</div>}</div>
                 <div className="mt-3 rounded-lg bg-[var(--surface-2)] p-3 text-xs">{marketScan.data.disclaimer}</div>
                 <div className="mt-3 space-y-2">{marketScan.data.leads.filter(x=>x.kind.startsWith('mortgage_')&&x.public_tin_min!==null).map(x=><div key={x.source_id} className="rounded-lg border border-[var(--border)] p-3 text-sm">
                   <div className="flex flex-wrap items-start justify-between gap-3"><div><strong>{x.provider}</strong><div className="text-xs text-[var(--muted)]">{x.kind==='mortgage_subrogation'?'Subrogación / cambio de banco':x.kind==='mortgage_current_bank'?'Negociación con entidad actual':'Referencia hipotecaria pública'}</div></div><a className="text-xs underline" href={x.url} target="_blank" rel="noreferrer">Fuente</a></div>
@@ -303,7 +321,19 @@ export default function WealthPage(){
       <Card className="mt-4">
         <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Vivienda, coche y otros bienes</h2><p className="mt-1 text-sm text-[var(--muted)]">El valor de mercado que ves es la última valoración guardada. Actualízala cuando tengas una estimación más reciente.</p></div><Link className="text-xs underline" href="/history/">Ver histórico</Link></div>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {d.assets.length?d.assets.map(x=><div key={x.id} className="rounded-xl border border-[var(--border)] p-4 text-sm"><div className="flex justify-between gap-3"><div><strong>{x.name}</strong><div className="text-xs text-[var(--muted)]">{x.type} · valoración {new Date(x.valuation_date).toLocaleDateString('es-ES')}</div></div><strong><Money value={x.value} currency={x.currency}/></strong></div><div className="mt-2 text-[11px] text-[var(--muted)]">Fuente: {x.valuation_source} · propiedad {Number(x.ownership_percentage).toLocaleString('es-ES')}%</div></div>):<EmptyState>Aún no has añadido vivienda, coche u otros bienes.</EmptyState>}
+          {d.assets.length?d.assets.map(x=><div key={x.id} className="rounded-xl border border-[var(--border)] p-4 text-sm">
+            {editingAsset?.id===x.id?<form className="grid gap-2" onSubmit={e=>{e.preventDefault();updateAsset.mutate()}}>
+              <select className="fin-input" aria-label="Tipo de activo editado" value={editingAsset.type} onChange={e=>setEditingAsset({...editingAsset,type:e.target.value})}><option value="property">Vivienda / inmueble</option><option value="vehicle">Vehículo</option><option value="other">Otro activo</option></select>
+              <input className="fin-input" value={editingAsset.name} onChange={e=>setEditingAsset({...editingAsset,name:e.target.value})} required/>
+              <input className="fin-input" type="number" min="0" step=".01" value={editingAsset.value} onChange={e=>setEditingAsset({...editingAsset,value:e.target.value})} required/>
+              <input className="fin-input" type="date" value={editingAsset.valuation_date} onChange={e=>setEditingAsset({...editingAsset,valuation_date:e.target.value})} required/>
+              <div className="flex gap-2"><button className="fin-button py-1.5 text-xs" disabled={updateAsset.isPending}>Guardar cambios</button><button type="button" className="fin-button secondary py-1.5 text-xs" onClick={()=>setEditingAsset(null)}>Cancelar</button></div>
+            </form>:<>
+              <div className="flex justify-between gap-3"><div><strong>{x.name}</strong><div className="text-xs text-[var(--muted)]">{x.type} · valoración {new Date(x.valuation_date).toLocaleDateString('es-ES')}</div></div><strong><Money value={x.value} currency={x.currency}/></strong></div>
+              <div className="mt-2 text-[11px] text-[var(--muted)]">Fuente: {x.valuation_source} · propiedad {Number(x.ownership_percentage).toLocaleString('es-ES')}%</div>
+              <div className="mt-3 flex gap-3"><button className="text-xs underline" onClick={()=>setEditingAsset(x)}>Editar</button><button className="text-xs underline" onClick={()=>{if(window.confirm('¿Eliminar '+x.name+' del patrimonio?'))removeAsset.mutate(x.id)}} disabled={removeAsset.isPending}>Eliminar</button></div>
+            </>}
+          </div>):<EmptyState>Aún no has añadido vivienda, coche u otros bienes.</EmptyState>}
         </div>
         <form className="mt-5 grid gap-2 md:grid-cols-4" onSubmit={(e:FormEvent)=>{e.preventDefault();addAsset.mutate()}}>
           <select className="fin-input" aria-label="Tipo de activo" value={asset.asset_type} onChange={e=>setAsset({...asset,asset_type:e.target.value})}><option value="property">Vivienda / inmueble</option><option value="vehicle">Vehículo</option><option value="other">Otro activo</option></select>
@@ -312,7 +342,7 @@ export default function WealthPage(){
           <input className="fin-input" aria-label="Fecha de valoración" type="date" value={asset.valuation_date} onChange={e=>setAsset({...asset,valuation_date:e.target.value})} required/>
           <button className="fin-button md:col-span-4" disabled={addAsset.isPending}>{addAsset.isPending?'Guardando…':'Añadir activo al patrimonio'}</button>
         </form>
-        {addAsset.error&&<div className="mt-3"><ErrorState error={addAsset.error}/></div>}
+        {(addAsset.error||updateAsset.error||removeAsset.error)&&<div className="mt-3"><ErrorState error={(addAsset.error||updateAsset.error||removeAsset.error)!}/></div>}
       </Card>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-2">
@@ -322,7 +352,7 @@ export default function WealthPage(){
         </Card>
 
         <Card>
-          <div className="flex items-start justify-between gap-3"><div><h2 className="font-bold">Inversiones reales</h2><p className="mt-1 text-sm text-[var(--muted)]">Solo posiciones reales; los seguimientos y simulaciones no inflan tu patrimonio.</p></div><Link href="/markets/" className="text-xs underline">Mercado</Link></div>
+          <div className="flex items-start justify-between gap-3"><div><h2 className="font-bold">Inversiones que posees</h2><p className="mt-1 text-sm text-[var(--muted)]">Aquí solo se suman acciones, ETF, fondos, bonos o cripto que hayas marcado como “Lo tengo realmente”. Los valores que solo sigues y las compras simuladas no forman parte de tu patrimonio.</p></div><Link href="/markets/" className="text-xs underline">Gestionar y seguir mercado</Link></div>
           <div className="mt-3 space-y-2">{d.investments.length?d.investments.map(x=><div key={x.security_id} className="flex justify-between rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div><strong>{x.name}</strong><div className="text-xs text-[var(--muted)]">{x.identifier||x.asset_class}{x.price_provider?' · '+x.price_provider:''}</div></div><strong><Money value={x.current_value??x.cost_basis} currency={x.currency}/></strong></div>):<EmptyState>No hay posiciones reales.</EmptyState>}</div>
         </Card>
 

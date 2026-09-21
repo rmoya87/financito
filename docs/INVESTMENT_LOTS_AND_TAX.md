@@ -92,3 +92,14 @@ Precios:
 - los precios se persisten localmente con proveedor/fecha;
 - la UI permite actualizar un activo o todos los precios obsoletos;
 - si no existe precio real, se muestra n/d y no se sustituye por el coste de compra como “precio actual”.
+
+
+## Histórico de mercado y seguimiento
+
+Actualizar un activo seguido puede persistir tanto la última cotización como el histórico diario disponible. La vista Mercado permite actualizar todos los activos con histórico y conserva proveedor, fecha y carácter retrasado del dato.
+
+La gráfica conjunta de activos seguidos muestra rendimiento porcentual normalizado desde el primer precio disponible del periodo, no precios absolutos mezclados. Cada serie tiene identidad y color estable dentro de la vista, además de leyenda textual y tabla de procedencia.
+
+Para una posición `owned`, “cantidad” significa unidades reales (acciones, participaciones, BTC, etc.) y “precio de compra” es el coste por unidad en la operación inicial. Compras o ventas posteriores se registran como operaciones para preservar lotes, coste base y P&L; no se corrige la posición sobrescribiendo una cantidad agregada.
+
+Un ticker inexistente no genera una cotización sintética. Los providers gratuitos pueden devolver “no encontrado”; la UI debe presentar un error legible y mantener el último dato válido si existe.

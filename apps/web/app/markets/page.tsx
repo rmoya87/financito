@@ -24,6 +24,7 @@ type TrackedAsset={
   price_fetched_at:string|null;price_delayed:boolean|null;price_age_minutes:number|null;price_stale:boolean;simulation:Simulation|null
 };
 type SimHistory={security_id:string;simulation:null|{started_at:string;invested_amount:string;entry_price:string;quantity:string;currency:string};rows:{timestamp:string;price:string;value:string;pnl:string;return:string;provider:string}[]};
+type TrackedHistory={security_id:string;name:string;identifier:string|null;currency:string;owned:boolean;rows:{timestamp:string;close:string;currency:string;provider:string;delayed:boolean}[]};
 type RefreshAll={refreshed:{security_id:string;quote:unknown}[];failed:{security_id:string;error:string}[];assets:TrackedAsset[]};
 type Research={
   query:string;ingest:{inserted:number;discovered:number};
@@ -32,6 +33,11 @@ type Research={
 
 function sentimentLabel(value:number){return value>.15?'positivo':value<-.15?'negativo':'neutral'}
 function pct(value:string|null){return value===null?'—':(Number(value)*100).toLocaleString('es-ES',{maximumFractionDigits:2})+'%'}
+function seriesColor(id:string){
+  let hash=0;
+  for(let i=0;i<id.length;i++)hash=((hash<<5)-hash)+id.charCodeAt(i);
+  return 'hsl('+Math.abs(hash%360)+' 65% 42%)';
+}
 
 export default function MarketsPage(){
   const qc=useQueryClient();
@@ -45,6 +51,7 @@ export default function MarketsPage(){
 
   const portfolios=useQuery({queryKey:['portfolios'],queryFn:()=>apiGet<Portfolio[]>('/api/v1/portfolios')});
   const tracked=useQuery({queryKey:['tracked-assets'],queryFn:()=>apiGet<TrackedAsset[]>('/api/v1/tracked-assets')});
+  const trackedHistory=useQuery({queryKey:['tracked-assets-history'],queryFn:()=>apiGet<TrackedHistory[]>('/api/v1/tracked-assets/history?days=365')});
   const local=useQuery({queryKey:['local-news'],queryFn:()=>apiGet<LocalNews>('/api/v1/news/local?limit=30')});
   const simHistory=useQuery({queryKey:['simulation-history',selectedSimulation],queryFn:()=>apiGet<SimHistory>('/api/v1/tracked-assets/'+selectedSimulation+'/simulation-history'),enabled:!!selectedSimulation});
 
@@ -65,15 +72,15 @@ export default function MarketsPage(){
       fees:trackedForm.fees||'0',fx_rate:trackedForm.fx_rate||'1',currency:trackedForm.currency,
       provider_asset_id:trackedForm.asset_class==='crypto'?trackedForm.identifier:null,notes:null,
     }),
-    onSuccess:()=>{setTrackedForm({...trackedForm,name:'',identifier:'',quantity:'',purchase_price:'',fees:'0',fx_rate:'1'});qc.invalidateQueries({queryKey:['tracked-assets']});qc.invalidateQueries({queryKey:['portfolios']});qc.invalidateQueries({queryKey:['securities']})},
+    onSuccess:()=>{setTrackedForm({...trackedForm,name:'',identifier:'',quantity:'',purchase_price:'',fees:'0',fx_rate:'1'});qc.invalidateQueries({queryKey:['tracked-assets']});qc.invalidateQueries({queryKey:['tracked-assets-history']});qc.invalidateQueries({queryKey:['portfolios']});qc.invalidateQueries({queryKey:['securities']})},
   });
   const refreshTracked=useMutation({
     mutationFn:(id:string)=>apiMutate('/api/v1/tracked-assets/'+id+'/refresh?include_history=true','POST'),
-    onSuccess:()=>{qc.invalidateQueries({queryKey:['tracked-assets']});qc.invalidateQueries({queryKey:['portfolios']});qc.invalidateQueries({queryKey:['simulation-history']})},
+    onSuccess:()=>{qc.invalidateQueries({queryKey:['tracked-assets']});qc.invalidateQueries({queryKey:['tracked-assets-history']});qc.invalidateQueries({queryKey:['portfolios']});qc.invalidateQueries({queryKey:['simulation-history']})},
   });
   const refreshAll=useMutation({
-    mutationFn:()=>apiMutate<RefreshAll>('/api/v1/tracked-assets/refresh-all','POST'),
-    onSuccess:()=>{qc.invalidateQueries({queryKey:['tracked-assets']});qc.invalidateQueries({queryKey:['portfolios']});qc.invalidateQueries({queryKey:['simulation-history']})},
+    mutationFn:()=>apiMutate<RefreshAll>('/api/v1/tracked-assets/refresh-all?include_history=true','POST'),
+    onSuccess:()=>{qc.invalidateQueries({queryKey:['tracked-assets']});qc.invalidateQueries({queryKey:['tracked-assets-history']});qc.invalidateQueries({queryKey:['portfolios']});qc.invalidateQueries({queryKey:['simulation-history']})},
   });
   const startSimulation=useMutation({
     mutationFn:({id,amount}:{id:string;amount:string})=>apiMutate<TrackedAsset>('/api/v1/tracked-assets/'+id+'/simulation','POST',{amount}),
@@ -81,7 +88,7 @@ export default function MarketsPage(){
   });
   const removeTracked=useMutation({
     mutationFn:(id:string)=>apiMutate('/api/v1/tracked-assets/'+id+'/unfollow','POST'),
-    onSuccess:(_,id)=>{if(selectedSimulation===id)setSelectedSimulation('');qc.invalidateQueries({queryKey:['tracked-assets']})},
+    onSuccess:(_,id)=>{if(selectedSimulation===id)setSelectedSimulation('');qc.invalidateQueries({queryKey:['tracked-assets']});qc.invalidateQueries({queryKey:['tracked-assets-history']})},
   });
 
   const simulations=useMemo(()=>tracked.data?.filter(a=>a.simulation)||[],[tracked.data]);
@@ -92,6 +99,22 @@ export default function MarketsPage(){
     return acc;
   },{invested:0,current:0,pnl:0}),[simulations]);
   const chartData=useMemo(()=>simHistory.data?.rows.map(r=>({date:new Date(r.timestamp).toLocaleDateString('es-ES'),value:Number(r.value),pnl:Number(r.pnl)}))||[],[simHistory.data]);
+  const trackedChart=useMemo(()=>{
+    const byDate=new Map<string,Record<string,string|number>>();
+    for(const asset of trackedHistory.data||[]){
+      const rows=[...asset.rows].sort((a,b)=>a.timestamp.localeCompare(b.timestamp));
+      const base=Number(rows[0]?.close||0);
+      if(!base)continue;
+      for(const row of rows){
+        const key=row.timestamp.slice(0,10);
+        const point=byDate.get(key)||{date:key};
+        point[asset.security_id]=(Number(row.close)/base-1)*100;
+        byDate.set(key,point);
+      }
+    }
+    return [...byDate.values()].sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  },[trackedHistory.data]);
+  const historySeries=useMemo(()=>(trackedHistory.data||[]).filter(x=>x.rows.length>0),[trackedHistory.data]);
 
   const cryptoRow=Array.isArray(crypto.data?.assets)?crypto.data?.assets?.[0]:undefined;
   const cryptoRisk=cryptoMetrics.data?.metrics;
@@ -104,8 +127,15 @@ export default function MarketsPage(){
       <div className="mt-4 grid gap-3 sm:grid-cols-3"><div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Invertido hipotético</div><strong><Money value={simulatedTotals.invested}/></strong></div><div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Valor actual</div><strong><Money value={simulatedTotals.current}/></strong></div><div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Resultado</div><strong><Money value={simulatedTotals.pnl}/></strong></div></div>
     </Card>}
 
+    {historySeries.length>0&&<Card className="mb-4">
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Evolución de los valores que sigues</h2><p className="mt-1 text-sm text-[var(--muted)]">Compara el cambio porcentual de cada activo durante los últimos 12 meses desde su primer precio disponible. Se normaliza a 0% para que activos con precios y divisas distintas sean comparables.</p></div><div className="text-xs text-[var(--muted)]">{historySeries.length} serie(s)</div></div>
+      {trackedChart.length>1?<div className="mt-4 h-80"><ResponsiveContainer width="100%" height="100%"><LineChart data={trackedChart}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date" tickFormatter={v=>new Date(String(v)+'T00:00:00').toLocaleDateString('es-ES',{month:'short',year:'2-digit'})}/><YAxis tickFormatter={v=>Number(v).toLocaleString('es-ES',{maximumFractionDigits:0})+'%'}/><Tooltip labelFormatter={v=>new Date(String(v)+'T00:00:00').toLocaleDateString('es-ES')} formatter={(v,name)=>[Number(v).toLocaleString('es-ES',{maximumFractionDigits:2})+'%',historySeries.find(x=>x.security_id===String(name))?.name||String(name)]}/>{historySeries.map(asset=><Line key={asset.security_id} type="monotone" dataKey={asset.security_id} name={asset.security_id} stroke={seriesColor(asset.security_id)} strokeWidth={2.5} dot={false} connectNulls/>)}</LineChart></ResponsiveContainer></div>:<EmptyState>Aún no hay dos fechas de precio suficientes para dibujar la evolución.</EmptyState>}
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs">{historySeries.map(asset=><div key={asset.security_id} className="flex items-center gap-2"><span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-full" style={{background:seriesColor(asset.security_id)}}></span><span>{asset.name} · {asset.identifier||'sin ticker'}</span></div>)}</div>
+      <div className="mt-3 overflow-auto"><table className="w-full min-w-[520px] text-xs"><thead><tr className="text-left text-[var(--muted)]"><th className="p-2">Activo</th><th className="p-2">Primer dato</th><th className="p-2">Último dato</th><th className="p-2">Fuente última</th></tr></thead><tbody>{historySeries.map(asset=><tr key={asset.security_id} className="border-t border-[var(--border)]"><td className="p-2 font-medium">{asset.name}</td><td className="p-2">{new Date(asset.rows[0].timestamp).toLocaleDateString('es-ES')}</td><td className="p-2">{new Date(asset.rows[asset.rows.length-1].timestamp).toLocaleDateString('es-ES')}</td><td className="p-2">{asset.rows[asset.rows.length-1].provider}</td></tr>)}</tbody></table></div>
+    </Card>}
+
     <Card className="mb-4">
-      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Mis activos</h2><p className="mt-1 text-sm text-[var(--muted)]">Registra una tenencia real o sigue un activo. Si no lo tienes puedes iniciar una compra simulada y ver cómo habría evolucionado.</p></div><button className="fin-button secondary" disabled={refreshAll.isPending||!tracked.data?.length} onClick={()=>refreshAll.mutate()}>{refreshAll.isPending?'Actualizando…':'Actualizar precios'}</button></div>
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">Mis activos</h2><p className="mt-1 text-sm text-[var(--muted)]">Registra una tenencia real o sigue un activo. Si no lo tienes puedes iniciar una compra simulada y ver cómo habría evolucionado.</p></div><button className="fin-button secondary" disabled={refreshAll.isPending||!tracked.data?.length} onClick={()=>refreshAll.mutate()}>{refreshAll.isPending?'Actualizando…':'Actualizar precios e histórico'}</button></div>
       <form className="mt-4 grid gap-2 md:grid-cols-4" onSubmit={(e:FormEvent)=>{e.preventDefault();saveTracked.mutate()}}>
         <select aria-label="Tipo de activo seguido" className="fin-input" value={trackedForm.asset_class} onChange={e=>setTrackedForm({...trackedForm,asset_class:e.target.value})}><option value="stock">Acción</option><option value="etf">ETF</option><option value="fund">Fondo</option><option value="crypto">Cripto</option><option value="bond">Bono</option></select>
         <input aria-label="Nombre del activo" className="fin-input" placeholder="Nombre" value={trackedForm.name} onChange={e=>setTrackedForm({...trackedForm,name:e.target.value})} required/>
@@ -114,8 +144,8 @@ export default function MarketsPage(){
         <select aria-label="Divisa del activo" className="fin-input" value={trackedForm.currency} onChange={e=>setTrackedForm({...trackedForm,currency:e.target.value})}><option value="EUR">EUR</option><option value="USD">USD</option><option value="GBP">GBP</option><option value="CHF">CHF</option></select>
         {trackedForm.owned==='yes'&&<>
           <select aria-label="Cartera del activo" className="fin-input" value={trackedForm.portfolio_id} onChange={e=>setTrackedForm({...trackedForm,portfolio_id:e.target.value})}><option value="">Cartera Principal automática</option>{portfolios.data?.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select>
-          <input aria-label="Cantidad comprada" className="fin-input" type="number" step="any" placeholder="Cantidad" value={trackedForm.quantity} onChange={e=>setTrackedForm({...trackedForm,quantity:e.target.value})} required/>
-          <input aria-label="Precio de compra" className="fin-input" type="number" step="any" placeholder="Precio de compra" value={trackedForm.purchase_price} onChange={e=>setTrackedForm({...trackedForm,purchase_price:e.target.value})} required/>
+          <label className="text-xs text-[var(--muted)]">Cantidad que tienes<input aria-label="Cantidad comprada" className="fin-input mt-1" type="number" step="any" placeholder={trackedForm.asset_class==='crypto'?'Ej. 0,025 BTC':'Ej. 10 acciones'} value={trackedForm.quantity} onChange={e=>setTrackedForm({...trackedForm,quantity:e.target.value})} required/></label>
+          <label className="text-xs text-[var(--muted)]">Precio pagado por unidad<input aria-label="Precio de compra" className="fin-input mt-1" type="number" step="any" placeholder="Precio por BTC/acción/participación" value={trackedForm.purchase_price} onChange={e=>setTrackedForm({...trackedForm,purchase_price:e.target.value})} required/></label>
           <input aria-label="Fecha de compra" className="fin-input" type="date" value={trackedForm.purchase_date} onChange={e=>setTrackedForm({...trackedForm,purchase_date:e.target.value})} required/>
           <input aria-label="Comisiones de compra" className="fin-input" type="number" step=".01" placeholder="Comisiones" value={trackedForm.fees} onChange={e=>setTrackedForm({...trackedForm,fees:e.target.value})}/>
           <input aria-label="Tipo de cambio a EUR en la compra" className="fin-input" type="number" step="any" placeholder="FX compra (1 si EUR)" value={trackedForm.fx_rate} onChange={e=>setTrackedForm({...trackedForm,fx_rate:e.target.value})}/>
@@ -147,6 +177,7 @@ export default function MarketsPage(){
             {a.simulation&&<button className="mt-2 text-xs underline" onClick={()=>setSelectedSimulation(a.security_id)}>Ver evolución simulada</button>}
           </div>}
 
+          {a.owned&&<div className="mt-3 text-xs"><a className="underline" href="/investments/">Registrar otra compra, venta o dividendo</a></div>}
           <div className="mt-3 text-xs text-[var(--muted)]">{a.price_provider?(a.price_provider+' · '+(a.price_as_of?new Date(a.price_as_of).toLocaleString('es-ES'):'fecha no informada')+(a.price_stale?' · precio desactualizado':'')):'Aún no hay un precio de mercado guardado.'}</div>
         </div>):<EmptyState>No has guardado activos todavía.</EmptyState>}
       </div>
@@ -160,7 +191,7 @@ export default function MarketsPage(){
     <div className="grid gap-4 xl:grid-cols-2">
       <Card>
         <h2 className="font-bold">Cotización</h2>
-        <form className="mt-3 flex gap-2" onSubmit={(e:FormEvent)=>{e.preventDefault();quote.mutate()}}><input className="fin-input" aria-label="Ticker" value={symbol} onChange={e=>setSymbol(e.target.value)}/><button className="fin-button">Consultar</button></form>
+        <form className="mt-3 flex gap-2" onSubmit={(e:FormEvent)=>{e.preventDefault();quote.mutate()}}><input className="fin-input" aria-label="Ticker" placeholder="Ticker, ej. AAPL" value={symbol} onChange={e=>setSymbol(e.target.value.trim().toUpperCase())}/><button className="fin-button">Consultar</button></form><div className="mt-1 text-[11px] text-[var(--muted)]">Usa el ticker real del mercado. Por ejemplo, Apple es AAPL; un ticker inexistente como AAPPL se rechazará sin guardar una cotización falsa.</div>
         {quote.error&&<div className="mt-3"><ErrorState error={quote.error}/></div>}
         {quote.data&&<div className="mt-4"><div className="text-2xl font-bold"><Money value={quote.data.price}/></div><div className="text-xs text-[var(--muted)]">{quote.data.provider} · {quote.data.as_of?new Date(quote.data.as_of).toLocaleString('es-ES'):'fecha no informada'} · {quote.data.delayed?'dato retrasado':'sin marca de retraso'}</div></div>}
       </Card>

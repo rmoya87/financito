@@ -1,6 +1,6 @@
 # Estado de implementación
 
-Fecha de corte: **2026-09-20**.  
+Fecha de corte: **2026-09-21**.  
 Schema actual: **v11**.
 
 Este documento describe únicamente comportamiento ejecutable en `main`. Los planes futuros viven en `ROADMAP.md`.
@@ -59,9 +59,10 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 
 ### Patrimonio, inversiones y mercado
 - resumen patrimonial 360º con patrimonio neto, liquidez, vivienda/inmuebles, vehículos, otros bienes, inversiones reales, hipoteca, otras deudas y seguros; las primas se muestran como coste/protección y nunca como activo.
-- activos y pasivos manuales, net worth y ownership.
+- activos y pasivos manuales, net worth y ownership; vivienda, vehículos y otros bienes pueden editarse o eliminarse conservando snapshot de auditoría.
 - portfolios, securities, trades y FIFO tax lots.
-- acciones/ETF/fondos/cripto en modo seguimiento o poseído, con compra real, coste base, último precio persistido, P&L, dividendos y frescura de mercado.
+- acciones/ETF/fondos/cripto en modo seguimiento o poseído, con cantidad/unidades, precio y fecha de compra, coste base, último precio persistido, P&L, dividendos y frescura de mercado.
+- histórico persistido de los valores seguidos y gráfica comparativa normalizada por rendimiento porcentual, con series diferenciadas y fuente/frescura visibles.
 - P&L realizado/no realizado.
 - Alpha Vantage: quote e histórico bajo demanda y caché local; si no está configurado, está limitado o no devuelve precio, acciones/ETF intentan Stooq como respaldo gratuito retrasado/EOD para no bloquear seguimiento y simulaciones.
 - exposición por activo/clase y concentración HHI.
@@ -78,9 +79,10 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 - pólizas y hechos de cobertura.
 - duplicidades solo entre coberturas verificadas.
 - requisitos de cobertura definidos por usuario y detección de huecos contra esos requisitos.
-- perfil hipotecario persistente con snapshots; motor hipotecario de cuota/intereses y escenarios basados en el mortgage_id real.
+- perfil hipotecario persistente con snapshots; desde Documentos una escritura/FEIN puede crear y vincular explícitamente el perfil inicial, y los hechos confirmados pasan a ser reutilizables por Patrimonio y simulaciones.
+- motor hipotecario de cuota/intereses y escenarios basados en el mortgage_id real seleccionado; escenario base, amortización, senda de tipos y escaneo de mercado comparten esa selección.
 - amortización extraordinaria: reducir cuota vs reducir plazo, con comisión explícita.
-- motor de switching con costes, penalizaciones, beneficios perdidos, tax impact y break-even.
+- motor de switching con costes, penalizaciones, beneficios perdidos, tax impact y break-even; la vista de mercado formula una conclusión accionable y solo señala una referencia concreta cuando el ahorro neto conocido es positivo y no faltan costes contractuales materiales.
 - beneficios y productos vinculados.
 - Decision Case, alternativas, estados y resultado esperado vs observado.
 - centros de coste con asignaciones porcentuales; una categoría vinculada agrega automáticamente su gasto de los últimos 12 meses y puede combinarse con contratos/pólizas/activos/deuda.
@@ -108,7 +110,7 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 - fundamentals: extracción de conceptos SEC seleccionados, no un terminal financiero completo.
 - news: búsqueda/ingestión; no existe todavía un motor robusto de impacto/sentimiento.
 - portfolio fit/recommendation: scoring determinista disponible, sin asesoramiento personalizado automático.
-- modelo temporal: se conserva fecha/procedencia en fuentes principales, pero no existe aún reconstrucción universal “as-of” de todas las entidades.
+- modelo temporal: se conserva fecha/procedencia en fuentes principales y la UI denomina la reconstrucción disponible “Patrimonio en una fecha”; sigue sin existir reconstrucción universal de todas las entidades.
 - accesibilidad: UI responsive y semántica básica, sin auditoría WCAG AA completa.
 
 ## No se declara terminado

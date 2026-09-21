@@ -153,3 +153,108 @@ def test_tracked_asset_uses_real_purchase_data_and_watch_state():
         assert Decimal(refreshed["current_price"])==Decimal("25")
         assert Decimal(refreshed["current_value"])==Decimal("250")
         assert Decimal(refreshed["unrealized_pnl"])==Decimal("48")
+
+
+def test_public_mortgage_rate_parser_accepts_label_before_or_after_value():
+    from financito.services.market_research import _rates
+
+    rows=_rates("Hipoteca fija: TIN 2,45 % y 2,80 % TAE. Alternativa 2,35 % TIN.")
+    tins={row["value_percent"] for row in rows if row["type"]=="TIN"}
+    taes={row["value_percent"] for row in rows if row["type"]=="TAE"}
+    assert {"2.45","2.35"} <= tins
+    assert "2.80" in taes
+
+
+def test_market_conclusion_uses_net_known_saving_and_blocks_missing_costs():
+    from financito.models import Mortgage
+    from financito.services.market_research import _market_conclusion
+
+    mortgage=Mortgage(
+        lender="Banco actual",
+        remaining_principal=Decimal("100000"),
+        currency="EUR",
+        interest_type="fixed",
+        nominal_rate=Decimal("0.03"),
+        monthly_payment=Decimal("700"),
+        remaining_months=180,
+    )
+    leads=[
+        {
+            "source_id":"bank-a","provider":"Banco A","kind":"mortgage_subrogation","public_tin_min":2.4,
+            "scenario":{
+                "monthly_payment_difference":"35","remaining_interest_difference":"5000",
+                "known_exit_penalty":"500","break_even_months_known_penalty_only":"14.3",
+            },
+        },
+        {
+            "source_id":"bank-b","provider":"Banco B","kind":"mortgage_subrogation","public_tin_min":2.3,
+            "scenario":{
+                "monthly_payment_difference":"40","remaining_interest_difference":"7000",
+                "known_exit_penalty":"1000","break_even_months_known_penalty_only":"25",
+            },
+        },
+    ]
+    result=_market_conclusion(mortgage,leads,{"ready":True,"missing":[]})
+    assert result["status"]=="request_personalized_offer"
+    assert result["provider"]=="Banco B"
+    assert Decimal(result["estimated_net_interest_saving_known_costs"])==Decimal("6000.00")
+
+    blocked=_market_conclusion(
+        mortgage,leads,{"ready":False,"missing":["mortgage_exit_or_subrogation_penalty"]}
+    )
+    assert blocked["status"]=="needs_more_data"
+    assert blocked["provider"] is None
+    assert "mortgage_exit_or_subrogation_penalty" in blocked["missing"]
+
+
+def test_tracked_history_endpoint_exposes_persisted_prices():
+    from fastapi.testclient import TestClient
+    from financito.main import app
+    from financito.services.investment_tracking import save_tracked_asset
+
+    suffix=uuid4().hex[:8].upper()
+    with SessionLocal() as db:
+        tracked=save_tracked_asset(
+            db,
+            asset_class="stock",
+            name=f"History {suffix}",
+            identifier=f"H{suffix[:4]}",
+            owned=False,
+            portfolio_id=None,
+            quantity=None,
+            purchase_price=None,
+            purchase_date=None,
+            fees=Decimal("0"),
+            fx_rate=Decimal("1"),
+            currency="EUR",
+            provider_asset_id=None,
+            notes=None,
+        )
+        db.add_all([
+            MarketPrice(
+                security_id=tracked["security_id"],
+                timestamp=datetime.now(timezone.utc)-timedelta(days=2),
+                close=Decimal("10"),
+                currency="EUR",
+                provider="test",
+                is_delayed=True,
+            ),
+            MarketPrice(
+                security_id=tracked["security_id"],
+                timestamp=datetime.now(timezone.utc)-timedelta(days=1),
+                close=Decimal("11"),
+                currency="EUR",
+                provider="test",
+                is_delayed=True,
+            ),
+        ])
+        db.commit()
+        security_id=tracked["security_id"]
+
+    with TestClient(app) as client:
+        assert client.get("/api/v1/session").status_code==200
+        response=client.get("/api/v1/tracked-assets/history",params={"days":30})
+        assert response.status_code==200
+        row=next(x for x in response.json() if x["security_id"]==security_id)
+        assert len(row["rows"])>=2
+        assert row["rows"][-1]["provider"]=="test"
