@@ -10,7 +10,7 @@ from sqlalchemy import delete,select
 from sqlalchemy.orm import Session
 
 from ..models import ActionItem, Contract, Document, ExtractedFact, Mortgage
-from ..models_analytics import EntityLink
+from ..models_analytics import EntityLink,LinkedProduct
 from ..models_extended import CoverageFact,InsurancePolicy,MortgageProfileExtra
 from .document_ai import latest_analysis
 
@@ -567,17 +567,148 @@ def confirm_entity_coherent_evidence(session: Session, entity_type: str, entity_
     return _confirm_coherent_for_documents(session, _linked_document_ids(session, entity_type, entity_id))
 
 
-def _confirmed_values(session: Session, document_id: str) -> dict[str, dict]:
-    result: dict[str, dict] = {}
+MORTGAGE_VALUE_KEYS = {
+    "provider_name",
+    "remaining_principal",
+    "nominal_rate",
+    "monthly_payment",
+    "remaining_months",
+    "interest_type",
+    "mortgage_term_years",
+    "apr_rate",
+    "reference_index",
+    "differential_rate",
+    "rate_review_months",
+    "next_review_date",
+    "opening_fee_percent",
+    "early_repayment_fee",
+    "early_repayment_fee_percent",
+    "subrogation_fee_percent",
+    "cancellation_fee_percent",
+}
+INSURANCE_MARKER_KEYS = {
+    "insurance_type",
+    "insured_object",
+    "policy_number",
+    "linked_insurance",
+    "linked_life_insurance",
+    "linked_home_insurance",
+    "linked_mortgage_insurance",
+}
+INSURANCE_VALUE_KEYS = {
+    "provider_name",
+    "annual_cost",
+    "monthly_cost",
+    "renewal_date",
+    "next_review_date",
+    "cancellation_notice_days",
+    "early_exit_penalty",
+    "start_date",
+    "permanence_end_date",
+    "insurance_type",
+    "insured_object",
+    "policy_number",
+    "contract_number",
+    "deductible",
+}
+
+
+def _confirmed_fact_rows(session: Session, document_id: str) -> list[dict]:
+    rows = []
     for fact in _facts(session, document_id):
         if not (fact.user_verified and fact.status == "confirmed"):
             continue
-        if fact.key not in result:
-            payload = _payload(fact)
-            payload["source_page"] = fact.source_page
-            payload["confidence"] = str(fact.confidence)
-            result[fact.key] = payload
+        payload = _payload(fact)
+        rows.append({
+            "key": fact.key,
+            "fact_type": fact.fact_type,
+            "source_page": fact.source_page,
+            "confidence": str(fact.confidence),
+            "payload": payload,
+        })
+    return rows
+
+
+def _rows_to_values(rows: list[dict]) -> dict[str, dict]:
+    result: dict[str, dict] = {}
+    for row in rows:
+        if row["key"] in result:
+            continue
+        payload = dict(row["payload"])
+        payload["source_page"] = row["source_page"]
+        payload["confidence"] = row["confidence"]
+        payload["_fact_type"] = row["fact_type"]
+        result[row["key"]] = payload
     return result
+
+
+def _confirmed_values(session: Session, document_id: str) -> dict[str, dict]:
+    return _rows_to_values(_confirmed_fact_rows(session, document_id))
+
+
+def _partition_confirmed_values(
+    document: Document,
+    rows: list[dict],
+) -> tuple[dict[str, dict], dict[str, dict], bool]:
+    """Separate confirmed facts by product domain before projecting them.
+
+    A mortgage PDF may include a linked life/home policy. Generic contract keys
+    such as provider_name, annual_cost or renewal_date must therefore not be
+    allowed to overwrite mortgage fields merely because they live in the same
+    file. Confirmed fact_type + the pages carrying explicit insurance markers
+    provide the boundary.
+    """
+    all_values = _rows_to_values(rows)
+    if document.document_type == "insurance":
+        return {}, all_values, bool(all_values)
+
+    insurance_marker_pages = {
+        row["source_page"]
+        for row in rows
+        if (
+            row["fact_type"] == "coverage_fact"
+            or row["key"] in INSURANCE_MARKER_KEYS
+            or (row["fact_type"] == "linked_product" and "insurance" in row["key"].lower())
+        )
+        and row["source_page"] is not None
+    }
+    has_insurance = any(
+        row["fact_type"] == "coverage_fact"
+        or row["key"] in INSURANCE_MARKER_KEYS
+        or (row["fact_type"] == "linked_product" and "insurance" in row["key"].lower())
+        for row in rows
+    )
+
+    mortgage_rows: list[dict] = []
+    insurance_rows: list[dict] = []
+    for row in rows:
+        key = row["key"]
+        fact_type = row["fact_type"]
+        page = row["source_page"]
+
+        # A fact explicitly classified as mortgage data wins even if the same
+        # page also contains a bundled insurance product.
+        if fact_type == "mortgage_term":
+            mortgage_rows.append(row)
+        elif key in MORTGAGE_VALUE_KEYS and page not in insurance_marker_pages:
+            mortgage_rows.append(row)
+
+        if not has_insurance:
+            continue
+        if key in INSURANCE_MARKER_KEYS:
+            insurance_rows.append(row)
+        elif fact_type == "coverage_fact":
+            # Coverage rows are projected separately, but retaining them here
+            # makes the domain detection auditable.
+            insurance_rows.append(row)
+        elif key in INSURANCE_VALUE_KEYS and (
+            document.document_type == "insurance"
+            or page in insurance_marker_pages
+            or (page is None and fact_type == "linked_product")
+        ):
+            insurance_rows.append(row)
+
+    return _rows_to_values(mortgage_rows), _rows_to_values(insurance_rows), has_insurance
 
 
 def _decimal(value: object) -> Decimal | None:
@@ -628,11 +759,31 @@ def _insurance_type(file_name: str) -> str:
         (("vida",), "life"),
         (("salud", "medico", "médico"), "health"),
         (("mascota", "perro", "gato"), "pet"),
+        (("viaje",), "travel"),
     )
     for terms, value in mappings:
         if any(term in name for term in terms):
             return value
     return "unknown"
+
+
+def _canonical_insurance_type(value: object, file_name: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return _insurance_type(file_name)
+    low = raw.lower()
+    mappings = (
+        (("hogar", "vivienda", "home"), "home"),
+        (("coche", "auto", "vehiculo", "vehículo", "car"), "car"),
+        (("vida", "life"), "life"),
+        (("salud", "medico", "médico", "health"), "health"),
+        (("mascota", "perro", "gato", "pet"), "pet"),
+        (("viaje", "travel"), "travel"),
+    )
+    for terms, canonical in mappings:
+        if any(term in low for term in terms):
+            return canonical
+    return raw[:60]
 
 
 def _entity_link(
@@ -904,7 +1055,7 @@ def _ensure_insurance_projection(
     if policy is None:
         policy = InsurancePolicy(
             contract_id=contract.id,
-            insurance_type=str(values.get("insurance_type",{}).get("value") or _insurance_type(document.file_name))[:60],
+            insurance_type=_canonical_insurance_type(values.get("insurance_type",{}).get("value"),document.file_name),
             annual_premium=premium,
             deductible=None,
             currency="EUR",
@@ -929,14 +1080,23 @@ def _ensure_insurance_projection(
 
     if contract is not None:
         policy.contract_id = contract.id
-    if values.get("policy_number",{}).get("value"):
-        policy.policy_number_masked=str(values["policy_number"]["value"])[:80]
+    policy_number = (
+        values.get("policy_number",{}).get("value")
+        or values.get("contract_number",{}).get("value")
+    )
+    if policy_number:
+        policy.policy_number_masked=str(policy_number)[:80]
     if values.get("insurance_type",{}).get("value"):
-        policy.insurance_type=str(values["insurance_type"]["value"])[:60]
+        policy.insurance_type=_canonical_insurance_type(values["insurance_type"]["value"],document.file_name)
     if premium is not None:
         policy.annual_premium = premium
     if "deductible" in values:
         policy.deductible = _decimal(values["deductible"].get("value"))
+    if values.get("insured_object",{}).get("value"):
+        policy.insured_object_json=json.dumps(
+            {"description":str(values["insured_object"]["value"])},
+            ensure_ascii=False,
+        )
     session.flush()
     return policy
 
@@ -947,7 +1107,7 @@ def _ensure_coverage_projection(
     contract: Contract | None,
     policy: InsurancePolicy | None,
 ) -> int:
-    if document.document_type != "insurance" or (contract is None and policy is None):
+    if policy is None:
         return 0
 
     rows = session.scalars(
