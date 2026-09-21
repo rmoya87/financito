@@ -177,3 +177,14 @@ Las conclusiones de IA de varios documentos vinculados al mismo producto compart
 - La vista contextual permite asociar un documento existente o desvincularlo del producto sin borrar el archivo del Vault.
 - En **Información que falta**, hipotecas y seguros pueden relanzar la IA local solo sobre sus documentos. Si el dato continúa sin encontrarse, los campos compatibles pueden completarse manualmente desde la propia sección y editarse después desde la ficha.
 - La biblioteca documental global queda como inventario/entrada para archivos sin asociar, no como gestor principal de hipotecas o pólizas.
+
+
+## Movimientos previsibles y saldos reales locales (2026-09)
+
+- **Recurrentes**: la detección combina periodicidad e importes por comercio/concepto, normalización de referencias variables y una segunda pasada opcional con la IA local. Las propuestas de la IA solo se convierten en una serie recurrente después de validar matemáticamente al menos tres movimientos y una cadencia compatible.
+- Los patrones recurrentes se recalculan de forma ligera tras cada sincronización bancaria y con IA local tras una importación manual o al pulsar **Recalcular patrones**.
+- **Próximos 90 días** ya no es solo un calendario de compromisos: incluye todas las ocurrencias futuras de las series recurrentes y previsiones mensuales de categorías con histórico suficientemente estable (p. ej. supermercado, educación, suministros, transporte, seguros, mascotas o suscripciones), mostrando confianza y base histórica.
+- **Calidad de los datos** sustituye al nombre ambiguo “Calidad y reconciliación”. Explica problemas accionables de categorización, sincronización bancaria y evidencia documental sin mezclarlos con recomendaciones financieras.
+- **Cuentas** distingue dos fuentes de verdad: cuentas conectadas PSD2 con saldo de solo lectura procedente del banco, y cuentas manuales con saldo editable/auditado para ahorro, efectivo o entidades no conectadas.
+- Las conexiones PSD2 se refrescan desde el proceso local cada 15 minutos mientras Financito está abierto y también pueden sincronizarse manualmente. No se presenta como streaming en tiempo real porque la frecuencia efectiva depende de la API bancaria.
+- Los importes monetarios usan agrupación de miles explícita (por ejemplo, 4.988,93 €) mediante el componente común Money.
