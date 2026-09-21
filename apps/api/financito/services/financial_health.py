@@ -85,22 +85,42 @@ def _predict_expected_incomes(
             continue
         amounts=[tx.amount for tx in ordered[-4:]]
         expected=Decimal(str(median(amounts))).quantize(CENT)
-        next_date=unique_dates[-1]+timedelta(days=gap)
+        last_date=unique_dates[-1]
+        received_this_month=last_date.year==as_of.year and last_date.month==as_of.month
+        next_date=last_date+timedelta(days=gap)
         guard=0
-        while next_date<=as_of and guard<12:
+        current_month_start=as_of.replace(day=1)
+        while next_date<current_month_start and guard<12:
             next_date+=timedelta(days=gap);guard+=1
+        expected_date=next_date
+        overdue=(
+            not received_this_month
+            and expected_date.year==as_of.year
+            and expected_date.month==as_of.month
+            and expected_date<=as_of
+        )
+        if overdue:
+            # Keep the missed current-month occurrence in the plan, but never
+            # pretend its historical expected date is still in the future.
+            next_date=as_of+timedelta(days=1)
+        else:
+            while next_date<=as_of and guard<12:
+                next_date+=timedelta(days=gap);guard+=1
+            expected_date=next_date
         if next_date>as_of+timedelta(days=horizon_days):
             continue
         count=len(unique_dates)
         confidence=Decimal("0.90") if count>=5 else Decimal("0.85") if count>=4 else Decimal("0.75") if count>=3 else Decimal("0.70")
-        last_date=unique_dates[-1]
+        if overdue:
+            confidence=max(Decimal("0.50"),confidence-Decimal("0.15"))
         candidates.append({
-            "date":str(next_date),"amount":str(expected),"label":key,
+            "date":str(next_date),"expected_date":str(expected_date),"amount":str(expected),"label":key,
             "confidence":str(confidence),
-            "basis":f"Patrón de ingreso mensual detectado en {count} movimientos",
+            "basis":f"Patrón de ingreso mensual detectado en {count} movimientos"+(" · fecha habitual ya vencida" if overdue else ""),
             "occurrences":count,
             "last_received_date":str(last_date),
-            "received_this_month":last_date.year==as_of.year and last_date.month==as_of.month,
+            "received_this_month":received_this_month,
+            "overdue":overdue,
         })
     return sorted(candidates,key=lambda x:(x["date"],-Decimal(x["amount"])))
 
