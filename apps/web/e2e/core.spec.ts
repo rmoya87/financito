@@ -90,11 +90,17 @@ test('Movimientos y Análisis comparten el selector temporal de Inicio',async({p
 test('Análisis muestra 30 días, tarta de comercios y permite alternar a listado',async({page})=>{
   await page.goto('/analytics/');
   await expect(page.getByRole('heading',{name:'Próximos 30 días'})).toBeVisible();
+  const merchantCard=page.getByRole('heading',{name:'Principales comercios'}).locator('..').locator('..').locator('..');
   const chartButton=page.getByRole('button',{name:'Gráfica'});
   const listButton=page.getByRole('button',{name:'Listado'});
   await expect(chartButton).toHaveAttribute('aria-pressed','true');
+  const chartPercentages=await merchantCard.getByText(/^\d+(?:[.,]\d+)?%$/).allTextContents();
+  for(const value of chartPercentages)expect(Number(value.replace('%','').replace(',','.'))).toBeLessThanOrEqual(100);
   await listButton.click();
   await expect(listButton).toHaveAttribute('aria-pressed','true');
+  const listPercentages=await merchantCard.getByText(/^\d+(?:[.,]\d+)?%$/).allTextContents();
+  expect(listPercentages.length).toBeGreaterThan(0);
+  for(const value of listPercentages)expect(Number(value.replace('%','').replace(',','.'))).toBeLessThanOrEqual(100);
   await expectAccessible(page);
 });
 
@@ -110,6 +116,49 @@ test('Cuentas permite eliminar una cuenta y sus movimientos locales',async({page
 
   await page.goto('/transactions/');
   await expect(page.getByText('Compra E2E',{exact:true})).not.toBeVisible();
+});
+
+test('Patrimonio incorpora Casa y permite eliminar otras deudas',async({page})=>{
+  await page.goto('/wealth/');
+  const wealthNav=page.getByRole('navigation',{name:'Navegación de Patrimonio'});
+  const casa=wealthNav.getByRole('link',{name:'Casa'});
+  await expect(casa).toBeVisible();
+  await expect(wealthNav.getByRole('link',{name:'Seguros y protección'})).toBeVisible();
+  await casa.click();
+  await expect(casa).toHaveAttribute('aria-current','page');
+  await expect(page.getByRole('heading',{name:'Vivienda e hipoteca'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Bienes y evolución de valor'})).toBeVisible();
+
+  const debtCard=page.getByRole('heading',{name:'Otras deudas'}).locator('..');
+  await debtCard.getByPlaceholder('Nombre').fill('Deuda E2E');
+  await debtCard.getByPlaceholder('Capital pendiente').fill('1234.56');
+  await debtCard.getByRole('button',{name:'Añadir deuda'}).click();
+  await expect(debtCard.getByText('Deuda E2E',{exact:true})).toBeVisible();
+  page.once('dialog',dialog=>dialog.accept());
+  const debtRow=debtCard.getByText('Deuda E2E',{exact:true}).locator('..').locator('..');
+  await debtRow.getByRole('button',{name:'Eliminar'}).click();
+  await expect(debtCard.getByText('Deuda E2E',{exact:true})).not.toBeVisible();
+  await expectAccessible(page);
+});
+
+test('al pulsar un seguro se abre su ficha completa',async({page})=>{
+  await page.goto('/insurance/');
+  await page.getByRole('button',{name:'Nuevo seguro'}).click();
+  await page.getByPlaceholder('Aseguradora').fill('Seguro E2E');
+  await page.getByPlaceholder('Prima anual (€)').fill('480');
+  await page.getByPlaceholder('Franquicia (€)').fill('100');
+  await page.getByRole('button',{name:'Crear seguro'}).click();
+  await expect(page.getByText('Seguro E2E',{exact:true})).toBeVisible();
+
+  await page.getByText('Seguro E2E',{exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'Detalle del seguro'});
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('heading',{name:'Condiciones contractuales'})).toBeVisible();
+  await expect(dialog.getByRole('heading',{name:'Documentos a consultar'})).toBeVisible();
+  await expect(dialog.getByRole('heading',{name:'Coberturas, límites y exclusiones'})).toBeVisible();
+  await expectAccessible(page);
+  await dialog.getByRole('button',{name:'Cerrar'}).click();
+  await expect(dialog).not.toBeVisible();
 });
 
 test('Documentos permite subir y procesar un archivo desde la aplicación',async({page})=>{
