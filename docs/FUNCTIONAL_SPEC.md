@@ -851,3 +851,12 @@ Financito trata el saldo bancario sincronizado como la fuente de verdad de una c
 ## Selección temporal consistente
 
 Las vistas Inicio, Movimientos y Análisis deben compartir el mismo patrón de selección temporal en la parte superior derecha. El rango elegido debe formar parte de las claves de consulta y enviarse al backend para evitar filtros únicamente visuales. Las previsiones de Análisis se anclan a la fecha final del periodo seleccionado.
+
+
+## Análisis visual y gestión de cuentas
+
+- La previsión compacta de Análisis cubre 30 días posteriores a la fecha final del filtro.
+- Para `Este mes`, la evolución de ingresos, gastos y ahorro es diaria; para horizontes mayores puede agregarse mensualmente.
+- El reparto por comercios debe mostrar tanto valor monetario como porcentaje y permitir cambiar entre gráfica de tarta y listado, siendo la gráfica la vista inicial.
+- Los patrones recurrentes requieren histórico transversal; no deben desaparecer por aplicar un filtro mensual que, por definición, no contiene suficientes repeticiones para validar una recurrencia. Si no existe ninguna serie validada, la sección se oculta.
+- Una cuenta puede eliminarse desde Cuentas. Debe informarse de que se eliminarán sus movimientos locales y, si procede de banca conectada, de que la autorización general no se revoca automáticamente.
