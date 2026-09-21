@@ -201,7 +201,7 @@ test('Movimientos vincula una cuota hipotecaria y solo descuenta capital',async(
   await page.getByRole('button',{name:'Importar extracto'}).click();
   await expect(page.getByText('Cuota Hipoteca Vinculada E2E',{exact:true})).toBeVisible();
 
-  await page.getByRole('button',{name:'Opciones de Cuota Hipoteca Vinculada E2E'}).click();
+  await page.locator('summary[aria-label="Opciones de Cuota Hipoteca Vinculada E2E"]').click();
   const mortgageSelect=page.getByRole('combobox',{name:'Hipoteca para Cuota Hipoteca Vinculada E2E'});
   const mortgageOptionValue=await mortgageSelect.locator('option').filter({hasText:'Hipoteca E2E'}).getAttribute('value');
   expect(mortgageOptionValue).toBeTruthy();
