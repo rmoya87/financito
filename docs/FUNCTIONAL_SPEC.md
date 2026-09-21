@@ -841,3 +841,8 @@ Configuración debe distinguir:
 - modelo de embeddings funcional.
 
 La aplicación debe mostrar un diagnóstico legible y nunca interpretar los HEAD del frontend como llamadas al modelo.
+
+
+## Fuentes de saldo y previsiones locales
+
+Financito trata el saldo bancario sincronizado como la fuente de verdad de una cuenta conectada. Para ahorro, efectivo o cuentas sin integración disponible, el usuario puede mantener una cuenta manual cuyo saldo queda registrado mediante snapshots de auditoría. Las previsiones de 90 días distinguen compromisos conocidos, patrones recurrentes validados y estimaciones históricas por categoría; una estimación nunca se presenta como un movimiento confirmado.
