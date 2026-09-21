@@ -61,7 +61,8 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 - resumen patrimonial 360º con patrimonio neto, liquidez, vivienda/inmuebles, vehículos, otros bienes, inversiones reales, hipoteca, otras deudas y seguros; las primas se muestran como coste/protección y nunca como activo.
 - activos y pasivos manuales, net worth y ownership; vivienda, vehículos y otros bienes pueden editarse o eliminarse conservando snapshot de auditoría.
 - portfolios, securities, trades y FIFO tax lots.
-- acciones/ETF/fondos/cripto en modo seguimiento o poseído, con cantidad/unidades, precio y fecha de compra, coste base, último precio persistido, P&L, dividendos y frescura de mercado.\n- histórico persistido de los valores seguidos y gráfica comparativa normalizada por rendimiento porcentual, con series diferenciadas y fuente/frescura visibles.
+- acciones/ETF/fondos/cripto en modo seguimiento o poseído, con cantidad/unidades, precio y fecha de compra, coste base, último precio persistido, P&L, dividendos y frescura de mercado.
+- histórico persistido de los valores seguidos y gráfica comparativa normalizada por rendimiento porcentual, con series diferenciadas y fuente/frescura visibles.
 - P&L realizado/no realizado.
 - Alpha Vantage: quote e histórico bajo demanda y caché local; si no está configurado, está limitado o no devuelve precio, acciones/ETF intentan Stooq como respaldo gratuito retrasado/EOD para no bloquear seguimiento y simulaciones.
 - exposición por activo/clase y concentración HHI.
@@ -78,7 +79,8 @@ Este documento describe únicamente comportamiento ejecutable en `main`. Los pla
 - pólizas y hechos de cobertura.
 - duplicidades solo entre coberturas verificadas.
 - requisitos de cobertura definidos por usuario y detección de huecos contra esos requisitos.
-- perfil hipotecario persistente con snapshots; desde Documentos una escritura/FEIN puede crear y vincular explícitamente el perfil inicial, y los hechos confirmados pasan a ser reutilizables por Patrimonio y simulaciones.\n- motor hipotecario de cuota/intereses y escenarios basados en el mortgage_id real seleccionado; escenario base, amortización, senda de tipos y escaneo de mercado comparten esa selección.
+- perfil hipotecario persistente con snapshots; desde Documentos una escritura/FEIN puede crear y vincular explícitamente el perfil inicial, y los hechos confirmados pasan a ser reutilizables por Patrimonio y simulaciones.
+- motor hipotecario de cuota/intereses y escenarios basados en el mortgage_id real seleccionado; escenario base, amortización, senda de tipos y escaneo de mercado comparten esa selección.
 - amortización extraordinaria: reducir cuota vs reducir plazo, con comisión explícita.
 - motor de switching con costes, penalizaciones, beneficios perdidos, tax impact y break-even; la vista de mercado formula una conclusión accionable y solo señala una referencia concreta cuando el ahorro neto conocido es positivo y no faltan costes contractuales materiales.
 - beneficios y productos vinculados.
