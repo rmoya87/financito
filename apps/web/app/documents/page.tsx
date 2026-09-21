@@ -27,6 +27,8 @@ export default function DocumentsPage(){
   const [path,setPath]=useState('');
   const [selected,setSelected]=useState<string|null>(null);
   const [actionId,setActionId]=useState<string|null>(null);
+  const [contextEntity,setContextEntity]=useState<{type:'insurance_policy'|'contract'|'mortgage';id:string;label:string}|null>(null);
+  const [associateDocumentId,setAssociateDocumentId]=useState('');
   const [dragging,setDragging]=useState(false);
   const [manualFact,setManualFact]=useState({fact_type:'contract_term',key:'',value:'',unit:'',coverage_type:'',limit_amount:'',deductible:'',conditions:'',exclusions:'',source_page:''});
   const [mortgageDraft,setMortgageDraft]=useState({lender:'',remaining_principal:'',interest_type:'fixed',nominal_rate_pct:'',monthly_payment:'',remaining_months:'',early_repayment_fee:''});
@@ -37,9 +39,18 @@ export default function DocumentsPage(){
     const documentId=params.get('document');
     if(documentId)setSelected(documentId);
     setActionId(params.get('action'));
+    const entityType=params.get('entity_type');
+    const entityId=params.get('entity_id');
+    if(entityId&&['insurance_policy','contract','mortgage'].includes(entityType||'')){
+      setContextEntity({type:entityType as 'insurance_policy'|'contract'|'mortgage',id:entityId,label:params.get('label')||'Producto'});
+    }
   },[]);
 
-  const docs=useQuery({queryKey:['documents'],queryFn:()=>apiGet<Doc[]>('/api/v1/documents')});
+  const docs=useQuery({
+    queryKey:['documents',contextEntity?.type,contextEntity?.id],
+    queryFn:()=>apiGet<Doc[]>('/api/v1/documents'+(contextEntity?'?entity_type='+encodeURIComponent(contextEntity.type)+'&entity_id='+encodeURIComponent(contextEntity.id):'')),
+  });
+  const allDocs=useQuery({queryKey:['documents','all'],queryFn:()=>apiGet<Doc[]>('/api/v1/documents'),enabled:!!contextEntity});
   const groups=useQuery({queryKey:['evidence-groups'],queryFn:()=>apiGet<EvidenceGroup[]>('/api/v1/evidence-groups')});
   const actions=useQuery({queryKey:['actions'],queryFn:()=>apiGet<ActionItem[]>('/api/v1/actions'),enabled:!!actionId});
   const facts=useQuery({
@@ -61,6 +72,7 @@ export default function DocumentsPage(){
 
   const invalidateEvidence=()=>{
     qc.invalidateQueries({queryKey:['documents']});
+    qc.invalidateQueries({queryKey:['documents','all']});
     qc.invalidateQueries({queryKey:['evidence-groups']});
     qc.invalidateQueries({queryKey:['facts',selected]});
     qc.invalidateQueries({queryKey:['actions']});
@@ -86,7 +98,11 @@ export default function DocumentsPage(){
     mutationFn:(files:File[])=>{
       const form=new FormData();
       files.forEach(file=>form.append('files',file));
-      form.append('document_type','unknown');
+      form.append('document_type',contextEntity?.type==='mortgage'?'mortgage':contextEntity?.type==='insurance_policy'?'insurance':'unknown');
+      if(contextEntity){
+        form.append('entity_type',contextEntity.type);
+        form.append('entity_id',contextEntity.id);
+      }
       return apiUpload<UploadResponse>('/api/v1/documents/upload',form);
     },
     onSuccess:(data)=>{
@@ -104,11 +120,15 @@ export default function DocumentsPage(){
     },
   });
   const analyzeAll=useMutation({
-    mutationFn:()=>apiMutate<{scheduled:number}>('/api/v1/documents/analyze-all','POST'),
+    mutationFn:()=>contextEntity
+      ?apiMutate<{documents:number;analyzed:number;failed:number}>('/api/v1/evidence-groups/'+contextEntity.type+'/'+contextEntity.id+'/analyze','POST')
+      :apiMutate<{scheduled:number}>('/api/v1/documents/analyze-all','POST'),
     onSuccess:()=>{
       qc.invalidateQueries({queryKey:['documents']});
       qc.invalidateQueries({queryKey:['document-analysis',selected]});
       qc.invalidateQueries({queryKey:['document-insights']});
+      qc.invalidateQueries({queryKey:['wealth-home']});
+      qc.invalidateQueries({queryKey:['insurance-verdict']});
     },
   });
   const index=useMutation({
@@ -127,6 +147,13 @@ export default function DocumentsPage(){
     mutationFn:({documentId,entityType,entityId}:{documentId:string;entityType:'insurance_policy'|'contract'|'mortgage';entityId:string|null})=>
       apiMutate('/api/v1/documents/'+documentId+'/entity-link','PUT',{entity_type:entityType,entity_id:entityId}),
     onSuccess:invalidateEvidence,
+  });
+  const associateExisting=useMutation({
+    mutationFn:()=>{
+      if(!contextEntity||!associateDocumentId)throw new Error('Selecciona un documento');
+      return apiMutate('/api/v1/documents/'+associateDocumentId+'/entity-link','PUT',{entity_type:contextEntity.type,entity_id:contextEntity.id});
+    },
+    onSuccess:()=>{setAssociateDocumentId('');invalidateEvidence()},
   });
   const createGroup=useMutation({
     mutationFn:(documentId:string)=>apiMutate<{entity_type:'contract';entity_id:string}>('/api/v1/documents/'+documentId+'/evidence-group','POST'),
@@ -242,8 +269,8 @@ export default function DocumentsPage(){
 
   return <>
     <PageHeader
-      title="Documentos y evidencia"
-      description="El Vault se vigila automáticamente. Los documentos se indexan para búsqueda e IA local; los datos materiales solo pasan a contratos, seguros y cálculos cuando los confirmas."
+      title={contextEntity?'Documentación · '+contextEntity.label:'Biblioteca documental'}
+      description={contextEntity?'Aquí solo se muestran los documentos asociados a este producto. Puedes añadir archivos, asociar uno ya existente y usar la IA local para buscar datos que falten.':'Biblioteca general de archivos sin convertirla en la ficha principal de hipotecas o seguros. La gestión de cada producto se realiza desde su área.'}
     />
 
     <Card>
@@ -263,8 +290,8 @@ export default function DocumentsPage(){
           accept=".pdf,.png,.jpg,.jpeg,.heic,.tiff,.bmp,.docx,.xlsx,.xlsm,.csv,.txt,.json"
           onChange={e=>{if(e.target.files)addFiles(e.target.files);e.currentTarget.value=''}}
         />
-        <div className="font-semibold">Añade documentos desde tu Mac</div>
-        <p className="mx-auto mt-1 max-w-2xl text-sm text-[var(--muted)]">Arrastra aquí hipotecas, pólizas, extractos, contratos o facturas. Financito los guarda en su Vault privado, extrae los datos y, si Ollama está disponible, genera un análisis local.</p>
+        <div className="font-semibold">{contextEntity?'Añadir documentación a '+contextEntity.label:'Añade documentos desde tu Mac'}</div>
+        <p className="mx-auto mt-1 max-w-2xl text-sm text-[var(--muted)]">{contextEntity?'Los archivos que subas aquí quedan asociados directamente a este producto y no se mezclan con otras hipotecas o seguros.':'Financito guarda los archivos en su Vault privado, extrae los datos y, si Ollama está disponible, genera un análisis local.'}</p>
         <button className="fin-button mt-4" type="button" onClick={()=>fileInput.current?.click()} disabled={upload.isPending}>
           {upload.isPending?'Subiendo y procesando…':'Seleccionar documentos'}
         </button>
@@ -272,7 +299,19 @@ export default function DocumentsPage(){
       </div>
       {upload.error&&<div className="mt-3"><ErrorState error={upload.error}/></div>}
       {upload.data&&<div className="mt-3 text-sm text-[var(--muted)]">{upload.data.documents.length} documento(s) añadido(s). El análisis de IA local se ejecuta automáticamente en segundo plano.</div>}
-      <details className="mt-4" open>
+      {contextEntity&&<div className="mt-4 rounded-xl border border-[var(--border)] p-4">
+        <div className="font-semibold text-sm">Asociar un documento que ya existe</div>
+        <p className="mt-1 text-xs text-[var(--muted)]">Úsalo si el archivo ya estaba en la biblioteca. Al asociarlo, deja de estar ligado a otro producto del mismo tipo y pasa a formar parte de {contextEntity.label}.</p>
+        <div className="mt-3 flex gap-2">
+          <select className="fin-input flex-1" value={associateDocumentId} onChange={e=>setAssociateDocumentId(e.target.value)}>
+            <option value="">Selecciona un documento…</option>
+            {(allDocs.data||[]).filter(d=>!d.evidence_links.some(l=>l.entity_type===contextEntity.type&&l.entity_id===contextEntity.id)).map(d=><option key={d.id} value={d.id}>{d.file_name} · {d.document_type}</option>)}
+          </select>
+          <button className="fin-button secondary" type="button" disabled={!associateDocumentId||associateExisting.isPending} onClick={()=>associateExisting.mutate()}>{associateExisting.isPending?'Asociando…':'Asociar'}</button>
+        </div>
+        {associateExisting.error&&<div className="mt-2"><ErrorState error={associateExisting.error}/></div>}
+      </div>}
+      {!contextEntity&&<details className="mt-4" open>
         <summary className="cursor-pointer text-sm font-medium">Importar manualmente una ruta ya existente en el Vault</summary>
         <form onSubmit={submit} className="mt-3 grid gap-3 md:grid-cols-[1fr_auto]">
         <input
@@ -291,16 +330,16 @@ export default function DocumentsPage(){
         Admite PDF, imágenes/HEIC, DOCX, XLSX, CSV, TXT y JSON. Máximo 50 MB y 500 páginas por PDF.
       </div>
       {index.error&&<div className="mt-3"><ErrorState error={index.error}/></div>}
-      </details>
+      </details>}
     </Card>
 
     <div className="mt-4 grid gap-4 xl:grid-cols-2">
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div><h2 className="font-bold">Biblioteca</h2><p className="mt-1 text-sm text-[var(--muted)]">Los documentos aparecen aquí al copiarlos al Vault; no necesitas indexarlos manualmente.</p></div>
-          <button className="fin-button secondary py-1.5 text-xs" onClick={()=>analyzeAll.mutate()} disabled={analyzeAll.isPending||!docs.data?.length}>{analyzeAll.isPending?'Programando…':'Analizar todos con IA'}</button>
+          <div><h2 className="font-bold">{contextEntity?'Documentos asociados':'Biblioteca'}</h2><p className="mt-1 text-sm text-[var(--muted)]">{contextEntity?'Solo se listan archivos de '+contextEntity.label+'.':'Los documentos aparecen aquí al copiarlos al Vault; no necesitas indexarlos manualmente.'}</p></div>
+          <button className="fin-button secondary py-1.5 text-xs" onClick={()=>analyzeAll.mutate()} disabled={analyzeAll.isPending||!docs.data?.length}>{analyzeAll.isPending?'Analizando…':contextEntity?'Buscar datos con IA local':'Analizar todos con IA'}</button>
         </div>
-        {analyzeAll.data&&<div className="mt-2 text-xs text-[var(--muted)]">{analyzeAll.data.scheduled} documento(s) programados para análisis local.</div>}
+        {analyzeAll.data&&<div className="mt-2 text-xs text-[var(--muted)]">{contextEntity?'Análisis local actualizado para los documentos asociados.':'scheduled' in analyzeAll.data?analyzeAll.data.scheduled+' documento(s) programados para análisis local.':''}</div>}
         <div className="mt-4 space-y-2">
           {docs.isLoading?<Loading/>:docs.error?<ErrorState error={docs.error}/>:docs.data?.length?
             docs.data.map(d=><button
@@ -370,7 +409,12 @@ export default function DocumentsPage(){
           {confirmCoherent.error&&<div className="mt-3"><ErrorState error={confirmCoherent.error}/></div>}
         </div>}
 
-        {selectedDoc&&<div className="mt-4 rounded-xl border border-[var(--border)] p-4">
+        {selectedDoc&&contextEntity?<div className="mt-4 rounded-xl border border-[var(--border)] p-4">
+          <h3 className="font-semibold">Asociado a {contextEntity.label}</h3>
+          <p className="mt-1 text-xs text-[var(--muted)]">Este archivo forma parte únicamente de la documentación que estás revisando aquí.</p>
+          <button className="fin-button secondary mt-3 py-1.5 text-xs" onClick={()=>linkEntity.mutate({documentId:selectedDoc.id,entityType:contextEntity.type,entityId:null})} disabled={linkEntity.isPending}>Desvincular documento</button>
+          {linkEntity.error&&<div className="mt-3"><ErrorState error={linkEntity.error}/></div>}
+        </div>:selectedDoc&&<div className="mt-4 rounded-xl border border-[var(--border)] p-4">
           <h3 className="font-semibold">¿A qué producto pertenece este documento?</h3>
           <p className="mt-1 text-xs text-[var(--muted)]">Vincula todos los PDFs, anexos, recibos y condiciones del mismo seguro, hipoteca o servicio a una única ficha. Financito combinará su evidencia y la tratará como un solo producto.</p>
           <select className="fin-input mt-3" aria-label="Producto financiero asociado al documento"
