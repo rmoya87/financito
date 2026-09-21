@@ -75,17 +75,25 @@ def _category_pattern_events(session:Session,start:date,end:date)->list[dict]:
         elif variability<=Decimal("0.65"):confidence=Decimal("0.65")
         else:continue
         for month_start in _months_between(start,end):
-            event_date=date(month_start.year,month_start.month,monthrange(month_start.year,month_start.month)[1])
-            if event_date<start:event_date=start
-            if event_date>end:continue
+            days_in_month=monthrange(month_start.year,month_start.month)[1]
+            month_end=date(month_start.year,month_start.month,days_in_month)
+            period_start=max(start,month_start)
+            period_end=min(end,month_end)
+            if period_start>period_end:continue
+            covered_days=(period_end-period_start).days+1
+            factor=Decimal(covered_days)/Decimal(days_in_month)
+            projected=(expected*factor).quantize(Decimal("0.01"))
+            basis=f"Mediana mensual de {len(values)} meses con histórico"
+            if covered_days<days_in_month:
+                basis+=f", ajustada a {covered_days} de {days_in_month} días"
             out.append({
-                "date":event_date,
+                "date":period_end,
                 "type":"historical_pattern",
                 "title":"Gasto esperado · "+category.name,
-                "amount":str(expected.quantize(Decimal("0.01"))),
+                "amount":str(projected),
                 "entity_id":"category:"+category_id+":"+month_start.isoformat(),
                 "confidence":str(confidence),
-                "basis":f"Mediana mensual de {len(values)} meses con histórico",
+                "basis":basis,
                 "category":category.name,
             })
     return out
