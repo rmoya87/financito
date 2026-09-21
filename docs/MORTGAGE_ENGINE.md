@@ -67,3 +67,35 @@ El usuario solo introduce el importe hipotético a amortizar. Capital, TIN, plaz
 ### Senda de tipos
 
 El capital, plazo y TIN inicial son los reales guardados. Los cambios futuros de tipo son assumptions explícitos del usuario y nunca se presentan como predicción.
+
+
+## Vinculación documental y selección de hipoteca
+
+Una escritura, FEIN o anexo hipotecario no modifica ninguna hipoteca mientras permanezca sin vínculo explícito.
+
+Desde **Documentos y evidencia** el usuario puede:
+- vincular el documento a una hipoteca existente;
+- crear el perfil hipotecario inicial desde el propio documento y enlazarlo en el mismo flujo;
+- rellenar el alta con hechos materiales ya confirmados en ese documento.
+
+Una vez enlazado, la proyección documental actualiza únicamente campos compatibles y confirmados. Una oferta alternativa puede permanecer sin vínculo para compararla sin contaminar la situación vigente.
+
+El selector de **Hipoteca utilizada en las simulaciones** es la fuente de `mortgage_id` para:
+- escenario base;
+- amortización extraordinaria;
+- senda hipotética de tipos;
+- comparación de mercado.
+
+La investigación de mercado recibe el mismo `mortgage_id`; nunca debe comparar silenciosamente contra “la última hipoteca modificada” si el usuario ha seleccionado otra.
+
+## Conclusión de mercado hipotecario
+
+Las referencias públicas se ordenan por impacto económico calculable, no solo por menor TIN.
+
+Para poder señalar una referencia concreta:
+1. debe existir ahorro mensual frente al escenario comparable;
+2. debe existir ahorro de intereses restante positivo después de la penalización de salida conocida;
+3. el break-even calculable debe ocurrir antes del vencimiento restante;
+4. los costes contractuales materiales exigidos por `switching_readiness` deben estar confirmados.
+
+Si falta una penalización, vinculación o evidencia material, el estado es `needs_more_data` y la interfaz indica qué dato confirmar. Si existe una referencia favorable, Financito indica qué entidad merece solicitar como FEIN/oferta personalizada y recomienda contrastarla primero con la entidad actual; la decisión final solo se calcula cuando se incorporan los costes y condiciones personalizados.
