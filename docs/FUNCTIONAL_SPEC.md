@@ -1094,7 +1094,15 @@ Un filtro de cuenta no debe comparar su gasto con un presupuesto de hogar ni reu
 
 ### Disponible para gastar
 
-Inicio calcula una cifra operativa de **Disponible para gastar**. Parte de la liquidez y protege, en este orden, el dinero reservado para objetivos, las obligaciones y gastos previsibles hasta el siguiente ingreso detectado y el colchón mínimo de liquidez que todavía no esté cubierto por el fondo de emergencia.
+Inicio calcula una cifra operativa de **Disponible para gastar**. Parte de la liquidez actual y protege, en este orden, el dinero reservado para objetivos, el gasto previsto hasta el siguiente ingreso detectado y el colchón mínimo de liquidez que todavía no esté cubierto por el fondo de emergencia.
+
+El gasto protegido hasta el siguiente ingreso usa el mayor entre:
+- los cargos futuros conocidos (compromisos, recurrentes y patrones ya detectados);
+- el ritmo mensual de gasto real normalizado a partir del **periodo global seleccionado por el usuario**.
+
+Por tanto, cambiar entre Mes anterior, Últimos 30 días, Últimos 3 meses, etc. puede cambiar el Disponible para gastar porque cambia el ritmo de gasto utilizado. La liquidez y las reservas de objetivos siguen siendo las actuales: la cifra responde a la pregunta «¿cuánto parece libre hoy si gasto al ritmo del periodo seleccionado?», no reconstruye un saldo bancario histórico.
+
+Inicio debe mostrar la fórmula y sus componentes para que cualquier cifra pueda auditarse visualmente: **Liquidez actual − objetivos reservados − gasto protegido − colchón no cubierto = disponible**.
 
 El resultado nunca puede ser negativo y nunca debe presentar como libre dinero ya asignado a un objetivo.
 
@@ -1124,3 +1132,15 @@ Inicio muestra cuatro indicadores explicables: Liquidez, Ahorro, Deuda y Comprom
 Los avisos se reservan para situaciones accionables, como renovaciones próximas, cuentas que pueden quedarse cortas, presupuestos al límite, subidas de recurrentes, objetivos fuera de ritmo o evidencia contractual pendiente.
 
 Los datos financieros relevantes deben indicar discretamente su procedencia o estado: calculado, guardado/confirmado o pendiente de confirmar.
+
+
+### Jerarquía visual financiera
+
+Las pantallas financieras principales y las fichas de detalle siguen una jerarquía común:
+
+1. **Lectura rápida**: tres o cuatro datos que explican la situación antes de entrar en detalle.
+2. **Estado y procedencia**: confirmado, calculado, pendiente o hipótesis/referencia.
+3. **Explicación**: bloques agrupados por significado financiero, no por estructura técnica de la base de datos.
+4. **Acción**: el siguiente paso debe quedar visible y separado de la información descriptiva.
+
+Esta jerarquía se aplica a Inicio, Análisis, Presupuestos, Movimientos, Hipoteca, Seguros, Mercados, Para ti, Objetivos, Laboratorio de decisiones y Mis decisiones, y también a modales de detalle de hipotecas, pólizas y movimientos.
