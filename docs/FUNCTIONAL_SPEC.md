@@ -956,3 +956,12 @@ La ficha de Casa distingue:
 - **Cálculo automático de revisión**: para hipotecas variables/mixtas, cuando la fecha de revisión ha llegado y están confirmados índice, diferencial, periodicidad, próxima revisión y el desfase exacto de publicación del índice, Financito puede obtener el Euríbor 12 meses oficial del BCE y calcular el nuevo TIN, cuota, intereses restantes y TAE estimada.
 
 El cálculo automático de revisión es informativo y no sustituye el TIN/cuota contractual guardados hasta que el banco comunique el resultado o el usuario confirme evidencia equivalente.
+
+
+## Corrección manual de clasificación documental y vínculos hipoteca-seguro
+
+La clasificación automática de un documento es una propuesta inicial. Desde **Documentos y evidencia** el usuario puede corregir su clasificación principal (por ejemplo, de seguro a hipoteca). Una corrección concreta tiene prioridad sobre futuros reprocesados automáticos. Los documentos hipotecarios se deben vincular explícitamente a la hipoteca correcta antes de que capital, TIN, cuota, plazo o comisiones confirmadas modifiquen su perfil.
+
+Las pólizas de hogar, vida u otros tipos pueden vincularse o desvincularse explícitamente de una hipoteca desde **Seguros y coberturas**. La relación se guarda como `mortgage -> insurance_policy` y se reutiliza en Casa, comparaciones de mercado y preparación de cambios. Marcar una póliza como vinculada no crea por sí mismo una bonificación ni una penalización: cualquier incremento del tipo por perderla debe proceder de evidencia contractual confirmada.
+
+En **Casa > Capital pendiente**, cuando consta el capital inicial, se muestra el porcentaje de capital pendiente y amortizado. La barra usa verde para el capital pendiente y gris para el ya amortizado; los porcentajes se calculan en backend con `Decimal`.

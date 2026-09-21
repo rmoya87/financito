@@ -140,6 +140,10 @@ export default function DocumentsPage(){
     mutationFn:(id:string)=>apiMutate('/api/v1/documents/'+id+'/reprocess','POST'),
     onSuccess:invalidateEvidence,
   });
+  const reclassify=useMutation({
+    mutationFn:({id,documentType}:{id:string;documentType:string})=>apiMutate('/api/v1/documents/'+id+'/classification','PATCH',{document_type:documentType}),
+    onSuccess:invalidateEvidence,
+  });
   const update=useMutation({
     mutationFn:({id,status}:{id:string;status:string})=>apiMutate('/api/v1/facts/'+id,'PATCH',{status,user_verified:true}),
     onSuccess:invalidateEvidence,
@@ -363,7 +367,7 @@ export default function DocumentsPage(){
           onClick={()=>reprocess.mutate(selected)}
           disabled={reprocess.isPending}
         >
-          {reprocess.isPending?'Reprocesando…':'Reprocesar clasificación, hechos e índice'}
+          {reprocess.isPending?'Reprocesando…':'Reprocesar hechos e índice'}
         </button>}
       </Card>
 
@@ -380,6 +384,28 @@ export default function DocumentsPage(){
             rel="noreferrer"
           >Abrir original</a>}
         </div>
+
+        {selectedDoc&&<div className="mt-4 rounded-xl bg-[var(--surface-2)] p-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="min-w-64 flex-1 text-xs text-[var(--muted)]">Clasificación principal
+              <select className="fin-input mt-1" value={selectedDoc.document_type} disabled={reclassify.isPending}
+                onChange={e=>reclassify.mutate({id:selectedDoc.id,documentType:e.target.value})}>
+                <option value="mortgage">Hipoteca</option>
+                <option value="insurance">Seguro</option>
+                <option value="loan">Préstamo</option>
+                <option value="bank_statement">Extracto bancario</option>
+                <option value="investment_statement">Inversión</option>
+                <option value="tax">Fiscal</option>
+                <option value="energy">Energía</option>
+                <option value="telecom">Telecomunicaciones</option>
+                <option value="contract">Contrato</option>
+                <option value="unknown">Sin clasificar</option>
+              </select>
+            </label>
+            <div className="max-w-xl text-xs text-[var(--muted)]">La corrección manual tiene prioridad sobre la clasificación automática. Si eliges Hipoteca, vincula después el documento a la hipoteca correcta para que sus datos confirmados entren en capital, TIN, cuota, plazo y simulaciones.</div>
+          </div>
+          {reclassify.error&&<div className="mt-3"><ErrorState error={reclassify.error}/></div>}
+        </div>}
 
         {currentAction&&currentAction.status!=='done'&&currentAction.status!=='dismissed'&&<div className="mt-4 rounded-xl border border-[var(--brand)] bg-[var(--brand-soft)] p-4 text-sm">
           <div className="font-semibold">Esto es lo que te pidió “Para ti”</div>

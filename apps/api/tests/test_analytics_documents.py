@@ -4,9 +4,11 @@ from pathlib import Path
 from uuid import uuid4
 
 from sqlalchemy import select
+from fastapi.testclient import TestClient
 
 from financito.config import settings
 from financito.db import SessionLocal
+from financito.main import app
 from financito.models import Account,ActionItem,Category,Contract,Document,ExtractedFact,Mortgage,Transaction
 from financito.models_analytics import EntityLink
 from financito.services.categorization import ensure_categories
@@ -70,8 +72,41 @@ def test_document_classifier_prefers_policy_identity_over_mortgage_reference():
         "FEIN préstamo hipotecario. TIN 2,50 %. Cuota mensual 850 euros.",
         "fein-bankinter.pdf",
     )
+    liquidation_kind,_=classify_document(
+        "Liquidación del préstamo. Se menciona una póliza de seguro vinculada, pero el objeto principal es cancelar la deuda hipotecaria.",
+        "liquidacion hipoteca 5 9 26.pdf",
+    )
     assert insurance_kind=="insurance"
     assert mortgage_kind=="mortgage"
+    assert liquidation_kind=="mortgage"
+
+
+def test_manual_document_classification_survives_reprocess():
+    suffix=uuid4().hex[:8]
+    path=settings.vault_dir/f"clasificacion-manual-{suffix}.txt"
+    path.write_text(
+        "Póliza de seguro de hogar. Número de póliza TEST-99999. Documento asociado a financiación.",
+        encoding="utf-8",
+    )
+    with SessionLocal() as db:
+        indexed=index_document(db,str(path),"unknown")
+        db.commit()
+        document_id=indexed.document.id
+        assert indexed.document.document_type=="insurance"
+
+    with TestClient(app) as client:
+        session=client.get("/api/v1/session")
+        headers={"X-CSRF-Token":session.json()["csrf_token"]}
+        changed=client.patch(
+            f"/api/v1/documents/{document_id}/classification",
+            headers=headers,
+            json={"document_type":"mortgage"},
+        )
+        assert changed.status_code==200
+        assert changed.json()["document_type"]=="mortgage"
+        rerun=client.post(f"/api/v1/documents/{document_id}/reprocess",headers=headers)
+        assert rerun.status_code==200
+        assert rerun.json()["document_type"]=="mortgage"
 
 
 def test_mortgage_fein_extracts_structured_terms():

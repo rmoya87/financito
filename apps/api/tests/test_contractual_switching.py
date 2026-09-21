@@ -3,8 +3,9 @@ import json
 from uuid import uuid4
 
 from financito.db import SessionLocal
-from financito.models import Document, ExtractedFact, Mortgage
-from financito.models_analytics import EntityLink
+from financito.models import Contract,Document,ExtractedFact,Mortgage
+from financito.models_analytics import EntityLink,LinkedProduct
+from financito.models_extended import InsurancePolicy
 from financito.services.contractual_costs import (
     linked_product_rate_impacts,
     resolve_prepayment_penalty,
@@ -133,3 +134,37 @@ def test_extracts_and_prices_loss_of_home_insurance_bonus():
         assert Decimal(home["monthly_payment_increase"])>Decimal("0")
         assert Decimal(home["remaining_interest_increase"])>Decimal("0")
         assert home["assumption"]=="fixed_rate_contract"
+
+
+
+def test_switching_readiness_requires_mapping_when_contract_says_life_insurance_is_linked():
+    with SessionLocal() as db:
+        mortgage=_mortgage(db)
+        _mortgage_doc(db,mortgage,{
+            "subrogation_fee_percent":"0.50",
+            "linked_life_insurance":"mentioned",
+        })
+        before=switching_readiness(db,mortgage.id)
+        assert "linked_insurance_mapping:life" in before["missing"]
+
+        contract=Contract(
+            provider_name="Vida hipoteca test",contract_type="insurance",
+            annual_cost=Decimal("240"),currency="EUR",evidence_status="confirmed",
+            cancellation_notice_days=30,early_exit_penalty=Decimal("0"),
+        )
+        db.add(contract);db.flush()
+        policy=InsurancePolicy(
+            contract_id=contract.id,insurance_type="life",annual_premium=Decimal("240"),
+            currency="EUR",insured_object_json="{}",
+        )
+        db.add(policy);db.flush()
+        db.add(LinkedProduct(
+            parent_product_type="mortgage",parent_product_id=mortgage.id,
+            linked_product_type="insurance_policy",linked_product_id=policy.id,
+            discount_value=Decimal("0"),discount_unit="manual_link",conditions="test",
+        ))
+        db.flush()
+        after=switching_readiness(db,mortgage.id)
+        assert "linked_insurance_mapping:life" not in after["missing"]
+        linked=next(x for x in after["insurance"] if x["policy_id"]==policy.id)
+        assert linked["linked_to_mortgage"] is True

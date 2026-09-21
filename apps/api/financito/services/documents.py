@@ -159,7 +159,13 @@ def detect_language(text:str)->tuple[str,float]:
 def classify_document(text:str,file_name:str)->tuple[str,float]:
     sample=(file_name+" "+text[:100000]).lower()
     strong_signals=[
-        ("mortgage",(("préstamo hipotecario",5),("prestamo hipotecario",5),("fein",5),("fiae",5),("fia e",5),("hipoteca",2))),
+        ("mortgage",(
+            ("liquidación de hipoteca",7),("liquidacion de hipoteca",7),
+            ("liquidación hipoteca",7),("liquidacion hipoteca",7),
+            ("cancelación hipotecaria",6),("cancelacion hipotecaria",6),
+            ("préstamo hipotecario",5),("prestamo hipotecario",5),
+            ("fein",5),("fiae",5),("fia e",5),("hipoteca",2),
+        )),
         ("insurance",(("condiciones particulares de la póliza",6),("condiciones particulares de la poliza",6),("póliza de seguro",6),("poliza de seguro",6),("número de póliza",4),("numero de poliza",4))),
         ("bank_statement",(("extracto bancario",5),("saldo contable",3),("fecha valor",2))),
         ("investment_statement",(("cartera de valores",5),("valor liquidativo",4),("participaciones",2),("isin",2))),
@@ -330,7 +336,9 @@ def reprocess_document(session:Session,doc:Document)->IndexedDocument:
     path=safe_path(Path(doc.file_path));text_value,page_count,pages=extract_content(path)
     doc.extracted_text=text_value;doc.page_count=page_count;doc.sha256=sha256(path.read_bytes()).hexdigest();doc.status="indexed"
     kind,_=classify_document(text_value,path.name)
-    if doc.document_type in {"unknown","contract"} or kind!="unknown":doc.document_type=kind
+    # Una clasificación ya concreta puede ser una corrección explícita del usuario.
+    # Reprocesar renueva texto/hechos/índice, pero no debe pisar esa decisión.
+    if doc.document_type=="unknown" and kind!="unknown":doc.document_type=kind
     count=_derive_facts(session,doc,text_value,pages)
     from .rag import index_document_chunks
     from .evidence import synchronize_document_evidence

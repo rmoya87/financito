@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import Category,Contract,Document,ExtractedFact,Transaction
-from ..models_analytics import CoverageRequirement,EntityLink
+from ..models_analytics import CoverageRequirement,EntityLink,LinkedProduct
 from ..models_extended import CoverageFact,CoverageOverlap,InsurancePolicy
 from .contracts import scan_coverage_overlaps
 from .evidence import synchronize_all_document_evidence
@@ -135,6 +135,11 @@ def insurance_verdict(session:Session,use_ai:bool=True)->dict:
         document_id=document_ids[0] if document_ids else None
         document=documents.get(document_id or "")
         row_coverage=[f for f in coverage if f.insurance_policy_id==policy.id]
+        linked_mortgage_ids=list(session.scalars(select(LinkedProduct.parent_product_id).where(
+            LinkedProduct.parent_product_type=="mortgage",
+            LinkedProduct.linked_product_type=="insurance_policy",
+            LinkedProduct.linked_product_id==policy.id,
+        )).all())
         pending_by_key=_pending_for_documents(session,document_ids)
         def require(field,label,why,current_value):
             if current_value is not None:
@@ -171,6 +176,7 @@ def insurance_verdict(session:Session,use_ai:bool=True)->dict:
             "source_document_ids":document_ids,
             "source_documents":[{"id":doc_id,"file_name":documents[doc_id].file_name} for doc_id in document_ids if doc_id in documents],
             "document_count":len(document_ids),
+            "linked_mortgage_ids":linked_mortgage_ids,
             "policy_number_masked":policy.policy_number_masked,
             "insured_object":_payload_like_json(policy.insured_object_json),
             "contract":None if contract is None else {

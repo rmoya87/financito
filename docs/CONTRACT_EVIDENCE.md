@@ -519,3 +519,10 @@ Una nota simple puede expresar cantidades máximas garantizadas por capital, int
 Si el mismo texto contiene un TIN nominal, un porcentaje máximo de demora, un vencimiento o un plazo explícitos, esos elementos sí pueden convertirse en propuestas de hechos independientes, siempre con página y manteniendo estado inferido hasta su confirmación.
 
 La ausencia explícita de TAE, diferencial, índice, comisión de subrogación o amortización sigue siendo “información que falta”; el análisis narrativo no puede inventarla.
+
+
+## Prioridad de clasificación corregida por el usuario
+
+La clasificación automática del documento no puede sobreescribir una corrección explícita posterior. En particular, un documento marcado manualmente como `mortgage` no vuelve a convertirse en `insurance` solo porque contenga un número de póliza o mencione un seguro. Si dentro de ese PDF existe evidencia aseguradora real y confirmada, se proyecta por el flujo de documento mixto sin cambiar la clasificación principal.
+
+La vinculación manual entre `Mortgage` e `InsurancePolicy` identifica qué póliza concreta satisface o acompaña una condición hipotecaria. Esta relación no demuestra por sí sola una penalización de tipo; el impacto económico continúa requiriendo hechos contractuales confirmados como `linked_home_insurance_rate_penalty_pp` o `linked_life_insurance_rate_penalty_pp`.

@@ -74,6 +74,53 @@ def decision_lab_switching_readiness(mortgage_id:str|None=None,db:Session=Depend
 def decision_lab_context(db:Session=Depends(dbdep)):
     return live_decision_context(db)
 
+def _policy_linked_mortgage_ids(db:Session,policy_id:str)->list[str]:
+    return list(db.scalars(select(LinkedProduct.parent_product_id).where(
+        LinkedProduct.parent_product_type=="mortgage",
+        LinkedProduct.linked_product_type=="insurance_policy",
+        LinkedProduct.linked_product_id==policy_id,
+    )).all())
+
+
+@router.put("/mortgages/{mortgage_id}/insurance/{policy_id}")
+def link_mortgage_insurance(mortgage_id:str,policy_id:str,db:Session=Depends(dbdep)):
+    mortgage=db.get(Mortgage,mortgage_id)
+    if not mortgage:raise HTTPException(404,"Mortgage not found")
+    policy=db.get(InsurancePolicy,policy_id)
+    if not policy:raise HTTPException(404,"Insurance policy not found")
+    row=db.scalar(select(LinkedProduct).where(
+        LinkedProduct.parent_product_type=="mortgage",
+        LinkedProduct.parent_product_id==mortgage_id,
+        LinkedProduct.linked_product_type=="insurance_policy",
+        LinkedProduct.linked_product_id==policy_id,
+    ))
+    if row is None:
+        row=LinkedProduct(
+            parent_product_type="mortgage",parent_product_id=mortgage_id,
+            linked_product_type="insurance_policy",linked_product_id=policy_id,
+            discount_value=Decimal("0"),discount_unit="manual_link",
+            conditions="Vinculación confirmada manualmente por el usuario",
+        )
+        db.add(row)
+    db.commit()
+    return {"mortgage_id":mortgage_id,"policy_id":policy_id,"linked":True}
+
+
+@router.delete("/mortgages/{mortgage_id}/insurance/{policy_id}")
+def unlink_mortgage_insurance(mortgage_id:str,policy_id:str,db:Session=Depends(dbdep)):
+    if not db.get(Mortgage,mortgage_id):raise HTTPException(404,"Mortgage not found")
+    if not db.get(InsurancePolicy,policy_id):raise HTTPException(404,"Insurance policy not found")
+    rows=db.scalars(select(LinkedProduct).where(
+        LinkedProduct.parent_product_type=="mortgage",
+        LinkedProduct.parent_product_id==mortgage_id,
+        LinkedProduct.linked_product_type=="insurance_policy",
+        LinkedProduct.linked_product_id==policy_id,
+    )).all()
+    for row in rows:db.delete(row)
+    db.commit()
+    return {"mortgage_id":mortgage_id,"policy_id":policy_id,"linked":False}
+
+
 @router.get("/mortgages")
 def mortgages(db:Session=Depends(dbdep)):
     sources_multi=_document_sources_multi(db,"mortgage")
@@ -236,6 +283,7 @@ def wealth_home(mortgage_id:str|None=None,db:Session=Depends(dbdep)):
             "equity":None,
             "owned_equity":None,
             "ltv":None,
+            "principal_progress":None,
             "pending_review":[],
             "current_apr_estimate":None,
             "rate_review_automation":{"status":"not_available","automatic":False,"missing":["mortgage"]},
@@ -269,6 +317,23 @@ def wealth_home(mortgage_id:str|None=None,db:Session=Depends(dbdep)):
                 except Exception:extra_payload[target]=raw
             else:
                 extra_payload[target]=raw
+
+    principal_progress=None
+    original_principal=extra.original_principal if extra is not None else None
+    if original_principal is not None and original_principal>0:
+        remaining=max(Decimal("0"),mortgage.remaining_principal)
+        raw_remaining_pct=remaining/original_principal*Decimal("100")
+        remaining_pct=min(Decimal("100"),max(Decimal("0"),raw_remaining_pct))
+        paid_pct=Decimal("100")-remaining_pct
+        paid_principal=max(Decimal("0"),original_principal-remaining)
+        principal_progress={
+            "original_principal":str(original_principal),
+            "remaining_principal":str(mortgage.remaining_principal),
+            "paid_principal":str(paid_principal.quantize(Decimal("0.01"))),
+            "remaining_percent":str(remaining_pct.quantize(Decimal("0.1"))),
+            "paid_percent":str(paid_pct.quantize(Decimal("0.1"))),
+            "status":"ok" if raw_remaining_pct<=Decimal("100") else "inconsistent_original_principal",
+        }
 
     equity=None;ltv=None;owned_equity=None
     if home is not None:
@@ -333,6 +398,7 @@ def wealth_home(mortgage_id:str|None=None,db:Session=Depends(dbdep)):
         "equity":None if equity is None else str(equity),
         "owned_equity":None if owned_equity is None else str(owned_equity),
         "ltv":None if ltv is None else str(ltv),
+        "principal_progress":principal_progress,
         "pending_review":pending_review,
         "current_apr_estimate":current_remaining_apr_estimate(db,mortgage),
         "rate_review_automation":due_rate_review_estimate(db,mortgage),
@@ -804,6 +870,7 @@ def _insurance_row(db:Session,row:InsurancePolicy,sources:dict[str,list[str]]|No
         "source_document_id":document_ids[0] if document_ids else None,
         "source_document_ids":document_ids,
         "document_count":len(document_ids),
+        "linked_mortgage_ids":_policy_linked_mortgage_ids(db,row.id),
     }
 
 def _ensure_insurance_contract(db:Session,p:InsuranceCreate|InsuranceUpdate,current:InsurancePolicy|None=None)->Contract|None:

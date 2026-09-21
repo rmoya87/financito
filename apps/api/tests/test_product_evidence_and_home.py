@@ -146,6 +146,7 @@ def test_casa_endpoint_and_extra_profile_support_mortgage_optimization_fields():
             f"/api/v1/mortgages/{mortgage_id}/profile-extra",
             headers=headers,
             json={
+                "original_principal":"240000",
                 "apr_rate":"0.038",
                 "reference_index":"Euríbor 12m",
                 "differential_rate":"0.009",
@@ -162,6 +163,9 @@ def test_casa_endpoint_and_extra_profile_support_mortgage_optimization_fields():
         assert Decimal(data["ltv"])==Decimal("50.00")
         assert data["extra"]["reference_index"]=="Euríbor 12m"
         assert Decimal(data["extra"]["apr_rate"])==Decimal("0.038")
+        assert Decimal(data["principal_progress"]["remaining_percent"])==Decimal("62.5")
+        assert Decimal(data["principal_progress"]["paid_percent"])==Decimal("37.5")
+        assert Decimal(data["principal_progress"]["paid_principal"])==Decimal("90000.00")
 
 
 def test_market_scan_calculates_comparable_payment_without_network(monkeypatch):

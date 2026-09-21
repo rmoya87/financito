@@ -11,12 +11,13 @@ import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
 import {EntityDocumentsModal} from '@/components/entity-documents-modal';
 
 type CoverageRequirement={id:string;insurance_type:string|null;coverage_type:string;minimum_limit:string|null;currency:string;notes:string|null;enabled:boolean};
-type InsuranceProfile={id:string;insurance_type:string;annual_premium:string;deductible:string|null;currency:string;policy_number_masked?:string|null;contract_id:string|null;provider_name?:string|null;renewal_date?:string|null;cancellation_notice_days?:number|null;early_exit_penalty?:string|null;document_count?:number;source_document_ids?:string[]};
+type InsuranceProfile={id:string;insurance_type:string;annual_premium:string;deductible:string|null;currency:string;policy_number_masked?:string|null;contract_id:string|null;provider_name?:string|null;renewal_date?:string|null;cancellation_notice_days?:number|null;early_exit_penalty?:string|null;document_count?:number;source_document_ids?:string[];linked_mortgage_ids?:string[]};
+type MortgageRef={id:string;lender:string;remaining_principal:string;currency:string};
 type Policy={
   id:string;insurance_type:string;annual_premium:string;monthly_equivalent:string;deductible:string|null;
   policy_number_masked?:string|null;insured_object?:any;
   source_document_id:string|null;source_document_name:string|null;
-  source_document_ids?:string[];source_documents?:{id:string;file_name:string}[];
+  source_document_ids?:string[];source_documents?:{id:string;file_name:string}[];linked_mortgage_ids?:string[];
   contract:null|{
     provider_name:string;start_date?:string|null;renewal_date:string|null;cancellation_notice_days:number|null;
     permanence_end_date?:string|null;early_exit_penalty:string|null;annual_cost?:string|null;currency?:string;evidence_status:string
@@ -76,6 +77,7 @@ function PolicyInsightGroup({title,rows,field}:{title:string;rows:DocInsight[];f
 export default function InsurancePage(){
   const qc=useQueryClient();
   const profiles=useQuery({queryKey:['insurance'],queryFn:()=>apiGet<InsuranceProfile[]>('/api/v1/insurance')});
+  const mortgages=useQuery({queryKey:['mortgages'],queryFn:()=>apiGet<MortgageRef[]>('/api/v1/mortgages')});
   const verdict=useQuery({queryKey:['insurance-verdict'],queryFn:()=>apiGet<Verdict>('/api/v1/insurance/verdict')});
   const requirements=useQuery({queryKey:['coverage-requirements'],queryFn:()=>apiGet<CoverageRequirement[]>('/api/v1/coverage-requirements')});
   const insights=useQuery({queryKey:['document-insights','all'],queryFn:()=>apiGet<DocInsight[]>('/api/v1/document-insights')});
@@ -126,6 +128,11 @@ export default function InsurancePage(){
   const analyzePolicyDocs=useMutation({
     mutationFn:(id:string)=>apiMutate('/api/v1/evidence-groups/insurance_policy/'+id+'/analyze','POST'),
     onSuccess:refreshInsurance,
+  });
+  const setMortgageLink=useMutation({
+    mutationFn:({policyId,mortgageId,linked}:{policyId:string;mortgageId:string;linked:boolean})=>
+      apiMutate('/api/v1/mortgages/'+mortgageId+'/insurance/'+policyId,linked?'PUT':'DELETE'),
+    onSuccess:()=>{refreshInsurance();qc.invalidateQueries({queryKey:['mortgages']})},
   });
   const saveMissingPolicy=useMutation({
     mutationFn:({missing,value}:{missing:Missing;value:string})=>{
@@ -242,6 +249,7 @@ export default function InsurancePage(){
               <div>Preaviso: <strong>{p.contract?.cancellation_notice_days===null||p.contract?.cancellation_notice_days===undefined?'—':p.contract.cancellation_notice_days+' días'}</strong></div>
               <div>Penalización: <strong><Money value={p.contract?.early_exit_penalty}/></strong></div>
             </div>
+            {!!p.linked_mortgage_ids?.length&&<div className="mt-2 text-xs font-medium text-[var(--brand)]">Vinculado a {p.linked_mortgage_ids.length} hipoteca(s)</div>}
             {p.coverages.length>0&&<div className="mt-3 flex flex-wrap gap-1">{p.coverages.map(c=><span key={c.id} className="rounded-full bg-white px-2 py-1 text-[11px]">{c.coverage_type}{c.limit_amount?' · '+new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(Number(c.limit_amount)):''}</span>)}</div>}
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button onClick={e=>{e.stopPropagation();setDocumentPolicyId(p.id)}} className="fin-button secondary py-1.5 text-xs" type="button">Documentación</button>
@@ -304,6 +312,19 @@ export default function InsurancePage(){
               <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Equivalente mensual</div><strong><Money value={selectedPolicy.monthly_equivalent}/></strong></div>
               <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Franquicia general</div><strong><Money value={selectedPolicy.deductible}/></strong></div>
               <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Evidencia</div><strong>{selectedPolicy.contract?.evidence_status||'Sin contrato consolidado'}</strong></div>
+            </div>
+
+            <div className="mt-5 rounded-xl border border-[var(--border)] p-4">
+              <h3 className="font-semibold">Vinculación con hipoteca</h3>
+              <p className="mt-1 text-xs text-[var(--muted)]">Marca aquí qué pólizas forman parte de las condiciones de cada hipoteca. Esto permite que Casa, el comparador y las simulaciones sepan qué seguro de hogar o vida puede afectar a la bonificación. El vínculo por sí solo no inventa una subida del TIN: ese porcentaje solo se usa cuando está confirmado en la documentación hipotecaria.</p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">{mortgages.data?.length?mortgages.data.map(m=>{
+                const checked=!!selectedPolicy.linked_mortgage_ids?.includes(m.id);
+                return <label key={m.id} className="flex cursor-pointer items-center gap-3 rounded-lg bg-[var(--surface-2)] p-3 text-sm">
+                  <input type="checkbox" checked={checked} disabled={setMortgageLink.isPending} onChange={e=>setMortgageLink.mutate({policyId:selectedPolicy.id,mortgageId:m.id,linked:e.target.checked})}/>
+                  <span><strong>{m.lender}</strong><span className="block text-xs text-[var(--muted)]"><Money value={m.remaining_principal}/> pendientes</span></span>
+                </label>;
+              }):<EmptyState>No hay hipotecas creadas. Crea primero la hipoteca en Casa.</EmptyState>}</div>
+              {setMortgageLink.error&&<div className="mt-3"><ErrorState error={setMortgageLink.error}/></div>}
             </div>
 
             <div className="mt-5 grid gap-4 lg:grid-cols-2">

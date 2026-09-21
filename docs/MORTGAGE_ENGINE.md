@@ -138,3 +138,12 @@ Para Euríbor 12 meses se usa la serie mensual oficial del BCE \`FM.M.U2.EUR.RT.
 \`TIN_estimado = indice_oficial + diferencial_confirmado\`
 
 y vuelve a amortizar el capital/plazo restantes para obtener cuota e intereses estimados. El resultado se etiqueta como estimación y exige confirmación; no sobrescribe automáticamente el TIN/cuota guardados.
+
+
+## Seguros vinculados y progreso de capital
+
+La relación entre una hipoteca concreta y sus pólizas se persiste mediante `LinkedProduct` con `parent_product_type=mortgage` y `linked_product_type=insurance_policy`. El usuario puede confirmar o retirar manualmente ese vínculo para hogar, vida u otras pólizas. Los costes de las pólizas vinculadas entran en el contexto de comparación de esa hipoteca; una póliza no vinculada no bloquea por defecto la preparación de un cambio hipotecario.
+
+Si el contrato hipotecario confirma `linked_home_insurance_rate_penalty_pp` o `linked_life_insurance_rate_penalty_pp`, el motor calcula el efecto de perder la bonificación sobre cuota e intereses. La relación manual identifica la póliza concreta; nunca sustituye la evidencia del porcentaje contractual.
+
+Cuando `MortgageProfileExtra.original_principal` está disponible, `/wealth/home` expone `principal_progress` con capital inicial, pendiente, amortizado y porcentajes pendiente/pagado. El cálculo se realiza con `Decimal`; la UI representa en verde la parte pendiente y en gris la amortizada.

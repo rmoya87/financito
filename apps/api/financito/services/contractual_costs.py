@@ -273,10 +273,15 @@ def linked_product_rate_impacts(session: Session, mortgage: Mortgage) -> list[di
     return out
 
 
-def insurance_switching_context(session: Session) -> list[dict]:
+def insurance_switching_context(session: Session, mortgage_id: str | None = None) -> list[dict]:
     policies = session.scalars(select(InsurancePolicy)).all()
     out = []
     for policy in policies:
+        linked_mortgage_ids=list(session.scalars(select(LinkedProduct.parent_product_id).where(
+            LinkedProduct.parent_product_type=="mortgage",
+            LinkedProduct.linked_product_type=="insurance_policy",
+            LinkedProduct.linked_product_id==policy.id,
+        )).all())
         contract = session.get(Contract, policy.contract_id) if policy.contract_id else None
         source_doc_ids = []
         if contract:
@@ -303,6 +308,8 @@ def insurance_switching_context(session: Session) -> list[dict]:
             "source_document_ids": source_doc_ids,
             "document_count": len(source_doc_ids),
             "confirmed_facts": facts,
+            "linked_mortgage_ids": linked_mortgage_ids,
+            "linked_to_mortgage": mortgage_id in linked_mortgage_ids if mortgage_id else False,
         })
     return out
 
@@ -324,16 +331,23 @@ def switching_readiness(session: Session, mortgage_id: str | None = None) -> dic
     subrogation = resolve_subrogation_penalty(session, mortgage)
     mctx = mortgage_contract_context(session, mortgage.id)
     linked_signals = [x["key"] for x in mctx["linked_product_signals"]]
+    insurance = insurance_switching_context(session,mortgage.id)
+    linked_insurance=[policy for policy in insurance if policy["linked_to_mortgage"]]
     missing = []
     if subrogation["amount"] is None:
         missing.append("mortgage_exit_or_subrogation_penalty")
-    for policy in insurance:
+    for policy in linked_insurance:
         if policy["evidence_status"] != "confirmed":
             missing.append(f"insurance_evidence:{policy['policy_id']}")
         if policy["cancellation_notice_days"] is None:
             missing.append(f"insurance_notice:{policy['policy_id']}")
         if policy["exit_penalty"] is None:
             missing.append(f"insurance_exit_penalty:{policy['policy_id']}")
+    normalized_types={str(policy["insurance_type"] or "").lower() for policy in linked_insurance}
+    if "linked_home_insurance" in linked_signals and not any(x in normalized_types for x in {"home","house","hogar","mortgage","hipoteca"}):
+        missing.append("linked_insurance_mapping:home")
+    if "linked_life_insurance" in linked_signals and not any(x in normalized_types for x in {"life","vida"}):
+        missing.append("linked_insurance_mapping:life")
 
     hypotheses = [
         {"key": "keep_all", "label": "Mantener hipoteca y seguros actuales"},

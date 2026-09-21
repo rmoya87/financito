@@ -84,6 +84,12 @@ class DocumentIndexRequest(BaseModel):
     document_type: str = "unknown"
 
 
+class DocumentClassificationUpdate(BaseModel):
+    document_type: str = Field(
+        pattern="^(unknown|mortgage|insurance|loan|bank_statement|investment_statement|tax|energy|telecom|contract)$"
+    )
+
+
 class DocumentMortgageLinkUpdate(BaseModel):
     mortgage_id: str | None = None
 

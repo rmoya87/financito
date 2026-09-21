@@ -219,7 +219,17 @@ def auto_link_document_entity(session: Session, document: Document) -> dict | No
     They may correct a coarse initial classifier (for example, a mediator note
     classified as contract that carries the same policy number as an insurance
     policy). Provider/type alone is never enough to merge products.
+
+    Una clasificación explícita como hipoteca tiene prioridad sobre una
+    coincidencia de número de póliza. El seguro embebido, si existe, se proyecta
+    después por sus propios hechos confirmados sin cambiar el tipo principal.
     """
+    if document.document_type=="mortgage":
+        mortgage_link=_entity_link(session,document.id,"mortgage")
+        if mortgage_link is not None:
+            return {"entity_type":"mortgage","entity_id":mortgage_link.to_id,"matched_by":"existing_link"}
+        return None
+
     policy_link = _entity_link(session, document.id, "insurance_policy")
     if policy_link is not None:
         return {"entity_type": "insurance_policy", "entity_id": policy_link.to_id, "matched_by": "existing_link"}
@@ -449,7 +459,7 @@ def create_document_evidence_group(session: Session, document: Document) -> dict
 def _cleanup_orphan_projection(
     session: Session, entity_type: str, entity_id: str, source_type: str
 ) -> None:
-    if source_type != "document_projection":
+    if source_type not in {"document_projection","document_identity","document_identity_group","embedded_insurance_projection"}:
         return
     still_linked = session.scalar(
         select(EntityLink.id).where(
@@ -531,6 +541,31 @@ def link_document_to_entity(
             (link.to_type, link.to_id, link.source_type) for link in policy_links
         )
         for link in policy_links:
+            session.delete(link)
+    elif entity_type == "mortgage" and entity_id:
+        # Al mover explícitamente un documento a una hipoteca, limpia solo las
+        # agrupaciones de seguro creadas automáticamente por una clasificación
+        # previa. Los vínculos de seguro creados por el usuario se conservan y
+        # la evidencia aseguradora confirmada del propio PDF puede recrear una
+        # proyección embebida durante la sincronización.
+        automatic_insurance_links = session.scalars(
+            select(EntityLink).where(
+                EntityLink.from_type == "document",
+                EntityLink.from_id == document.id,
+                EntityLink.relation_type == "evidence_for",
+                EntityLink.to_type.in_(["insurance_policy","contract"]),
+                EntityLink.source_type.in_([
+                    "document_projection","document_identity",
+                    "document_identity_group","embedded_insurance_projection",
+                ]),
+            )
+        ).all()
+        for link in automatic_insurance_links:
+            if link.to_type == "contract":
+                candidate_contract=session.get(Contract,link.to_id)
+                if candidate_contract is None or candidate_contract.contract_type != "insurance":
+                    continue
+            orphan_candidates.append((link.to_type,link.to_id,link.source_type))
             session.delete(link)
     session.flush()
 

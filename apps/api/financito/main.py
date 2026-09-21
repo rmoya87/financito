@@ -22,7 +22,7 @@ from .services.financial_analytics import cash_flow,category_spending
 from .models import Account, ActionItem, AuditEvent, Budget, CategorizationAudit, Category, Commitment, Contract, Document, ExtractedFact, Mortgage, Transaction
 from .models_analytics import BankingAccountLink,EntityLink,EntitySnapshot
 from .models_extended import InsurancePolicy
-from .schemas import AccountCreate, AccountOut, AccountUpdate, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentEntityLinkUpdate, DocumentIndexRequest, DocumentMortgageLinkUpdate, FactUpdate, ForecastRequest, ManualFactCreate, MortgageScenarioRequest, MortgagePrepaymentRequest, MortgageRatePathRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
+from .schemas import AccountCreate, AccountOut, AccountUpdate, ActionUpdate, BudgetCreate, CommitmentCreate, DocumentClassificationUpdate, DocumentEntityLinkUpdate, DocumentIndexRequest, DocumentMortgageLinkUpdate, FactUpdate, ForecastRequest, ManualFactCreate, MortgageScenarioRequest, MortgagePrepaymentRequest, MortgageRatePathRequest, OptimizationRequest, TransactionCategoryUpdate, TransactionOut
 from .security import LocalSecurityMiddleware, create_session
 from .routes_extended import router as extended_router
 from .routes_analytics import router as analytics_router
@@ -606,6 +606,33 @@ def analyze_all_documents(background_tasks:BackgroundTasks,db:Session=Depends(ge
 @app.get("/api/v1/document-insights")
 def document_insights(document_type:str|None=None,db:Session=Depends(get_db)):
     return domain_insights(db,document_type)
+
+
+@app.patch("/api/v1/documents/{document_id}/classification")
+def update_document_classification(document_id:str,payload:DocumentClassificationUpdate,background_tasks:BackgroundTasks,db:Session=Depends(get_db)):
+    row=db.get(Document,document_id)
+    if not row: raise HTTPException(404,"Document not found")
+    previous=row.document_type
+    row.document_type=payload.document_type
+    try: indexed=reprocess_document(db,row)
+    except (FileNotFoundError,ValueError) as exc:
+        db.rollback()
+        raise HTTPException(400,str(exc))
+    db.add(AuditEvent(
+        event_type="document_classification_changed",
+        entity_type="document",
+        entity_id=row.id,
+        metadata_json=json.dumps({"previous":previous,"current":row.document_type,"source":"user"}),
+    ))
+    db.commit()
+    background_tasks.add_task(_analyze_document_background,row.id)
+    return {
+        "id":row.id,
+        "document_type":row.document_type,
+        "facts_created":indexed.facts_created,
+        "chunks_created":indexed.chunks_created,
+        "ai_analysis_scheduled":True,
+    }
 
 
 @app.post("/api/v1/documents/{document_id}/reprocess")

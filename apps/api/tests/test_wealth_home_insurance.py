@@ -4,10 +4,10 @@ from decimal import Decimal
 from sqlalchemy import delete,select
 
 from financito.db import SessionLocal
-from financito.models import Contract
-from financito.models_analytics import EntitySnapshot
+from financito.models import Contract,Mortgage
+from financito.models_analytics import EntitySnapshot,LinkedProduct
 from financito.models_extended import Asset,CoverageFact,InsurancePolicy,Liability
-from financito.routes_extended import delete_liability,wealth_details
+from financito.routes_extended import delete_liability,link_mortgage_insurance,unlink_mortgage_insurance,wealth_details,wealth_home
 from financito.services.insurance_analysis import insurance_verdict
 from financito.services.snapshots import record_snapshot
 
@@ -90,3 +90,44 @@ def test_insurance_verdict_exposes_contract_conditions_coverages_and_exclusions(
 
         db.execute(delete(CoverageFact).where(CoverageFact.id==coverage.id))
         db.delete(policy);db.delete(contract);db.commit()
+
+
+
+def test_life_insurance_can_be_explicitly_linked_to_mortgage_and_appears_in_casa():
+    with SessionLocal() as db:
+        mortgage=Mortgage(
+            lender="Banco vínculo seguro test",remaining_principal=Decimal("95000"),
+            currency="EUR",interest_type="fixed",nominal_rate=Decimal("0.025"),
+            monthly_payment=Decimal("600"),remaining_months=180,
+        )
+        contract=Contract(
+            provider_name="Vida vínculo test",contract_type="insurance",
+            annual_cost=Decimal("300"),currency="EUR",evidence_status="manual",
+        )
+        db.add_all([mortgage,contract]);db.flush()
+        policy=InsurancePolicy(
+            contract_id=contract.id,insurance_type="life",annual_premium=Decimal("300"),
+            deductible=None,currency="EUR",insured_object_json="{}",
+        )
+        db.add(policy);db.flush()
+        mortgage_id=mortgage.id;policy_id=policy.id
+
+        linked=link_mortgage_insurance(mortgage_id,policy_id,db)
+        assert linked["linked"] is True
+        relation=db.scalar(select(LinkedProduct).where(
+            LinkedProduct.parent_product_type=="mortgage",
+            LinkedProduct.parent_product_id==mortgage_id,
+            LinkedProduct.linked_product_type=="insurance_policy",
+            LinkedProduct.linked_product_id==policy_id,
+        ))
+        assert relation is not None
+        home=wealth_home(mortgage_id,db)
+        row=next(item for item in home["insurance"] if item["id"]==policy_id)
+        assert row["insurance_type"]=="life"
+        assert row["linked_to_mortgage"] is True
+
+        unlinked=unlink_mortgage_insurance(mortgage_id,policy_id,db)
+        assert unlinked["linked"] is False
+        home=wealth_home(mortgage_id,db)
+        assert all(item["id"]!=policy_id for item in home["insurance"])
+        db.delete(policy);db.delete(contract);db.delete(mortgage);db.commit()
