@@ -11,6 +11,7 @@ import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
 import {EntityDocumentsModal} from '@/components/entity-documents-modal';
 import {DataStatus} from '@/components/data-status';
 import {DetailGroup,MetricTile,ModalHero,SectionIntro,VisualPanel} from '@/components/finance-ui';
+import {InsuranceCoverageChips} from '@/components/insurance-coverage-chips';
 
 type CoverageRequirement={id:string;insurance_type:string|null;coverage_type:string;minimum_limit:string|null;currency:string;notes:string|null;enabled:boolean};
 type Account={id:string;name:string;institution_name:string;account_type:string;current_balance:string;available_balance:string|null};
@@ -279,6 +280,7 @@ export default function InsurancePage(){
             <div>Renovación: <strong>{p.contract?.renewal_date?new Date(p.contract.renewal_date).toLocaleDateString('es-ES'):'—'}</strong></div>
             <div>Pagos vinculados: <strong>{p.linked_payment_count}</strong></div>
           </div>
+          <div className="mt-3"><InsuranceCoverageChips coverages={p.coverages} limit={5} emptyText="Coberturas aún no estructuradas"/></div>
           {!!p.linked_mortgage_ids?.length&&<div className="mt-2 text-xs font-medium text-[var(--brand)]">Vinculado a {p.linked_mortgage_ids.length} hipoteca(s)</div>}
           <div className="mt-3 flex flex-wrap gap-2">
             <button className="fin-button secondary py-1.5 text-xs" type="button" onClick={e=>{e.stopPropagation();setSelectedPolicyId(p.id)}}>Ver detalle</button>
@@ -373,6 +375,9 @@ export default function InsurancePage(){
                 {label:'Renovación',value:selectedPolicy.contract?.renewal_date||'—',detail:selectedPolicy.linked_payment_count+' pago(s) vinculados'},
               ]}
             />
+            <div className="mt-4">
+              <InsuranceCoverageChips coverages={selectedPolicy.coverages} limit={8} emptyText="Todavía no hay coberturas estructuradas para esta póliza."/>
+            </div>
 
             <div className="mt-5 flex flex-wrap gap-2 border-b border-[var(--border)] pb-3" role="tablist" aria-label="Secciones del seguro">
               {([
