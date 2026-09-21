@@ -140,7 +140,7 @@ def unlink_mortgage_insurance(mortgage_id:str,policy_id:str,db:Session=Depends(d
 
 
 @router.get("/mortgages")
-def mortgages(account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
+def mortgages(db:Session=Depends(dbdep),account_id:str|None=None,account_type:str|None=None):
     sources_multi=_document_sources_multi(db,"mortgage")
     scope=_scope_account_ids(db,account_id,account_type)
     stmt=select(Mortgage).order_by(Mortgage.updated_at.desc())
@@ -273,7 +273,7 @@ def update_mortgage_profile_extra(mortgage_id:str,p:MortgageExtraUpdate,db:Sessi
     return _mortgage_extra_payload(row)
 
 @router.get("/wealth/home")
-def wealth_home(mortgage_id:str|None=None,account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
+def wealth_home(mortgage_id:str|None=None,db:Session=Depends(dbdep),account_id:str|None=None,account_type:str|None=None):
     scope=_scope_account_ids(db,account_id,account_type)
     if mortgage_id:
         mortgage=db.get(Mortgage,mortgage_id)
@@ -700,11 +700,11 @@ def tracked_asset_refresh(security_id:str,include_history:bool=False,db:Session=
         db.rollback();raise HTTPException(503,str(exc))
 
 @router.get("/wealth")
-def wealth(account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
+def wealth(db:Session=Depends(dbdep),account_id:str|None=None,account_type:str|None=None):
     return wealth_summary(db,account_id,account_type)
 
 @router.get("/wealth/details")
-def wealth_details(account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
+def wealth_details(db:Session=Depends(dbdep),account_id:str|None=None,account_type:str|None=None):
     scope=_scope_account_ids(db,account_id,account_type)
     summary=wealth_summary(db,account_id,account_type)
     account_stmt=select(Account).order_by(Account.name)
@@ -937,7 +937,7 @@ def _goal_row(db:Session,r:FinancialGoal)->dict:
     }
 
 @router.get("/goals")
-def goals(account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
+def goals(db:Session=Depends(dbdep),account_id:str|None=None,account_type:str|None=None):
     scope=_scope_account_ids(db,account_id,account_type)
     stmt=select(FinancialGoal).order_by(FinancialGoal.created_at.desc())
     if scope is not None:
@@ -970,7 +970,7 @@ def progress(goal_id:str,p:GoalProgressUpdate,db:Session=Depends(dbdep)):
     db.commit();return _goal_row(db,r)
 
 @router.get("/portfolios")
-def portfolios(account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
+def portfolios(db:Session=Depends(dbdep),account_id:str|None=None,account_type:str|None=None):
     scope=_scope_account_ids(db,account_id,account_type)
     stmt=select(Portfolio)
     if scope is not None:
@@ -1043,11 +1043,11 @@ async def broker_import(portfolio_id:str,file:UploadFile=File(...),db:Session=De
         raise HTTPException(400,str(exc))
 
 @router.get("/insurance/verdict")
-def insurance_verdict_view(start:date|None=None,end:date|None=None,account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
+def insurance_verdict_view(db:Session=Depends(dbdep),start:date|None=None,end:date|None=None,account_id:str|None=None,account_type:str|None=None):
     result=insurance_verdict(db,use_ai=False,start=start,end=end,account_id=account_id,account_type=account_type);db.commit();return result
 
 @router.post("/insurance/verdict/analyze")
-def insurance_verdict_with_ai(start:date|None=None,end:date|None=None,account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
+def insurance_verdict_with_ai(db:Session=Depends(dbdep),start:date|None=None,end:date|None=None,account_id:str|None=None,account_type:str|None=None):
     result=insurance_verdict(db,use_ai=True,start=start,end=end,account_id=account_id,account_type=account_type);db.commit();return result
 
 def _insurance_row(db:Session,row:InsurancePolicy,sources:dict[str,list[str]]|None=None)->dict:
@@ -1111,7 +1111,7 @@ def add_insurance(p:InsuranceCreate,db:Session=Depends(dbdep)):
     return _insurance_row(db,row)
 
 @router.get("/insurance")
-def insurance(account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
+def insurance(db:Session=Depends(dbdep),account_id:str|None=None,account_type:str|None=None):
     sources=_document_sources_multi(db,"insurance_policy")
     scope=_scope_account_ids(db,account_id,account_type)
     stmt=select(InsurancePolicy).order_by(InsurancePolicy.updated_at.desc())
@@ -1205,7 +1205,7 @@ def coverage_compare(p:CoverageCompareRequest,db:Session=Depends(dbdep)):
     except ValueError as e:raise HTTPException(404,str(e))
 
 @router.post("/stress")
-def stress(p:StressRequest,start:date|None=None,end:date|None=None,account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
+def stress(p:StressRequest,db:Session=Depends(dbdep),start:date|None=None,end:date|None=None,account_id:str|None=None,account_type:str|None=None):
     today=end or date.today();period_start=start or today.replace(day=1)
     wealth=wealth_summary(db,account_id,account_type)
     flow=cash_flow(db,period_start,today,account_id,account_type)
@@ -1220,7 +1220,7 @@ def rebuild(document_id:str,db:Session=Depends(dbdep)):
     if not d:raise HTTPException(404,"Document not found")
     n=index_document_chunks(db,d);db.commit();return {"chunks":n}
 @router.post("/chat")
-def chat(p:ChatRequest,start:date|None=None,end:date|None=None,account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
+def chat(p:ChatRequest,db:Session=Depends(dbdep),start:date|None=None,end:date|None=None,account_id:str|None=None,account_type:str|None=None):
     return answer(db,p.question,start=start,end=end,account_id=account_id,account_type=account_type)
 
 @router.post("/backups")

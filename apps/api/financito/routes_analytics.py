@@ -51,7 +51,7 @@ class AnomalyStatusIn(BaseModel):
     status:str=Field(pattern="^(open|normal|ignored|resolved)$")
 
 @router.get("/anomalies")
-def anomalies(start:date|None=None,end:date|None=None,account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
+def anomalies(start:date|None=None,end:date|None=None,db:Session=Depends(dbdep),account_id:str|None=None,account_type:str|None=None):
     if start and end and end<start:raise HTTPException(400,"La fecha final debe ser igual o posterior a la inicial.")
     allowed_accounts=None
     if account_id:
@@ -91,7 +91,7 @@ def reconcile(db:Session=Depends(dbdep)):return {"issues":reconciliation(db)}
 def calendar(start:date|None=None,end:date|None=None,db:Session=Depends(dbdep)):
     start=start or date.today();end=end or start+timedelta(days=90);return {"events":events(db,start,end)}
 @router.get("/search")
-def search(q:str,start:date|None=None,end:date|None=None,account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
+def search(q:str,db:Session=Depends(dbdep),start:date|None=None,end:date|None=None,account_id:str|None=None,account_type:str|None=None):
     if len(q)<2:raise HTTPException(400,"Query too short")
     return global_search(db,q,start=start,end=end,account_id=account_id,account_type=account_type)
 @router.get("/export/json")

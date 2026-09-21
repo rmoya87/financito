@@ -226,11 +226,11 @@ def transaction_page(
     category_id:str|None=None,
     start:date|None=None,
     end:date|None=None,
-    account_id:str|None=None,
-    account_type:str|None=None,
     page:int=Query(default=1,ge=1),
     page_size:int=Query(default=50,ge=10,le=100),
     db:Session=Depends(dbdep),
+    account_id:str|None=None,
+    account_type:str|None=None,
 ):
     if start and end and end<start:
         raise HTTPException(400,"La fecha final debe ser igual o posterior a la inicial.")
@@ -301,7 +301,7 @@ def review_queue(limit:int=100,db:Session=Depends(dbdep)):
     return [{"id":r.id,"booking_date":r.booking_date,"amount":str(r.amount),"currency":r.currency,"description_raw":r.description_raw,"merchant_raw":r.merchant_raw,"category_id":r.category_id,"confidence":str(r.categorization_confidence),"method":r.categorization_method} for r in rows]
 
 @router.get("/analytics/overview")
-def analytics(start:date|None=None,end:date|None=None,account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
+def analytics(start:date|None=None,end:date|None=None,db:Session=Depends(dbdep),account_id:str|None=None,account_type:str|None=None):
     from datetime import date as _date,timedelta
     end=end or _date.today();start=start or end-timedelta(days=365)
     if end<start:raise HTTPException(400,"end must be >= start")

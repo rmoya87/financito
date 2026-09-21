@@ -217,7 +217,7 @@ def update_category(transaction_id:str,payload:TransactionCategoryUpdate,db:Sess
 
 
 @app.get("/api/v1/dashboard")
-def dashboard(start:date|None=None,end:date|None=None,account_id:str|None=None,account_type:str|None=None,db:Session=Depends(get_db)):
+def dashboard(start:date|None=None,end:date|None=None,db:Session=Depends(get_db),account_id:str|None=None,account_type:str|None=None):
     today=date.today(); end=end or today; start=start or end.replace(day=1)
     if end<start: raise HTTPException(400,"La fecha final debe ser igual o posterior a la inicial.")
     flow_data=cash_flow(db,start,end,account_id,account_type)
@@ -277,7 +277,7 @@ def create_commitment(payload:CommitmentCreate,db:Session=Depends(get_db)):
 
 
 @app.get("/api/v1/commitments")
-def list_commitments(account_id:str|None=None,account_type:str|None=None,db:Session=Depends(get_db)):
+def list_commitments(db:Session=Depends(get_db),account_id:str|None=None,account_type:str|None=None):
     stmt=select(Commitment).order_by(Commitment.due_date)
     if account_id:
         stmt=stmt.where(Commitment.account_id==account_id)
@@ -294,12 +294,12 @@ def list_commitments(account_id:str|None=None,account_type:str|None=None,db:Sess
 
 
 @app.post("/api/v1/forecast")
-def calculate_forecast(payload:ForecastRequest,account_id:str|None=None,account_type:str|None=None,db:Session=Depends(get_db)):
+def calculate_forecast(payload:ForecastRequest,db:Session=Depends(get_db),account_id:str|None=None,account_type:str|None=None):
     result=forecast(db,payload.start,payload.end,account_id,account_type)
     return {k:(str(v) if isinstance(v,Decimal) else v) for k,v in result.__dict__.items()}
 
 @app.get("/api/v1/forecast/month-end")
-def calculate_month_end_forecast(as_of:date|None=None,account_id:str|None=None,account_type:str|None=None,db:Session=Depends(get_db)):
+def calculate_month_end_forecast(as_of:date|None=None,db:Session=Depends(get_db),account_id:str|None=None,account_type:str|None=None):
     return month_end_projection(db,as_of,account_id,account_type)
 
 
