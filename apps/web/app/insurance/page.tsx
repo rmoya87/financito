@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import {FormEvent,useState} from 'react';
+import {FormEvent,useEffect,useState} from 'react';
 import {useMutation,useQuery,useQueryClient} from '@tanstack/react-query';
 import {apiGet,apiMutate} from '@/lib/api';
 import {PageHeader} from '@/components/page-header';
@@ -75,6 +75,11 @@ export default function InsurancePage(){
   const [showPolicyForm,setShowPolicyForm]=useState(false);
   const [selectedPolicyId,setSelectedPolicyId]=useState<string|null>(null);
   const [manualMissing,setManualMissing]=useState<Record<string,string>>({});
+
+  useEffect(()=>{
+    const requested=new URLSearchParams(window.location.search).get('policy');
+    if(requested)setSelectedPolicyId(requested);
+  },[]);
   const [req,setReq]=useState({insurance_type:'',coverage_type:'',minimum_limit:'',notes:''});
   const refreshInsurance=()=>{
     qc.invalidateQueries({queryKey:['insurance']});
