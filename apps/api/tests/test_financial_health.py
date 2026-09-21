@@ -200,6 +200,38 @@ def test_available_to_spend_includes_expected_salary_not_yet_received():
         db.delete(account);db.commit()
 
 
+def test_overdue_salary_is_kept_in_current_month_forecast():
+    suffix=uuid4().hex[:8]
+    with SessionLocal() as db:
+        cats=ensure_categories(db)
+        salary_category=next(category for key,category in cats.items() if key not in {"refunds","internal_transfer"})
+        account=Account(
+            name="Overdue salary "+suffix,current_balance=Decimal("500"),
+            available_balance=Decimal("500"),source="manual",
+        )
+        db.add(account);db.flush()
+        today=date.today()
+        # Choose an expected monthly cadence that lands a few days before today.
+        last=today-timedelta(days=35)
+        previous=last-timedelta(days=30)
+        older=previous-timedelta(days=30)
+        for day in (older,previous,last):
+            _transaction(db,account.id,day,"1800","Nomina overdue "+suffix,salary_category.id,False)
+        db.commit()
+
+        health=financial_health_summary(db,as_of=today,start=today.replace(day=1),end=today,account_id=account.id)
+        incomes=health["safe_to_spend"]["expected_incomes"]
+
+        assert len(incomes)==1
+        assert incomes[0]["overdue"] is True
+        assert incomes[0]["received_this_month"] is False
+        assert Decimal(incomes[0]["amount"])==Decimal("1800.00")
+        assert Decimal(health["safe_to_spend"]["expected_income_before_horizon"])==Decimal("1800.00")
+
+        db.execute(delete(Transaction).where(Transaction.account_id==account.id))
+        db.delete(account);db.commit()
+
+
 def test_closed_period_returns_consolidated_actual_vs_reconstructed_forecast():
     suffix=uuid4().hex[:8]
     with SessionLocal() as db:
