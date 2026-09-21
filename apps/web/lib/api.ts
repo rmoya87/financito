@@ -1,3 +1,4 @@
+import {filteredApiPath} from './financial-filters';
 let csrfToken:string|null=null;
 let sessionPromise:Promise<string>|null=null;
 
@@ -57,10 +58,11 @@ async function parse<T>(res:Response):Promise<T>{
 
 export async function apiGet<T>(path:string):Promise<T>{
   await ensureSession();
-  const res=await fetch(path,{credentials:'same-origin',cache:'no-store'});
+  const filteredPath=filteredApiPath(path);
+  const res=await fetch(filteredPath,{credentials:'same-origin',cache:'no-store'});
   if(res.status===401){
     await ensureSession(true);
-    return parse<T>(await fetch(path,{credentials:'same-origin',cache:'no-store'}));
+    return parse<T>(await fetch(filteredPath,{credentials:'same-origin',cache:'no-store'}));
   }
   return parse<T>(res);
 }
@@ -76,11 +78,12 @@ async function mutateRequest(path:string,method:'POST'|'PATCH'|'PUT'|'DELETE',bo
 }
 
 export async function apiMutate<T>(path:string,method:'POST'|'PATCH'|'PUT'|'DELETE',body?:unknown):Promise<T>{
-  let res=await mutateRequest(path,method,body);
+  const filteredPath=filteredApiPath(path);
+  let res=await mutateRequest(filteredPath,method,body);
   if(res.status===401||res.status===403){
     // A different tab or an expired browser cookie may have invalidated the
     // token held in this JS context. Refresh once and repeat the same request.
-    res=await mutateRequest(path,method,body,true);
+    res=await mutateRequest(filteredPath,method,body,true);
   }
   return parse<T>(res);
 }
@@ -96,16 +99,17 @@ async function uploadRequest(path:string,form:FormData,forceSession=false,method
 }
 
 export async function apiUpload<T>(path:string,form:FormData):Promise<T>{
-  let res=await uploadRequest(path,form);
+  const filteredPath=filteredApiPath(path);
+  let res=await uploadRequest(filteredPath,form);
   if(res.status===401||res.status===403){
-    res=await uploadRequest(path,form,true);
+    res=await uploadRequest(filteredPath,form,true);
   }
   // Older local builds accepted the multipart ingestion route with PUT.
   // Retrying only on 405 makes mixed-version upgrades self-healing without
   // repeating a successful upload.
   if(res.status===405){
-    res=await uploadRequest(path,form,false,'PUT');
-    if(res.status===401||res.status===403)res=await uploadRequest(path,form,true,'PUT');
+    res=await uploadRequest(filteredPath,form,false,'PUT');
+    if(res.status===401||res.status===403)res=await uploadRequest(filteredPath,form,true,'PUT');
   }
   return parse<T>(res);
 }

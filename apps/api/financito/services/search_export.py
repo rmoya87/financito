@@ -1,14 +1,27 @@
 from __future__ import annotations
 import csv,json
+from datetime import date
 from io import StringIO
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from ..models import Account,Contract,Document,FinancialGoal,Transaction
 from ..models_extended import Asset,Liability
 from .rag import search as rag_search
-def global_search(session:Session,q:str,limit:int=20)->dict:
+def global_search(
+    session:Session,q:str,limit:int=20,start:date|None=None,end:date|None=None,
+    account_id:str|None=None,account_type:str|None=None,
+)->dict:
     pattern="%"+q[:120]+"%"
-    tx=session.scalars(select(Transaction).where((Transaction.description_raw.ilike(pattern))|(Transaction.merchant_raw.ilike(pattern))).limit(limit)).all()
+    tx_stmt=select(Transaction).where((Transaction.description_raw.ilike(pattern))|(Transaction.merchant_raw.ilike(pattern)))
+    if start:
+        tx_stmt=tx_stmt.where(Transaction.booking_date>=start)
+    if end:
+        tx_stmt=tx_stmt.where(Transaction.booking_date<=end)
+    if account_id:
+        tx_stmt=tx_stmt.where(Transaction.account_id==account_id)
+    elif account_type:
+        tx_stmt=tx_stmt.where(Transaction.account_id.in_(select(Account.id).where(Account.account_type==account_type)))
+    tx=session.scalars(tx_stmt.limit(limit)).all()
     contracts=session.scalars(select(Contract).where(Contract.provider_name.ilike(pattern)).limit(limit)).all()
     docs=rag_search(session,q,min(8,limit))
     return {"transactions":[{"id":x.id,"date":x.booking_date,"description":x.description_raw,"amount":str(x.amount)} for x in tx],"contracts":[{"id":x.id,"provider":x.provider_name,"type":x.contract_type} for x in contracts],"documents":docs}

@@ -6,7 +6,8 @@ import {useMutation,useQuery,useQueryClient} from '@tanstack/react-query';
 import {Bar,BarChart,CartesianGrid,Cell,Legend,Line,LineChart,Pie,PieChart,ResponsiveContainer,Tooltip,XAxis,YAxis} from 'recharts';
 import {apiGet,apiMutate} from '@/lib/api';
 import {PageHeader} from '@/components/page-header';
-import {DateRangeSelector,DateRangeKey,isoDate,resolveDateRange} from '@/components/date-range-selector';
+import {isoDate} from '@/components/date-range-selector';
+import {useFinancialFilters} from '@/components/financial-filters';
 import {Card} from '@/components/ui/card';
 import {Money,formatMoney,formatNumber} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
@@ -49,11 +50,8 @@ function shiftDate(value:string,days:number){
 
 export default function AnalyticsPage(){
   const qc=useQueryClient();
-  const defaults=resolveDateRange('month');
-  const [range,setRange]=useState<DateRangeKey>('month');
-  const [customStart,setCustomStart]=useState(defaults.start);
-  const [customEnd,setCustomEnd]=useState(defaults.end);
-  const dates=resolveDateRange(range,customStart,customEnd);
+  const {range,start,end}=useFinancialFilters();
+  const dates={start,end};
   const periodReady=Boolean(dates.start&&dates.end);
   const forecastStart=periodReady?shiftDate(dates.end,1):'';
   const forecastEnd=periodReady?shiftDate(dates.end,30):'';
@@ -147,16 +145,7 @@ export default function AnalyticsPage(){
   return <>
     <PageHeader
       title="Análisis y resiliencia"
-      description="Ingresos, gasto, ahorro, previsiones y patrones. El periodo seleccionado filtra los datos temporales y sirve como fecha de referencia para las previsiones."
-      action={<DateRangeSelector
-        range={range}
-        customStart={customStart}
-        customEnd={customEnd}
-        onRangeChange={setRange}
-        onCustomStartChange={setCustomStart}
-        onCustomEndChange={setCustomEnd}
-        ariaLabel="Periodo de Análisis"
-      />}
+      description="Ingresos, gasto, ahorro, previsiones y patrones. El periodo global filtra los datos temporales y sirve como fecha de referencia para las previsiones."
     />
 
     <div className="mb-4 flex flex-wrap gap-2">

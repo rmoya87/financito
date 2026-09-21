@@ -1,6 +1,6 @@
 'use client';
 
-import {FormEvent,useState} from 'react';
+import {FormEvent,useEffect,useState} from 'react';
 import {useMutation,useQuery,useQueryClient} from '@tanstack/react-query';
 import {apiGet,apiMutate,apiUpload} from '@/lib/api';
 import {PageHeader} from '@/components/page-header';
@@ -9,7 +9,8 @@ import {Money} from '@/components/ui/money';
 import {EmptyState,ErrorState} from '@/components/ui/states';
 
 type Position={security_id:string;quantity:string;average_cost:string;price:string;value:string;unrealized_pnl:string};
-type P={id:string;name:string;base_currency:string;market_value:string;cost_basis:string;unrealized_pnl:string;positions:Position[]};
+type Account={id:string;name:string;institution_name:string;account_type:string;current_balance:string;available_balance:string|null};
+type P={id:string;name:string;base_currency:string;account_id:string|null;account_name:string|null;account_institution:string|null;market_value:string;cost_basis:string;unrealized_pnl:string;positions:Position[]};
 type S={id:string;name:string;symbol:string|null;asset_class:string;currency:string};
 type Exposure={portfolio_id:string;market_value:string;by_asset_class:{asset_class:string;value:string;weight:string}[];positions:{security_id:string;name:string;symbol:string|null;value:string;weight:string}[];concentration_hhi:string;largest_position_weight:string};
 type Performance={portfolio_id:string;mwr:number|null;twr:number|null;observations:number;coverage:number;current_value:string;first_trade?:string;last_trade?:string;assumptions:string[]};
@@ -21,8 +22,10 @@ type InsightItem={title:string;detail:string;pages:number[];impact?:string};type
 export default function InvestmentsPage(){
   const qc=useQueryClient();
   const ps=useQuery({queryKey:['portfolios'],queryFn:()=>apiGet<P[]>('/api/v1/portfolios')});
+  const accounts=useQuery({queryKey:['accounts','portfolio-link'],queryFn:()=>apiGet<Account[]>('/api/v1/accounts')});
   const ss=useQuery({queryKey:['securities'],queryFn:()=>apiGet<S[]>('/api/v1/securities')});
   const [pn,setPn]=useState('Principal');
+  const [portfolioAccountId,setPortfolioAccountId]=useState('');
   const [sec,setSec]=useState({name:'',symbol:'',asset_class:'stock'});
   const [trade,setTrade]=useState({portfolio_id:'',security_id:'',side:'buy',quantity:'',price:'',fees:'0',executed_at:new Date().toISOString().slice(0,16)});
   const [selectedPortfolio,setSelectedPortfolio]=useState('');
@@ -35,9 +38,21 @@ export default function InvestmentsPage(){
   const performance=useQuery({queryKey:['portfolio-performance',selectedPortfolio],queryFn:()=>apiGet<Performance>('/api/v1/portfolios/'+selectedPortfolio+'/performance'),enabled:!!selectedPortfolio});
   const fit=useQuery({queryKey:['portfolio-fit',selectedPortfolio,fitSecurity,fitWeight],queryFn:()=>apiGet<Fit>('/api/v1/portfolios/'+selectedPortfolio+'/fit/'+fitSecurity+'?proposed_weight='+encodeURIComponent(fitWeight)),enabled:!!selectedPortfolio&&!!fitSecurity});
   const actions=useQuery({queryKey:['corporate-actions',selectedPortfolio],queryFn:()=>apiGet<CorpAction[]>('/api/v1/portfolios/'+selectedPortfolio+'/corporate-actions'),enabled:!!selectedPortfolio});
+  useEffect(()=>{
+    if(!ps.data)return;
+    if(selectedPortfolio&&!ps.data.some(p=>p.id===selectedPortfolio)){
+      setSelectedPortfolio(ps.data[0]?.id||'');
+      return;
+    }
+    if(!selectedPortfolio&&ps.data.length)setSelectedPortfolio(ps.data[0].id);
+  },[ps.data,selectedPortfolio]);
   const documentInsights=useQuery({queryKey:['document-insights','investment_statement'],queryFn:()=>apiGet<DocInsight[]>('/api/v1/document-insights?document_type=investment_statement')});
 
-  const addP=useMutation({mutationFn:()=>apiMutate('/api/v1/portfolios','POST',{name:pn,base_currency:'EUR'}),onSuccess:()=>qc.invalidateQueries({queryKey:['portfolios']})});
+  const addP=useMutation({mutationFn:()=>apiMutate('/api/v1/portfolios','POST',{name:pn,base_currency:'EUR',account_id:portfolioAccountId||null}),onSuccess:()=>qc.invalidateQueries({queryKey:['portfolios']})});
+  const updatePortfolio=useMutation({
+    mutationFn:({id,name,base_currency,account_id}:{id:string;name:string;base_currency:string;account_id:string|null})=>apiMutate('/api/v1/portfolios/'+id,'PATCH',{name,base_currency,account_id}),
+    onSuccess:()=>qc.invalidateQueries({queryKey:['portfolios']}),
+  });
   const addS=useMutation({mutationFn:()=>apiMutate('/api/v1/securities','POST',{...sec,currency:'EUR',isin:null}),onSuccess:()=>qc.invalidateQueries({queryKey:['securities']})});
   const addT=useMutation({mutationFn:()=>apiMutate('/api/v1/trades','POST',{...trade,fx_rate:'1',currency:'EUR',executed_at:new Date(trade.executed_at).toISOString()}),onSuccess:()=>{qc.invalidateQueries({queryKey:['portfolios']});qc.invalidateQueries({queryKey:['portfolio-exposure']});qc.invalidateQueries({queryKey:['portfolio-performance']})}});
   const refresh=useMutation({mutationFn:(securityId:string)=>apiMutate('/api/v1/market/security/'+securityId+'/refresh?include_history=true','POST'),onSuccess:()=>{qc.invalidateQueries({queryKey:['portfolios']});qc.invalidateQueries({queryKey:['portfolio-exposure']});qc.invalidateQueries({queryKey:['portfolio-performance']})}});
@@ -49,10 +64,14 @@ export default function InvestmentsPage(){
     <div className="grid gap-4 xl:grid-cols-3">
       <Card>
         <h2 className="font-bold">Cartera</h2>
-        <form className="mt-3 flex gap-2" onSubmit={(e:FormEvent)=>{e.preventDefault();addP.mutate()}}>
+        <form className="mt-3 grid gap-2" onSubmit={(e:FormEvent)=>{e.preventDefault();addP.mutate()}}>
           <label className="sr-only" htmlFor="portfolio-name">Nombre de cartera</label>
           <input id="portfolio-name" className="fin-input" value={pn} onChange={e=>setPn(e.target.value)}/>
-          <button className="fin-button">Crear</button>
+          <select className="fin-input" aria-label="Cuenta bancaria de la cartera" value={portfolioAccountId} onChange={e=>setPortfolioAccountId(e.target.value)} required>
+            <option value="">Cuenta bancaria…</option>
+            {accounts.data?.map(a=><option key={a.id} value={a.id}>{a.institution_name} · {a.name}</option>)}
+          </select>
+          <button className="fin-button" disabled={!portfolioAccountId}>Crear</button>
         </form>
       </Card>
       <Card>
@@ -112,7 +131,8 @@ export default function InvestmentsPage(){
 
     <div className="mt-4 space-y-4">
       {ps.data?.length?ps.data.map(p=><Card key={p.id}>
-        <div className="flex flex-wrap justify-between gap-3"><div><div className="font-bold">{p.name}</div><div className="text-sm text-[var(--muted)]">Coste <Money value={p.cost_basis}/> · P&L <Money value={p.unrealized_pnl}/></div></div><div className="text-xl font-bold"><Money value={p.market_value}/></div></div>
+        <div className="flex flex-wrap justify-between gap-3"><div><div className="font-bold">{p.name}</div><div className="text-sm text-[var(--muted)]">Coste <Money value={p.cost_basis}/> · P&L <Money value={p.unrealized_pnl}/></div><div className="mt-1 text-xs text-[var(--muted)]">{p.account_id?(p.account_institution||'Banco')+' · '+(p.account_name||'Cuenta'):'Sin cuenta bancaria vinculada'}</div></div><div className="text-xl font-bold"><Money value={p.market_value}/></div></div>
+        <label className="mt-3 block text-xs text-[var(--muted)]">Cuenta bancaria de la cartera<select className="fin-input mt-1" aria-label={'Cuenta de la cartera '+p.name} value={p.account_id||''} onChange={e=>updatePortfolio.mutate({id:p.id,name:p.name,base_currency:p.base_currency,account_id:e.target.value||null})}><option value="">Sin vincular</option>{accounts.data?.map(a=><option key={a.id} value={a.id}>{a.institution_name} · {a.name}</option>)}</select></label>
         <div className="mt-4 space-y-2">{p.positions.map(x=>{const s=ss.data?.find(s=>s.id===x.security_id);const ret=Number(x.average_cost)>0?(Number(x.price)-Number(x.average_cost))/Number(x.average_cost):null;return <div key={x.security_id} className="rounded-xl bg-[var(--surface-2)] p-3 text-sm"><div className="flex flex-wrap items-start justify-between gap-2"><div><strong>{s?.name||x.security_id}</strong>{s?.symbol&&<span className="text-[var(--muted)]"> · {s.symbol}</span>}<div className="mt-1 text-xs text-[var(--muted)]">{x.quantity} uds · compra media <Money value={x.average_cost}/> · actual <Money value={x.price}/></div></div><div className="text-right"><div className="font-semibold"><Money value={x.value}/></div><div className="text-xs text-[var(--muted)]">P&L <Money value={x.unrealized_pnl}/>{ret===null?'':' · '+(ret*100).toFixed(2)+'%'}</div></div></div>{s?.symbol&&<button className="mt-2 text-xs underline" onClick={()=>refresh.mutate(x.security_id)}>Actualizar precio real</button>}</div>})}</div>
         <button className="fin-button secondary mt-3" onClick={()=>setSelectedPortfolio(p.id)}>Analizar cartera</button>
         {selectedPortfolio===p.id&&<div className="mt-4 grid gap-4 xl:grid-cols-3">

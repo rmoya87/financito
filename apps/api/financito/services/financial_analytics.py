@@ -7,7 +7,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import Budget, Category, Transaction
+from ..models import Account, Budget, Category, Transaction
 from ..models_analytics import EntityLink
 
 CENT = Decimal("0.01")
@@ -51,19 +51,27 @@ def _is_refund(tx: Transaction, categories: dict[str, Category], refund_ids: set
     )
 
 
-def _period_transactions(session: Session, start: date, end: date) -> tuple[list[Transaction], dict[str, Category]]:
+def _period_transactions(
+    session: Session, start: date, end: date,
+    account_id: str | None = None, account_type: str | None = None,
+) -> tuple[list[Transaction], dict[str, Category]]:
     categories = _categories(session)
-    rows = session.scalars(
-        select(Transaction).where(
-            Transaction.booking_date >= start,
-            Transaction.booking_date <= end,
-        )
-    ).all()
+    stmt = select(Transaction).where(
+        Transaction.booking_date >= start,
+        Transaction.booking_date <= end,
+    )
+    if account_id:
+        stmt = stmt.where(Transaction.account_id == account_id)
+    elif account_type:
+        stmt = stmt.where(Transaction.account_id.in_(
+            select(Account.id).where(Account.account_type == account_type)
+        ))
+    rows = session.scalars(stmt).all()
     return [tx for tx in rows if not _is_internal(tx, categories)], categories
 
 
-def cash_flow(session: Session, start: date, end: date) -> dict:
-    txs, categories = _period_transactions(session, start, end)
+def cash_flow(session: Session, start: date, end: date, account_id: str | None = None, account_type: str | None = None) -> dict:
+    txs, categories = _period_transactions(session, start, end, account_id, account_type)
     refund_links = _refund_links(session, [t.id for t in txs])
     refund_ids = set(refund_links)
     income = Decimal("0")
@@ -88,8 +96,8 @@ def cash_flow(session: Session, start: date, end: date) -> dict:
     }
 
 
-def category_spending(session: Session, start: date, end: date) -> list[dict]:
-    txs, categories = _period_transactions(session, start, end)
+def category_spending(session: Session, start: date, end: date, account_id: str | None = None, account_type: str | None = None) -> list[dict]:
+    txs, categories = _period_transactions(session, start, end, account_id, account_type)
     refund_links = _refund_links(session, [t.id for t in txs])
     refund_ids = set(refund_links)
     by_id = {t.id: t for t in txs}
@@ -120,8 +128,8 @@ def category_spending(session: Session, start: date, end: date) -> list[dict]:
     return sorted(rows, key=lambda x: x["amount"], reverse=True)
 
 
-def merchant_spending(session: Session, start: date, end: date, limit: int = 20) -> list[dict]:
-    txs, categories = _period_transactions(session, start, end)
+def merchant_spending(session: Session, start: date, end: date, limit: int = 20, account_id: str | None = None, account_type: str | None = None) -> list[dict]:
+    txs, categories = _period_transactions(session, start, end, account_id, account_type)
     totals = defaultdict(lambda: Decimal("0"))
     for tx in txs:
         if tx.amount >= 0:
@@ -140,21 +148,21 @@ def merchant_spending(session: Session, start: date, end: date, limit: int = 20)
     ]
 
 
-def merchant_spending_total(session: Session, start: date, end: date) -> Decimal:
-    txs,_ = _period_transactions(session,start,end)
+def merchant_spending_total(session: Session, start: date, end: date, account_id: str | None = None, account_type: str | None = None) -> Decimal:
+    txs,_ = _period_transactions(session,start,end,account_id,account_type)
     return sum((-tx.amount for tx in txs if tx.amount<0),Decimal("0")).quantize(CENT)
 
 
-def fixed_variable(session: Session, start: date, end: date) -> dict:
-    txs, _ = _period_transactions(session, start, end)
+def fixed_variable(session: Session, start: date, end: date, account_id: str | None = None, account_type: str | None = None) -> dict:
+    txs, _ = _period_transactions(session, start, end, account_id, account_type)
     expenses = [t for t in txs if t.amount < 0]
     fixed = sum((-t.amount for t in expenses if t.is_recurring), Decimal("0"))
     variable = sum((-t.amount for t in expenses if not t.is_recurring), Decimal("0"))
     return {"fixed": fixed.quantize(CENT), "variable": variable.quantize(CENT)}
 
 
-def essential_discretionary(session: Session, start: date, end: date) -> dict:
-    txs, categories = _period_transactions(session, start, end)
+def essential_discretionary(session: Session, start: date, end: date, account_id: str | None = None, account_type: str | None = None) -> dict:
+    txs, categories = _period_transactions(session, start, end, account_id, account_type)
     essential = Decimal("0")
     discretionary = Decimal("0")
     for tx in txs:
@@ -171,8 +179,8 @@ def essential_discretionary(session: Session, start: date, end: date) -> dict:
     }
 
 
-def monthly_cashflow(session: Session, start: date, end: date) -> list[dict]:
-    txs, categories = _period_transactions(session, start, end)
+def monthly_cashflow(session: Session, start: date, end: date, account_id: str | None = None, account_type: str | None = None) -> list[dict]:
+    txs, categories = _period_transactions(session, start, end, account_id, account_type)
     refund_ids = set(_refund_links(session, [t.id for t in txs]))
     buckets: dict[str, dict[str, Decimal]] = {}
     for tx in txs:
@@ -197,8 +205,8 @@ def monthly_cashflow(session: Session, start: date, end: date) -> list[dict]:
     ]
 
 
-def daily_cashflow(session: Session, start: date, end: date) -> list[dict]:
-    txs, categories = _period_transactions(session, start, end)
+def daily_cashflow(session: Session, start: date, end: date, account_id: str | None = None, account_type: str | None = None) -> list[dict]:
+    txs, categories = _period_transactions(session, start, end, account_id, account_type)
     refund_ids = set(_refund_links(session, [t.id for t in txs]))
     buckets: dict[date, dict[str, Decimal]] = {}
     current=start
@@ -224,8 +232,8 @@ def daily_cashflow(session: Session, start: date, end: date) -> list[dict]:
     ]
 
 
-def budget_vs_actual(session: Session, start: date, end: date) -> list[dict]:
-    actual = {x["category_id"]: x["amount"] for x in category_spending(session, start, end)}
+def budget_vs_actual(session: Session, start: date, end: date, account_id: str | None = None, account_type: str | None = None) -> list[dict]:
+    actual = {x["category_id"]: x["amount"] for x in category_spending(session, start, end, account_id, account_type)}
     categories = {c.id: c.name for c in session.scalars(select(Category)).all()}
     rows = []
     for budget in session.scalars(select(Budget)).all():
@@ -240,19 +248,19 @@ def budget_vs_actual(session: Session, start: date, end: date) -> list[dict]:
     return rows
 
 
-def overview(session: Session, start: date, end: date) -> dict:
-    flow = cash_flow(session, start, end)
+def overview(session: Session, start: date, end: date, account_id: str | None = None, account_type: str | None = None) -> dict:
+    flow = cash_flow(session, start, end, account_id, account_type)
     return {
         "period": {"start": start, "end": end},
         "cash_flow": {k: (str(v) if isinstance(v, Decimal) else v) for k, v in flow.items()},
-        "by_category": [{**x, "amount": str(x["amount"])} for x in category_spending(session, start, end)],
-        "by_merchant": [{**x, "amount": str(x["amount"])} for x in merchant_spending(session, start, end)],
-        "merchant_spending_total": str(merchant_spending_total(session,start,end)),
-        "fixed_variable": {k: str(v) for k, v in fixed_variable(session, start, end).items()},
+        "by_category": [{**x, "amount": str(x["amount"])} for x in category_spending(session, start, end, account_id, account_type)],
+        "by_merchant": [{**x, "amount": str(x["amount"])} for x in merchant_spending(session, start, end, account_id=account_id, account_type=account_type)],
+        "merchant_spending_total": str(merchant_spending_total(session,start,end,account_id,account_type)),
+        "fixed_variable": {k: str(v) for k, v in fixed_variable(session, start, end, account_id, account_type).items()},
         "essential_discretionary": {
-            k: str(v) for k, v in essential_discretionary(session, start, end).items()
+            k: str(v) for k, v in essential_discretionary(session, start, end, account_id, account_type).items()
         },
-        "monthly": monthly_cashflow(session, start, end),
-        "daily": daily_cashflow(session,start,end) if (end-start).days<=45 else [],
-        "budget_vs_actual": budget_vs_actual(session, start, end),
+        "monthly": monthly_cashflow(session, start, end, account_id, account_type),
+        "daily": daily_cashflow(session,start,end,account_id,account_type) if (end-start).days<=45 else [],
+        "budget_vs_actual": budget_vs_actual(session, start, end, account_id, account_type),
     }

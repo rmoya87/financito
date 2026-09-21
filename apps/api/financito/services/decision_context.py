@@ -22,6 +22,7 @@ from .wealth import summary as wealth_summary
 def mortgage_row(row: Mortgage) -> dict:
     return {
         "id": row.id,
+        "account_id": row.account_id,
         "lender": row.lender,
         "remaining_principal": str(row.remaining_principal),
         "currency": row.currency,
@@ -43,7 +44,12 @@ def _mortgage_decision_row(session: Session, row: Mortgage) -> dict:
     }
 
 
-def _budget_context(session: Session, today: date) -> tuple[list[dict], list[dict]]:
+def _budget_context(
+    session: Session,
+    today: date,
+    account_id: str | None = None,
+    account_type: str | None = None,
+) -> tuple[list[dict], list[dict]]:
     categories = {row.id: row for row in session.scalars(select(Category)).all()}
     budgets = session.scalars(select(Budget)).all()
     spending_cache: dict[tuple[date, date], dict[str, Decimal]] = {}
@@ -55,7 +61,7 @@ def _budget_context(session: Session, today: date) -> tuple[list[dict], list[dic
         if cache_key not in spending_cache:
             spending_cache[cache_key] = {
                 item["category_id"]: item["amount"]
-                for item in category_spending(session, start, today)
+                for item in category_spending(session, start, today, account_id, account_type)
             }
         actual = spending_cache[cache_key].get(budget.category_id, Decimal("0"))
         target = budget.amount
@@ -161,8 +167,24 @@ def _action_rows(session: Session) -> list[dict]:
     return result
 
 
-def live_decision_context(session: Session) -> dict:
-    mortgage_records = session.scalars(select(Mortgage).order_by(Mortgage.updated_at.desc())).all()
+def live_decision_context(
+    session: Session,
+    *,
+    start: date | None = None,
+    end: date | None = None,
+    account_id: str | None = None,
+    account_type: str | None = None,
+) -> dict:
+    scope_ids=None
+    if account_id:
+        scope_ids={account_id}
+    elif account_type:
+        scope_ids=set(session.scalars(select(Account.id).where(Account.account_type==account_type)).all())
+
+    mortgage_stmt=select(Mortgage).order_by(Mortgage.updated_at.desc())
+    if scope_ids is not None:
+        mortgage_stmt=mortgage_stmt.where(Mortgage.account_id.in_(scope_ids))
+    mortgage_records = session.scalars(mortgage_stmt).all()
     mortgages = [_mortgage_decision_row(session, row) for row in mortgage_records]
     contracts = [
         {
@@ -182,16 +204,23 @@ def live_decision_context(session: Session) -> dict:
             "id": row.id,
             "name": row.name,
             "base_currency": row.base_currency,
+            "account_id": row.account_id,
             **portfolio_summary(session, row.id),
         }
-        for row in session.scalars(select(Portfolio)).all()
+        for row in session.scalars(
+            select(Portfolio) if scope_ids is None else select(Portfolio).where(Portfolio.account_id.in_(scope_ids))
+        ).all()
     ]
-    account_records = session.scalars(select(Account)).all()
+    account_stmt=select(Account)
+    if scope_ids is not None:
+        account_stmt=account_stmt.where(Account.id.in_(scope_ids))
+    account_records = session.scalars(account_stmt).all()
     accounts = [
         {
             "id": row.id,
             "name": row.name,
             "institution_name": row.institution_name,
+            "account_type": row.account_type,
             "current_balance": str(row.current_balance),
             "available_balance": None if row.available_balance is None else str(row.available_balance),
             "currency": row.currency,
@@ -199,12 +228,14 @@ def live_decision_context(session: Session) -> dict:
         for row in account_records
     ]
     liquidity = sum((row.current_balance for row in account_records), Decimal("0"))
-    today = date.today()
+    today = end or date.today()
     month_start = today.replace(day=1)
-    month_flow = cash_flow(session, month_start, today)
+    period_start = start or month_start
+    period_flow = cash_flow(session, period_start, today, account_id, account_type)
+    month_flow = cash_flow(session, month_start, today, account_id, account_type)
     trailing_start = today - timedelta(days=89)
-    trailing_flow = cash_flow(session, trailing_start, today)
-    budgets, budget_alerts = _budget_context(session, today)
+    trailing_flow = cash_flow(session, trailing_start, today, account_id, account_type)
+    budgets, budget_alerts = _budget_context(session, today, account_id, account_type)
     anomalies, anomaly_alerts = _anomaly_context(session)
     actions = _action_rows(session)
     commitments = [
@@ -225,6 +256,10 @@ def live_decision_context(session: Session) -> dict:
                 Commitment.status == "active",
                 Commitment.due_date >= today,
                 Commitment.due_date <= today + timedelta(days=90),
+                *(
+                    [Commitment.account_id.in_(scope_ids)]
+                    if scope_ids is not None else []
+                ),
             )
             .order_by(Commitment.due_date)
         ).all()
@@ -237,6 +272,14 @@ def live_decision_context(session: Session) -> dict:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "real_data_only": True,
         "liquidity": str(liquidity),
+        "cash_flow_current_period": {
+            "start": str(period_start),
+            "end": str(today),
+            "income": str(period_flow["income"]),
+            "expenses": str(period_flow["expenses"]),
+            "savings": str(period_flow["savings"]),
+            "savings_rate": None if period_flow["savings_rate"] is None else str(period_flow["savings_rate"]),
+        },
         "cash_flow_current_month": {
             "start": str(month_start),
             "end": str(today),
@@ -256,14 +299,22 @@ def live_decision_context(session: Session) -> dict:
             "average_monthly_expenses": str((trailing_flow["expenses"] / Decimal("3")).quantize(Decimal("0.01"))),
             "average_monthly_savings": str((trailing_flow["savings"] / Decimal("3")).quantize(Decimal("0.01"))),
         },
-        "wealth": wealth_summary(session),
+        "wealth": wealth_summary(session,account_id,account_type),
         "accounts": accounts,
         "mortgages": mortgages,
         "contracts": contracts,
         "portfolios": portfolios,
-        "tracked_assets": tracked_assets(session),
+        "tracked_assets": [
+            row for row in tracked_assets(session)
+            if scope_ids is None or set(row.get("portfolio_ids") or []).intersection({
+                p.id for p in session.scalars(select(Portfolio).where(Portfolio.account_id.in_(scope_ids))).all()
+            })
+        ],
         "document_evidence": structured_evidence_context(session),
-        "insurance": insurance_verdict(session, use_ai=False),
+        "insurance": insurance_verdict(
+            session,use_ai=False,start=period_start,end=today,
+            account_id=account_id,account_type=account_type,
+        ),
         "budgets": budgets,
         "anomalies": anomalies,
         "commitments_next_90_days": commitments,

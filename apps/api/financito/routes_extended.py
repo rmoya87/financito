@@ -36,6 +36,7 @@ from .services.mortgage_payments import payment_rows as mortgage_payment_rows,re
 from .services.investment_tracking import remove_tracking,save_tracked_asset,simulation_history,start_simulation,tracked_assets
 from .services.broker_import import import_broker_csv
 from .services.corporate_actions import add_action,list_actions
+from .services.account_links import validate_account,synchronize_product_account_links
 from .providers.market import quote_with_free_fallback
 from .providers.news import GdeltNewsProvider
 router=APIRouter(prefix="/api/v1")
@@ -44,6 +45,13 @@ def dbdep():
     db=SessionLocal()
     try:yield db
     finally:db.close()
+
+def _scope_account_ids(db:Session,account_id:str|None=None,account_type:str|None=None)->set[str]|None:
+    if account_id:
+        return {account_id}
+    if account_type:
+        return set(db.scalars(select(Account.id).where(Account.account_type==account_type)).all())
+    return None
 
 def _document_sources(db:Session,to_type:str)->dict[str,str]:
     links=db.scalars(select(EntityLink).where(
@@ -132,10 +140,14 @@ def unlink_mortgage_insurance(mortgage_id:str,policy_id:str,db:Session=Depends(d
 
 
 @router.get("/mortgages")
-def mortgages(db:Session=Depends(dbdep)):
+def mortgages(account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
     sources_multi=_document_sources_multi(db,"mortgage")
+    scope=_scope_account_ids(db,account_id,account_type)
+    stmt=select(Mortgage).order_by(Mortgage.updated_at.desc())
+    if scope is not None:
+        stmt=stmt.where(Mortgage.account_id.in_(scope))
     rows=[]
-    for r in db.scalars(select(Mortgage).order_by(Mortgage.updated_at.desc())).all():
+    for r in db.scalars(stmt).all():
         document_ids=sources_multi.get(r.id,[])
         rows.append({
             **mortgage_row(r),
@@ -147,7 +159,12 @@ def mortgages(db:Session=Depends(dbdep)):
 
 @router.post("/mortgages")
 def add_mortgage(p:MortgageProfileCreate,db:Session=Depends(dbdep)):
-    r=Mortgage(**p.model_dump())
+    payload=p.model_dump()
+    try:account=validate_account(db,p.account_id)
+    except LookupError as exc:raise HTTPException(404,str(exc))
+    if account is not None:
+        payload["lender"]=account.institution_name
+    r=Mortgage(**payload)
     db.add(r);db.flush()
     record_snapshot(db,"mortgage",r.id,{
         "remaining_principal":str(r.remaining_principal),
@@ -163,9 +180,14 @@ def add_mortgage(p:MortgageProfileCreate,db:Session=Depends(dbdep)):
 def update_mortgage(mortgage_id:str,p:MortgageProfileUpdate,db:Session=Depends(dbdep)):
     r=db.get(Mortgage,mortgage_id)
     if not r:raise HTTPException(404,"Mortgage not found")
+    try:account=validate_account(db,p.account_id)
+    except LookupError as exc:raise HTTPException(404,str(exc))
     if p.remaining_principal!=r.remaining_principal:
         reconcile_manual_balance(db,mortgage_id)
-    for key,value in p.model_dump().items():setattr(r,key,value)
+    payload=p.model_dump()
+    if account is not None:
+        payload["lender"]=account.institution_name
+    for key,value in payload.items():setattr(r,key,value)
     db.flush()
     record_snapshot(db,"mortgage",r.id,{
         "remaining_principal":str(r.remaining_principal),
@@ -251,9 +273,18 @@ def update_mortgage_profile_extra(mortgage_id:str,p:MortgageExtraUpdate,db:Sessi
     return _mortgage_extra_payload(row)
 
 @router.get("/wealth/home")
-def wealth_home(mortgage_id:str|None=None,db:Session=Depends(dbdep)):
-    mortgage=db.get(Mortgage,mortgage_id) if mortgage_id else db.scalar(select(Mortgage).order_by(Mortgage.updated_at.desc()))
-    if mortgage_id and mortgage is None:raise HTTPException(404,"Mortgage not found")
+def wealth_home(mortgage_id:str|None=None,account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
+    scope=_scope_account_ids(db,account_id,account_type)
+    if mortgage_id:
+        mortgage=db.get(Mortgage,mortgage_id)
+        if mortgage is None:raise HTTPException(404,"Mortgage not found")
+        if scope is not None and mortgage.account_id not in scope:
+            mortgage=None
+    else:
+        mortgage_stmt=select(Mortgage).order_by(Mortgage.updated_at.desc())
+        if scope is not None:
+            mortgage_stmt=mortgage_stmt.where(Mortgage.account_id.in_(scope))
+        mortgage=db.scalar(mortgage_stmt)
     properties=db.scalars(select(Asset).where(
         Asset.asset_type.in_(["property","home","house","real_estate"])
     ).order_by(Asset.valuation_date.desc(),Asset.current_value.desc())).all()
@@ -669,18 +700,25 @@ def tracked_asset_refresh(security_id:str,include_history:bool=False,db:Session=
         db.rollback();raise HTTPException(503,str(exc))
 
 @router.get("/wealth")
-def wealth(db:Session=Depends(dbdep)):return wealth_summary(db)
+def wealth(account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
+    return wealth_summary(db,account_id,account_type)
 
 @router.get("/wealth/details")
-def wealth_details(db:Session=Depends(dbdep)):
-    summary=wealth_summary(db)
+def wealth_details(account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
+    scope=_scope_account_ids(db,account_id,account_type)
+    summary=wealth_summary(db,account_id,account_type)
+    account_stmt=select(Account).order_by(Account.name)
+    if scope is not None:
+        account_stmt=account_stmt.where(Account.id.in_(scope))
     accounts=[{
         "id":row.id,
         "name":row.name,
         "institution_name":row.institution_name,
+        "account_type":row.account_type,
         "currency":row.currency,
         "balance":str(row.current_balance),
-    } for row in db.scalars(select(Account).order_by(Account.name)).all()]
+        "available_balance":None if row.available_balance is None else str(row.available_balance),
+    } for row in db.scalars(account_stmt).all()]
     assets=[]
     for row in db.scalars(select(Asset).order_by(Asset.asset_type,Asset.name)).all():
         snapshots=db.scalars(select(EntitySnapshot).where(
@@ -726,8 +764,12 @@ def wealth_details(db:Session=Depends(dbdep)):
         "annual_rate":None if row.annual_rate is None else str(row.annual_rate),
         "ownership_percentage":str(row.ownership_percentage),
     } for row in db.scalars(select(Liability).order_by(Liability.liability_type,Liability.name)).all()]
+    mortgage_stmt=select(Mortgage).order_by(Mortgage.lender)
+    if scope is not None:
+        mortgage_stmt=mortgage_stmt.where(Mortgage.account_id.in_(scope))
     mortgages=[{
         "id":row.id,
+        "account_id":row.account_id,
         "lender":row.lender,
         "remaining_principal":str(row.remaining_principal),
         "currency":row.currency,
@@ -736,15 +778,19 @@ def wealth_details(db:Session=Depends(dbdep)):
         "monthly_payment":str(row.monthly_payment),
         "remaining_months":row.remaining_months,
         "early_repayment_fee":None if row.early_repayment_fee is None else str(row.early_repayment_fee),
-    } for row in db.scalars(select(Mortgage).order_by(Mortgage.lender)).all()]
+    } for row in db.scalars(mortgage_stmt).all()]
     contracts={row.id:row for row in db.scalars(select(Contract)).all()}
     policies=[]
     annual_insurance=Decimal("0")
-    for row in db.scalars(select(InsurancePolicy).order_by(InsurancePolicy.insurance_type)).all():
+    policy_stmt=select(InsurancePolicy).order_by(InsurancePolicy.insurance_type)
+    if scope is not None:
+        policy_stmt=policy_stmt.where(InsurancePolicy.account_id.in_(scope))
+    for row in db.scalars(policy_stmt).all():
         annual_insurance+=row.annual_premium
         contract=contracts.get(row.contract_id) if row.contract_id else None
         policies.append({
             "id":row.id,
+            "account_id":row.account_id,
             "insurance_type":row.insurance_type,
             "annual_premium":str(row.annual_premium),
             "currency":row.currency,
@@ -753,6 +799,9 @@ def wealth_details(db:Session=Depends(dbdep)):
             "contract_id":row.contract_id,
         })
     investments=[row for row in tracked_assets(db) if row.get("owned")]
+    if scope is not None:
+        portfolio_ids=set(db.scalars(select(Portfolio.id).where(Portfolio.account_id.in_(scope))).all())
+        investments=[row for row in investments if portfolio_ids.intersection(set(row.get("portfolio_ids") or []))]
     return {
         "summary":summary,
         "accounts":accounts,
@@ -858,8 +907,14 @@ def contracts(db:Session=Depends(dbdep)):
 @router.post("/contracts")
 def add_contract(p:ContractCreate,db:Session=Depends(dbdep)):r=Contract(**p.model_dump());db.add(r);db.flush();refresh_contract_actions(db);db.commit();return {"id":r.id}
 
-def _goal_row(r:FinancialGoal)->dict:
-    remaining=max(Decimal("0"),r.target_amount-r.current_amount)
+def _goal_row(db:Session,r:FinancialGoal)->dict:
+    account=db.get(Account,r.account_id) if r.account_id else None
+    current=(
+        account.available_balance if account is not None and account.available_balance is not None
+        else account.current_balance if account is not None
+        else r.current_amount
+    )
+    remaining=max(Decimal("0"),r.target_amount-current)
     months_left=None;monthly_required=None
     if r.target_date:
         today=date.today()
@@ -869,26 +924,83 @@ def _goal_row(r:FinancialGoal)->dict:
     projected_months=None
     if remaining==0:projected_months=0
     elif planned>0:projected_months=int((remaining/planned).to_integral_value(rounding=ROUND_CEILING))
-    return {"id":r.id,"type":r.goal_type,"name":r.name,"target_amount":str(r.target_amount),"current_amount":str(r.current_amount),"target_date":r.target_date,"priority":r.priority,"status":r.status,"planned_monthly_contribution":str(planned),"remaining_amount":str(remaining),"months_left":months_left,"monthly_required":None if monthly_required is None else str(monthly_required),"projected_months":projected_months}
+    status="completed" if current>=r.target_amount else "active"
+    return {
+        "id":r.id,"type":r.goal_type,"name":r.name,"target_amount":str(r.target_amount),
+        "current_amount":str(current),"current_amount_source":"account_liquidity" if account is not None else "manual_legacy",
+        "account_id":r.account_id,"account_name":None if account is None else account.name,
+        "account_institution":None if account is None else account.institution_name,
+        "target_date":r.target_date,"priority":r.priority,"status":status,
+        "planned_monthly_contribution":str(planned),"remaining_amount":str(remaining),
+        "months_left":months_left,"monthly_required":None if monthly_required is None else str(monthly_required),
+        "projected_months":projected_months,
+    }
 
 @router.get("/goals")
-def goals(db:Session=Depends(dbdep)):return [_goal_row(r) for r in db.scalars(select(FinancialGoal).order_by(FinancialGoal.created_at.desc())).all()]
+def goals(account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
+    scope=_scope_account_ids(db,account_id,account_type)
+    stmt=select(FinancialGoal).order_by(FinancialGoal.created_at.desc())
+    if scope is not None:
+        stmt=stmt.where(FinancialGoal.account_id.in_(scope))
+    return [_goal_row(db,r) for r in db.scalars(stmt).all()]
+
 @router.post("/goals")
 def add_goal(p:GoalCreate,db:Session=Depends(dbdep)):
-    r=FinancialGoal(**p.model_dump());db.add(r);db.commit();return _goal_row(r)
+    try:account=validate_account(db,p.account_id)
+    except LookupError as exc:raise HTTPException(404,str(exc))
+    payload=p.model_dump()
+    if account is not None:
+        payload["current_amount"]=account.available_balance if account.available_balance is not None else account.current_balance
+    r=FinancialGoal(**payload);db.add(r);db.commit();return _goal_row(db,r)
+
 @router.patch("/goals/{goal_id}")
 def progress(goal_id:str,p:GoalProgressUpdate,db:Session=Depends(dbdep)):
     r=db.get(FinancialGoal,goal_id)
     if not r:raise HTTPException(404,"Goal not found")
-    r.current_amount=p.current_amount
-    if p.planned_monthly_contribution is not None:r.planned_monthly_contribution=p.planned_monthly_contribution
-    r.status="completed" if r.current_amount>=r.target_amount else "active"
-    db.commit();return _goal_row(r)
+    if "account_id" in p.model_fields_set:
+        try:validate_account(db,p.account_id)
+        except LookupError as exc:raise HTTPException(404,str(exc))
+        r.account_id=p.account_id
+    if p.current_amount is not None and r.account_id is None:
+        r.current_amount=p.current_amount
+    if p.planned_monthly_contribution is not None:
+        r.planned_monthly_contribution=p.planned_monthly_contribution
+    row=_goal_row(db,r)
+    r.status=row["status"]
+    db.commit();return _goal_row(db,r)
 
 @router.get("/portfolios")
-def portfolios(db:Session=Depends(dbdep)):return [{"id":p.id,"name":p.name,"base_currency":p.base_currency,**portfolio_summary(db,p.id)} for p in db.scalars(select(Portfolio)).all()]
+def portfolios(account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
+    scope=_scope_account_ids(db,account_id,account_type)
+    stmt=select(Portfolio)
+    if scope is not None:
+        stmt=stmt.where(Portfolio.account_id.in_(scope))
+    rows=[]
+    for p in db.scalars(stmt).all():
+        account=db.get(Account,p.account_id) if p.account_id else None
+        rows.append({
+            "id":p.id,"name":p.name,"base_currency":p.base_currency,"account_id":p.account_id,
+            "account_name":None if account is None else account.name,
+            "account_institution":None if account is None else account.institution_name,
+            **portfolio_summary(db,p.id),
+        })
+    return rows
+
 @router.post("/portfolios")
-def add_portfolio(p:PortfolioCreate,db:Session=Depends(dbdep)):r=Portfolio(**p.model_dump());db.add(r);db.commit();return {"id":r.id}
+def add_portfolio(p:PortfolioCreate,db:Session=Depends(dbdep)):
+    try:validate_account(db,p.account_id)
+    except LookupError as exc:raise HTTPException(404,str(exc))
+    r=Portfolio(**p.model_dump());db.add(r);db.commit();return {"id":r.id}
+
+@router.patch("/portfolios/{portfolio_id}")
+def update_portfolio(portfolio_id:str,p:PortfolioCreate,db:Session=Depends(dbdep)):
+    row=db.get(Portfolio,portfolio_id)
+    if not row:raise HTTPException(404,"Portfolio not found")
+    try:validate_account(db,p.account_id)
+    except LookupError as exc:raise HTTPException(404,str(exc))
+    row.name=p.name;row.base_currency=p.base_currency;row.account_id=p.account_id
+    db.commit()
+    return {"id":row.id,"account_id":row.account_id}
 @router.get("/securities")
 def securities(db:Session=Depends(dbdep)):return [{"id":s.id,"name":s.name,"symbol":s.symbol,"isin":s.isin,"asset_class":s.asset_class,"currency":s.currency} for s in db.scalars(select(Security)).all()]
 @router.post("/securities")
@@ -931,19 +1043,23 @@ async def broker_import(portfolio_id:str,file:UploadFile=File(...),db:Session=De
         raise HTTPException(400,str(exc))
 
 @router.get("/insurance/verdict")
-def insurance_verdict_view(db:Session=Depends(dbdep)):
-    result=insurance_verdict(db,use_ai=False);db.commit();return result
+def insurance_verdict_view(start:date|None=None,end:date|None=None,account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
+    result=insurance_verdict(db,use_ai=False,start=start,end=end,account_id=account_id,account_type=account_type);db.commit();return result
 
 @router.post("/insurance/verdict/analyze")
-def insurance_verdict_with_ai(db:Session=Depends(dbdep)):
-    result=insurance_verdict(db,use_ai=True);db.commit();return result
+def insurance_verdict_with_ai(start:date|None=None,end:date|None=None,account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
+    result=insurance_verdict(db,use_ai=True,start=start,end=end,account_id=account_id,account_type=account_type);db.commit();return result
 
 def _insurance_row(db:Session,row:InsurancePolicy,sources:dict[str,list[str]]|None=None)->dict:
     sources=sources or _document_sources_multi(db,"insurance_policy")
     document_ids=sources.get(row.id,[])
     contract=db.get(Contract,row.contract_id) if row.contract_id else None
+    account=db.get(Account,row.account_id) if row.account_id else None
     return {
         "id":row.id,
+        "account_id":row.account_id,
+        "account_name":None if account is None else account.name,
+        "account_institution":None if account is None else account.institution_name,
         "insurance_type":row.insurance_type,
         "annual_premium":str(row.annual_premium),
         "deductible":None if row.deductible is None else str(row.deductible),
@@ -985,6 +1101,8 @@ def _ensure_insurance_contract(db:Session,p:InsuranceCreate|InsuranceUpdate,curr
 
 @router.post("/insurance")
 def add_insurance(p:InsuranceCreate,db:Session=Depends(dbdep)):
+    try:validate_account(db,p.account_id)
+    except LookupError as exc:raise HTTPException(404,str(exc))
     contract=_ensure_insurance_contract(db,p)
     payload=p.model_dump(exclude={"provider_name","renewal_date","cancellation_notice_days","early_exit_penalty"})
     payload["contract_id"]=None if contract is None else contract.id
@@ -993,15 +1111,22 @@ def add_insurance(p:InsuranceCreate,db:Session=Depends(dbdep)):
     return _insurance_row(db,row)
 
 @router.get("/insurance")
-def insurance(db:Session=Depends(dbdep)):
+def insurance(account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
     sources=_document_sources_multi(db,"insurance_policy")
-    return [_insurance_row(db,r,sources) for r in db.scalars(select(InsurancePolicy).order_by(InsurancePolicy.updated_at.desc())).all()]
+    scope=_scope_account_ids(db,account_id,account_type)
+    stmt=select(InsurancePolicy).order_by(InsurancePolicy.updated_at.desc())
+    if scope is not None:
+        stmt=stmt.where(InsurancePolicy.account_id.in_(scope))
+    return [_insurance_row(db,r,sources) for r in db.scalars(stmt).all()]
 
 @router.patch("/insurance/{policy_id}")
 def update_insurance(policy_id:str,p:InsuranceUpdate,db:Session=Depends(dbdep)):
     row=db.get(InsurancePolicy,policy_id)
     if not row:raise HTTPException(404,"Insurance policy not found")
+    try:validate_account(db,p.account_id)
+    except LookupError as exc:raise HTTPException(404,str(exc))
     contract=_ensure_insurance_contract(db,p,row)
+    row.account_id=p.account_id
     row.insurance_type=p.insurance_type
     row.annual_premium=p.annual_premium
     row.deductible=p.deductible
@@ -1080,9 +1205,10 @@ def coverage_compare(p:CoverageCompareRequest,db:Session=Depends(dbdep)):
     except ValueError as e:raise HTTPException(404,str(e))
 
 @router.post("/stress")
-def stress(p:StressRequest,db:Session=Depends(dbdep)):
-    wealth=wealth_summary(db);today=date.today();month_start=today.replace(day=1)
-    flow=cash_flow(db,month_start,today)
+def stress(p:StressRequest,start:date|None=None,end:date|None=None,account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
+    today=end or date.today();period_start=start or today.replace(day=1)
+    wealth=wealth_summary(db,account_id,account_type)
+    flow=cash_flow(db,period_start,today,account_id,account_type)
     return run_stress(Decimal(wealth["accounts"]),flow["income"],flow["expenses"],Decimal(wealth["investments"]),p.income_reduction_pct,p.extraordinary_expense,p.portfolio_drop_pct,p.months)
 
 @router.post("/rag/search")
@@ -1094,7 +1220,8 @@ def rebuild(document_id:str,db:Session=Depends(dbdep)):
     if not d:raise HTTPException(404,"Document not found")
     n=index_document_chunks(db,d);db.commit();return {"chunks":n}
 @router.post("/chat")
-def chat(p:ChatRequest,db:Session=Depends(dbdep)):return answer(db,p.question)
+def chat(p:ChatRequest,start:date|None=None,end:date|None=None,account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
+    return answer(db,p.question,start=start,end=end,account_id=account_id,account_type=account_type)
 
 @router.post("/backups")
 def backup(p:BackupCreate,db:Session=Depends(dbdep)):

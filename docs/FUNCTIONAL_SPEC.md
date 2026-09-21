@@ -1037,3 +1037,28 @@ Antes de calcular con una hipoteca guardada, Financito comprueba las condiciones
 
 Las condiciones encontradas automáticamente se muestran como pendientes de validar. No se puede lanzar una simulación contractual como si fueran ciertas hasta confirmarlas. Los campos contractuales no se sustituyen con valores inventados ni con reglas generales del mercado.
 
+
+
+## Filtro financiero global y vínculos con cuentas
+
+- La cabecera de la aplicación mantiene un único filtro persistente de **cuenta/tipo de cuenta** y **periodo**. Por defecto se usan todas las cuentas y el mes actual.
+- El periodo y el ámbito de cuenta se conservan al navegar y se aplican a movimientos, dashboard, análisis, patrimonio vinculado, previsiones, búsqueda y contexto de Preguntar cuando el endpoint dispone de dimensión temporal o bancaria.
+- Hipotecas y pólizas guardan una relación explícita con `Account`. En hipotecas la cuenta bancaria es la fuente estable de la entidad financiera; un documento puede aportar condiciones, pero no sobrescribir el banco de una hipoteca ya vinculada.
+- Al vincular una cuota hipotecaria o un pago de seguro, Financito puede inferir la cuenta del producto únicamente cuando la evidencia de pago identifica una sola cuenta sin ambigüedad. Una relación explícita ya existente nunca se sustituye automáticamente.
+- Las carteras de inversión, objetivos financieros y compromisos futuros también pueden vincularse a una cuenta.
+- En Objetivos, **Actual / objetivo** toma `available_balance` de la cuenta vinculada cuando existe y, en su defecto, `current_balance`. El valor manual se conserva solo para objetivos heredados todavía sin cuenta.
+- Las migraciones añaden estos vínculos como columnas anulables para mantener compatibilidad con datos existentes.
+
+## Preguntar y búsqueda
+
+- **Preguntar** utiliza IA generativa únicamente cuando Ollama está disponible, existe un modelo configurado y ese modelo aparece realmente listo. La respuesta indica si se utilizó IA local y qué modelo.
+- Si la generación falla o el modelo no está listo, la pantalla devuelve un resumen determinista basado en los datos calculados y muestra el motivo; no presenta ese fallback como respuesta de IA.
+- El contexto de Preguntar respeta el periodo y la cuenta globales para los cálculos financieros.
+- **Búsqueda global** presenta los tipos de resultado uno debajo de otro y oculta completamente los bloques sin coincidencias. Los movimientos respetan el periodo y la cuenta globales.
+
+## Tabla compacta de movimientos
+
+- La tabla **Todos los movimientos** no reserva columnas completas para Seguro e Hipoteca.
+- Cada fila muestra fecha, concepto, categoría, tratamiento, importe y un botón de opciones.
+- El menú de opciones agrupa **Vincular seguro**, **Vincular hipoteca**, **Crear regla** y **Dividir movimiento**. Los productos ya vinculados se resumen bajo el concepto.
+- La tabla usa ancho disponible sin un `min-width` que fuerce desbordamiento horizontal en escritorio.

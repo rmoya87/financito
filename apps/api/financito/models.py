@@ -101,6 +101,7 @@ class Budget(Base, TimestampMixin):
 class Commitment(Base, TimestampMixin):
     __tablename__ = "commitment"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    account_id: Mapped[str | None] = mapped_column(ForeignKey("account.id", ondelete="SET NULL"), nullable=True, index=True)
     commitment_type: Mapped[str] = mapped_column(String(60))
     title: Mapped[str] = mapped_column(String(180))
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 4))
@@ -180,6 +181,7 @@ class Contract(Base, TimestampMixin):
 class Mortgage(Base, TimestampMixin):
     __tablename__ = "mortgage"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    account_id: Mapped[str | None] = mapped_column(ForeignKey("account.id", ondelete="SET NULL"), nullable=True, index=True)
     lender: Mapped[str] = mapped_column(String(180))
     remaining_principal: Mapped[Decimal] = mapped_column(Numeric(18, 4))
     currency: Mapped[str] = mapped_column(String(3), default="EUR")
@@ -193,6 +195,7 @@ class Mortgage(Base, TimestampMixin):
 class Portfolio(Base, TimestampMixin):
     __tablename__ = "portfolio"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    account_id: Mapped[str | None] = mapped_column(ForeignKey("account.id", ondelete="SET NULL"), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(120))
     base_currency: Mapped[str] = mapped_column(String(3), default="EUR")
 
@@ -220,6 +223,7 @@ class Position(Base, TimestampMixin):
 class FinancialGoal(Base, TimestampMixin):
     __tablename__ = "financial_goal"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    account_id: Mapped[str | None] = mapped_column(ForeignKey("account.id", ondelete="SET NULL"), nullable=True, index=True)
     goal_type: Mapped[str] = mapped_column(String(60))
     name: Mapped[str] = mapped_column(String(180))
     target_amount: Mapped[Decimal] = mapped_column(Numeric(18, 4))

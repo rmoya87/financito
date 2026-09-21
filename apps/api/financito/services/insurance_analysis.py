@@ -84,13 +84,23 @@ def _coverage_gaps(session:Session,policies:dict[str,InsurancePolicy])->tuple[li
             covered.append({"requirement_id":req.id,"coverage_type":req.coverage_type,"insurance_type":req.insurance_type,"matching_coverages":len(eligible),"best_verified_limit":None if not limits else _d(max(limits))})
     return gaps,covered
 
-def insurance_verdict(session:Session,use_ai:bool=True)->dict:
+def insurance_verdict(
+    session:Session,use_ai:bool=True,start:date|None=None,end:date|None=None,
+    account_id:str|None=None,account_type:str|None=None,
+)->dict:
     synchronize_all_document_evidence(session)
     session.flush()
 
     documents={d.id:d for d in session.scalars(select(Document)).all()}
     contracts={c.id:c for c in session.scalars(select(Contract)).all()}
-    policies_list=session.scalars(select(InsurancePolicy)).all()
+    policy_stmt=select(InsurancePolicy)
+    if account_id:
+        policy_stmt=policy_stmt.where(InsurancePolicy.account_id==account_id)
+    elif account_type:
+        policy_stmt=policy_stmt.where(InsurancePolicy.account_id.in_(
+            select(Account.id).where(Account.account_type==account_type)
+        ))
+    policies_list=session.scalars(policy_stmt).all()
     policies={p.id:p for p in policies_list}
     coverage=session.scalars(select(CoverageFact)).all()
 
@@ -106,8 +116,14 @@ def insurance_verdict(session:Session,use_ai:bool=True)->dict:
     overlaps=scan_coverage_overlaps(session)
     gaps,covered=_coverage_gaps(session,policies)
 
-    today=date.today();start=today-timedelta(days=364)
-    first_tx=session.scalar(select(Transaction.booking_date).order_by(Transaction.booking_date.asc()).limit(1))
+    today=end or date.today()
+    start=start or today-timedelta(days=364)
+    first_stmt=select(Transaction.booking_date)
+    if account_id:
+        first_stmt=first_stmt.where(Transaction.account_id==account_id)
+    elif account_type:
+        first_stmt=first_stmt.where(Transaction.account_id.in_(select(Account.id).where(Account.account_type==account_type)))
+    first_tx=session.scalar(first_stmt.order_by(Transaction.booking_date.asc()).limit(1))
     coverage_days=365
     if first_tx:
         coverage_days=max(1,min(365,(today-first_tx).days+1))
@@ -166,19 +182,26 @@ def insurance_verdict(session:Session,use_ai:bool=True)->dict:
     insurance_cat=session.scalar(select(Category).where(Category.system_key=="insurance"))
     insurance_txs=[]
     if insurance_cat:
-        insurance_txs=session.scalars(select(Transaction).where(
+        insurance_stmt=select(Transaction).where(
             Transaction.category_id==insurance_cat.id,
             Transaction.amount<0,
             Transaction.is_internal_transfer.is_(False),
             Transaction.booking_date>=start,
             Transaction.booking_date<=today,
-        ).order_by(Transaction.booking_date.desc())).all()
+        )
+        if account_id:
+            insurance_stmt=insurance_stmt.where(Transaction.account_id==account_id)
+        elif account_type:
+            insurance_stmt=insurance_stmt.where(Transaction.account_id.in_(select(Account.id).where(Account.account_type==account_type)))
+        insurance_txs=session.scalars(insurance_stmt.order_by(Transaction.booking_date.desc())).all()
     unlinked_insurance_txs=[tx for tx in insurance_txs if tx.id not in payment_tx_ids]
 
-    flow=cash_flow(session,start,today)
+    flow=cash_flow(session,start,today,account_id,account_type)
     income=flow["income"];expenses=flow["expenses"]
     premiums=sum((p.annual_premium for p in policies_list),Decimal("0"))
-    premium_share=None if income<=0 else premiums/income
+    period_days=max(1,(today-start).days+1)
+    periodized_premiums=(premiums*Decimal(period_days)/Decimal("365")).quantize(Decimal("0.01"))
+    premium_share=None if income<=0 else periodized_premiums/income
 
     by_merchant={}
     for tx in linked_period_txs:
@@ -224,6 +247,7 @@ def insurance_verdict(session:Session,use_ai:bool=True)->dict:
             missing.append({"field":"contract_projection","label":"Datos contractuales","policy_id":policy.id,"document_id":document_id,"why":"El documento todavía no contiene suficientes hechos confirmados para construir el contrato asociado."})
         policy_rows.append({
             "id":policy.id,
+            "account_id":policy.account_id,
             "insurance_type":policy.insurance_type,
             "annual_premium":str(policy.annual_premium),
             "monthly_equivalent":str((policy.annual_premium/Decimal("12")).quantize(Decimal("0.01"))),
@@ -341,7 +365,8 @@ def insurance_verdict(session:Session,use_ai:bool=True)->dict:
     if linked:issues.append({"code":"linked_products","severity":"info","title":"Hay productos vinculados que afectan a otras decisiones","detail":"No conviene cancelar una póliza vinculada sin comprobar el efecto sobre hipoteca u otros contratos."})
 
     policy_differences=[]
-    if coverage_days>=330:
+    comparison_reliable=coverage_days>=330 and period_days>=330
+    if comparison_reliable:
         for policy in policies_list:
             observed=policy_payment_totals.get(policy.id,Decimal("0"))
             expected=policy.annual_premium
@@ -373,8 +398,8 @@ def insurance_verdict(session:Session,use_ai:bool=True)->dict:
         "period_start":str(start),"period_end":str(today),"data_coverage_days":coverage_days,
         "observed_insurance_spend":str(observed_spend.quantize(Decimal("0.01"))),
         "documented_annual_premiums":str(premiums.quantize(Decimal("0.01"))),
-        "difference":str((observed_spend-premiums).quantize(Decimal("0.01"))) if coverage_days>=330 else None,
-        "comparison_reliable":coverage_days>=330,
+        "difference":str((observed_spend-premiums).quantize(Decimal("0.01"))) if comparison_reliable else None,
+        "comparison_reliable":comparison_reliable,
         "linked_payment_count":len(linked_period_txs),
         "unlinked_candidate_count":len(unlinked_insurance_txs),
         "unlinked_transactions":unlinked_rows,
@@ -413,10 +438,17 @@ def insurance_verdict(session:Session,use_ai:bool=True)->dict:
         "policies":policy_rows,
         "coverage":{"verified":len([f for f in coverage if f.user_verified]),"requirements":requirements_count,"gaps":gaps,"covered":covered,"overlaps":[{"id":o.id,"coverage_type":o.coverage_type,"left_id":o.left_coverage_fact_id,"right_id":o.right_coverage_fact_id,"overlap_type":o.overlap_type,"confidence":str(o.confidence)} for o in overlaps]},
         "finances":{
+            "period_start":str(start),
+            "period_end":str(today),
+            "period_days":period_days,
+            "income_period":str(income.quantize(Decimal("0.01"))),
+            "expenses_period":str(expenses.quantize(Decimal("0.01"))),
+            "savings_period":str(flow["savings"].quantize(Decimal("0.01"))),
             "income_last_365_days":str(income.quantize(Decimal("0.01"))),
             "expenses_last_365_days":str(expenses.quantize(Decimal("0.01"))),
             "savings_last_365_days":str(flow["savings"].quantize(Decimal("0.01"))),
             "documented_annual_premiums":str(premiums.quantize(Decimal("0.01"))),
+            "premiums_equivalent_for_period":str(periodized_premiums),
             "premium_share_of_income":None if premium_share is None else str(premium_share.quantize(Decimal("0.0001"))),
             "spend_reconciliation":spend_reconciliation,
         },

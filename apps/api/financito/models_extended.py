@@ -157,6 +157,7 @@ class MortgagePaymentAllocation(Base, TimestampMixin):
 class InsurancePolicy(Base, TimestampMixin):
     __tablename__="insurance_policy"
     id:Mapped[str]=mapped_column(String(36),primary_key=True,default=uuid_str)
+    account_id:Mapped[str|None]=mapped_column(ForeignKey("account.id",ondelete="SET NULL"),nullable=True,index=True)
     contract_id:Mapped[str|None]=mapped_column(ForeignKey("contract.id",ondelete="SET NULL"),nullable=True)
     policy_number_masked:Mapped[str|None]=mapped_column(String(80),nullable=True)
     insurance_type:Mapped[str]=mapped_column(String(60),index=True)

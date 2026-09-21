@@ -7,7 +7,6 @@ import {ArrowRight,CalendarDays,CircleDollarSign,FileText,Sparkles,WalletCards} 
 import {apiGet} from '@/lib/api';
 import {categoryColor} from '@/lib/category-colors';
 import {PageHeader} from '@/components/page-header';
-import {DateRangeSelector,DateRangeKey,resolveDateRange} from '@/components/date-range-selector';
 import {Card} from '@/components/ui/card';
 import {Money} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
@@ -51,16 +50,10 @@ function Metric({label,value,detail}:{label:string;value:string;detail?:string})
 }
 
 export default function DashboardPage(){
-  const defaults=resolveDateRange('month');
-  const [range,setRange]=useState<DateRangeKey>('month');
-  const [customStart,setCustomStart]=useState(defaults.start);
-  const [customEnd,setCustomEnd]=useState(defaults.end);
   const [insuranceModalPolicyId,setInsuranceModalPolicyId]=useState<string|null|undefined>(undefined);
-  const dates=resolveDateRange(range,customStart,customEnd);
   const dashboard=useQuery({
-    queryKey:['dashboard',range,dates.start,dates.end],
-    queryFn:()=>apiGet<Dashboard>('/api/v1/dashboard?start='+dates.start+'&end='+dates.end),
-    enabled:Boolean(dates.start&&dates.end),
+    queryKey:['dashboard'],
+    queryFn:()=>apiGet<Dashboard>('/api/v1/dashboard'),
   });
   const wealth=useQuery({queryKey:['wealth'],queryFn:()=>apiGet<Wealth>('/api/v1/wealth'),retry:false});
 
@@ -75,15 +68,6 @@ export default function DashboardPage(){
     <PageHeader
       title="Inicio"
       description="Tu situación financiera, lo que ha cambiado y lo que merece atención ahora."
-      action={<DateRangeSelector
-        range={range}
-        customStart={customStart}
-        customEnd={customEnd}
-        onRangeChange={setRange}
-        onCustomStartChange={setCustomStart}
-        onCustomEndChange={setCustomEnd}
-        ariaLabel="Periodo del resumen de Inicio"
-      />}
     />
 
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">

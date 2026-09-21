@@ -10,7 +10,7 @@ from .db import SessionLocal
 from .domain.analytics import detect_anomalies,detect_recurring,recurring_is_current
 from .domain.backtest import amortize_vs_invest,backtest_ma
 from .domain.recommendations import score
-from .models import Transaction
+from .models import Account,Transaction
 from .models_analytics import Anomaly,EntityLink,RecurringSeries
 from .services.calendar import events
 from .services.data_quality import reconciliation
@@ -51,12 +51,18 @@ class AnomalyStatusIn(BaseModel):
     status:str=Field(pattern="^(open|normal|ignored|resolved)$")
 
 @router.get("/anomalies")
-def anomalies(start:date|None=None,end:date|None=None,db:Session=Depends(dbdep)):
+def anomalies(start:date|None=None,end:date|None=None,account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
     if start and end and end<start:raise HTTPException(400,"La fecha final debe ser igual o posterior a la inicial.")
+    allowed_accounts=None
+    if account_id:
+        allowed_accounts={account_id}
+    elif account_type:
+        allowed_accounts=set(db.scalars(select(Account.id).where(Account.account_type==account_type)).all())
     out=[]
     for a in db.scalars(select(Anomaly).where(Anomaly.status=="open").order_by(Anomaly.created_at.desc())).all():
         tx=db.get(Transaction,a.transaction_id)
         if tx is None:continue
+        if allowed_accounts is not None and tx.account_id not in allowed_accounts:continue
         if start and tx.booking_date<start:continue
         if end and tx.booking_date>end:continue
         baseline=json.loads(a.baseline_json or "{}");observed=json.loads(a.observed_json or "{}")
@@ -85,9 +91,9 @@ def reconcile(db:Session=Depends(dbdep)):return {"issues":reconciliation(db)}
 def calendar(start:date|None=None,end:date|None=None,db:Session=Depends(dbdep)):
     start=start or date.today();end=end or start+timedelta(days=90);return {"events":events(db,start,end)}
 @router.get("/search")
-def search(q:str,db:Session=Depends(dbdep)):
+def search(q:str,start:date|None=None,end:date|None=None,account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
     if len(q)<2:raise HTTPException(400,"Query too short")
-    return global_search(db,q)
+    return global_search(db,q,start=start,end=end,account_id=account_id,account_type=account_type)
 @router.get("/export/json")
 def export_data(db:Session=Depends(dbdep)):return export_json(db)
 @router.get("/export/transactions.csv")

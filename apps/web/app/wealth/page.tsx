@@ -14,10 +14,11 @@ type WealthSummary={
   accounts:string;manual_assets:string;investments:string;liabilities:string;mortgages:string;
   gross_assets:string;total_debt:string;net_worth:string
 };
-type Account={id:string;name:string;institution_name:string;currency:string;balance:string};
+type Account={id:string;name:string;institution_name:string;account_type?:string;currency:string;balance:string;available_balance?:string|null};
+type BankAccount={id:string;name:string;institution_name:string;account_type:string;currency:string;current_balance:string;available_balance:string|null};
 type Asset={id:string;type:string;name:string;value:string;currency:string;valuation_date:string;valuation_source:string;ownership_type:string;ownership_percentage:string;previous_value?:string|null;previous_valuation_date?:string|null;change_amount?:string|null;change_pct?:string|null};
 type Liability={id:string;type:string;name:string;amount:string;currency:string;annual_rate:string|null;ownership_percentage:string};
-type Mortgage={id:string;lender:string;remaining_principal:string;currency:string;interest_type:string;nominal_rate:string;monthly_payment:string;remaining_months:number;early_repayment_fee?:string|null;source_document_id?:string|null;source_document_ids?:string[];document_count?:number};
+type Mortgage={id:string;account_id:string|null;lender:string;remaining_principal:string;currency:string;interest_type:string;nominal_rate:string;monthly_payment:string;remaining_months:number;early_repayment_fee?:string|null;source_document_id?:string|null;source_document_ids?:string[];document_count?:number};
 type MortgagePayment={id:string;transaction_id:string;booking_date:string;description:string;merchant:string|null;payment_amount:string;principal_amount:string;interest_amount:string;currency:string;balance_before:string;balance_after:string;applied_to_balance:boolean;calculation_method:string;account_id:string;account_name:string|null;institution_name:string|null};
 type Investment={security_id:string;name:string;identifier:string|null;asset_class:string;currency:string;quantity:string;cost_basis:string;current_value:string|null;current_price:string|null;price_provider:string|null};
 type Policy={id:string;insurance_type:string;annual_premium:string;currency:string;deductible:string|null;provider:string|null;contract_id:string|null};
@@ -84,6 +85,7 @@ function Metric({label,value,detail}:{label:string;value:string|number;detail:st
 export default function WealthPage(){
   const qc=useQueryClient();
   const details=useQuery({queryKey:['wealth-details'],queryFn:()=>apiGet<WealthDetails>('/api/v1/wealth/details')});
+  const allAccounts=useQuery({queryKey:['accounts','mortgage-link'],queryFn:()=>apiGet<BankAccount[]>('/api/v1/accounts')});
   const mortgages=useQuery({queryKey:['mortgages'],queryFn:()=>apiGet<Mortgage[]>('/api/v1/mortgages')});
   const [selectedMortgageId,setSelectedMortgageId]=useState('');
   const [creatingMortgage,setCreatingMortgage]=useState(false);
@@ -94,7 +96,7 @@ export default function WealthPage(){
   const [asset,setAsset]=useState({name:'',asset_type:'property',current_value:'',valuation_date:new Date().toISOString().slice(0,10)});
   const [editingAsset,setEditingAsset]=useState<Asset|null>(null);
   const [debt,setDebt]=useState({name:'',liability_type:'loan',outstanding_amount:''});
-  const [mortgageForm,setMortgageForm]=useState({lender:'',remaining_principal:'',interest_type:'fixed',nominal_rate_pct:'',monthly_payment:'',remaining_months:'',early_repayment_fee:''});
+  const [mortgageForm,setMortgageForm]=useState({account_id:'',remaining_principal:'',interest_type:'fixed',nominal_rate_pct:'',monthly_payment:'',remaining_months:'',early_repayment_fee:''});
   const [extraForm,setExtraForm]=useState({
     original_principal:'',original_term_months:'',start_date:'',maturity_date:'',apr_rate_pct:'',reference_index:'',differential_rate_pct:'',
     rate_review_months:'',next_review_date:'',opening_fee_percent:'',early_repayment_fee_percent:'',subrogation_fee_percent:'',cancellation_fee_percent:'',notes:'',
@@ -105,7 +107,12 @@ export default function WealthPage(){
   const [mortgageSection,setMortgageSection]=useState<'general'|'transactions'|'details'>('general');
 
   useEffect(()=>{
-    if(!creatingMortgage&&!selectedMortgageId&&mortgages.data?.length)setSelectedMortgageId(mortgages.data[0].id);
+    if(creatingMortgage||!mortgages.data)return;
+    if(selectedMortgageId&&!mortgages.data.some(m=>m.id===selectedMortgageId)){
+      setSelectedMortgageId(mortgages.data[0]?.id||'');
+      return;
+    }
+    if(!selectedMortgageId&&mortgages.data.length)setSelectedMortgageId(mortgages.data[0].id);
   },[mortgages.data,selectedMortgageId,creatingMortgage]);
 
   useEffect(()=>{if(showMortgageEdit)setMortgageSection('general')},[showMortgageEdit,selectedMortgageId]);
@@ -116,7 +123,7 @@ export default function WealthPage(){
     if(h.property)setHomeValue(h.property.value);
     const m=h.mortgage;
     if(m)setMortgageForm({
-      lender:m.lender,remaining_principal:m.remaining_principal,interest_type:m.interest_type,
+      account_id:m.account_id||'',remaining_principal:m.remaining_principal,interest_type:m.interest_type,
       nominal_rate_pct:String(Number(m.nominal_rate)*100),monthly_payment:m.monthly_payment,
       remaining_months:String(m.remaining_months),early_repayment_fee:m.early_repayment_fee||'',
     });
@@ -132,7 +139,7 @@ export default function WealthPage(){
   },[home.data]);
 
   const clearMortgageForms=()=>{
-    setMortgageForm({lender:'',remaining_principal:'',interest_type:'fixed',nominal_rate_pct:'',monthly_payment:'',remaining_months:'',early_repayment_fee:''});
+    setMortgageForm({account_id:'',remaining_principal:'',interest_type:'fixed',nominal_rate_pct:'',monthly_payment:'',remaining_months:'',early_repayment_fee:''});
     setExtraForm({
       original_principal:'',original_term_months:'',start_date:'',maturity_date:'',apr_rate_pct:'',reference_index:'',differential_rate_pct:'',
       rate_review_months:'',next_review_date:'',opening_fee_percent:'',early_repayment_fee_percent:'',subrogation_fee_percent:'',cancellation_fee_percent:'',notes:'',
@@ -172,8 +179,11 @@ export default function WealthPage(){
 
   const saveMortgage=useMutation({
     mutationFn:()=>{
+      const account=allAccounts.data?.find(a=>a.id===mortgageForm.account_id);
+      if(!account)throw new Error('Selecciona la cuenta bancaria vinculada a la hipoteca');
       const payload={
-        lender:mortgageForm.lender.trim(),
+        account_id:account.id,
+        lender:account.institution_name,
         remaining_principal:mortgageForm.remaining_principal,
         currency:'EUR',
         interest_type:mortgageForm.interest_type,
@@ -265,17 +275,17 @@ export default function WealthPage(){
       </div>
 
       <Card className="mt-4" id="casa">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Casa</div>
-            <h2 className="mt-1 text-xl font-bold">Vivienda e hipoteca</h2>
-            <p className="mt-1 max-w-3xl text-sm text-[var(--muted)]">Centraliza valor de la vivienda, deuda, condiciones, seguros vinculados y evidencia documental. Estos datos alimentan las simulaciones de amortización, novación y subrogación.</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <select className="fin-input min-w-64 py-2 text-xs" aria-label="Hipoteca seleccionada" value={creatingMortgage?'':selectedMortgageId} onChange={e=>{setCreatingMortgage(false);setSelectedMortgageId(e.target.value)}}>
-              <option value="">{mortgages.data?.length?'Selecciona una hipoteca…':'Sin hipotecas'}</option>
-              {mortgages.data?.map(m=><option key={m.id} value={m.id}>{m.lender} · {Number(m.remaining_principal).toLocaleString('es-ES')} {m.currency}</option>)}
-            </select>
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Casa</div>
+          <h2 className="mt-1 text-xl font-bold">Vivienda e hipoteca</h2>
+          <p className="mt-1 max-w-3xl text-sm text-[var(--muted)]">Centraliza valor de la vivienda, deuda, condiciones, seguros vinculados y evidencia documental. Estos datos alimentan las simulaciones de amortización, novación y subrogación.</p>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <select className="fin-input w-full py-2 text-xs sm:w-auto sm:min-w-[220px] sm:max-w-[330px]" aria-label="Hipoteca seleccionada" value={creatingMortgage?'':selectedMortgageId} onChange={e=>{setCreatingMortgage(false);setSelectedMortgageId(e.target.value)}}>
+            <option value="">{mortgages.data?.length?'Selecciona una hipoteca…':'Sin hipotecas'}</option>
+            {mortgages.data?.map(m=><option key={m.id} value={m.id}>{m.lender} · {Number(m.remaining_principal).toLocaleString('es-ES')} {m.currency}</option>)}
+          </select>
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <button className="fin-button py-2 text-xs" type="button" onClick={()=>{setCreatingMortgage(true);setSelectedMortgageId('');clearMortgageForms();setShowMortgageEdit(true)}}>Nueva hipoteca</button>
             {selectedMortgageId&&<button className="fin-button secondary py-2 text-xs" type="button" onClick={()=>setShowMortgageEdit(true)}>Detalle de la hipoteca</button>}
             <Link className="fin-button secondary py-2 text-xs" href="/tools/">Simulaciones</Link>
@@ -295,11 +305,20 @@ export default function WealthPage(){
                   <div className="h-full bg-emerald-500" style={{width:home.data.principal_progress.remaining_percent+'%'}} title={home.data.principal_progress.remaining_percent+'% pendiente'}/>
                   <div className="h-full bg-[var(--border)]" style={{width:home.data.principal_progress.paid_percent+'%'}} title={home.data.principal_progress.paid_percent+'% pagado'}/>
                 </div>
-                <div className="mt-1 text-[11px] text-[var(--muted)]">Verde: pendiente · gris: ya amortizado · inicial <Money value={home.data.principal_progress.original_principal}/></div>
+                <div className="mt-1 text-[11px] text-[var(--muted)]">Capital inicial <Money value={home.data.principal_progress.original_principal}/></div>
               </div>:<div className="mt-1 text-[11px] text-[var(--muted)]">{home.data.mortgage?'Añade el capital inicial en Datos de la hipoteca para ver el porcentaje amortizado.':'Sin hipoteca'}</div>}
             </div>
             <div className="rounded-xl bg-[var(--surface-2)] p-4"><div className="text-xs text-[var(--muted)]">Cuota mensual</div><div className="mt-1 text-xl font-bold">{home.data.mortgage?<Money value={home.data.mortgage.monthly_payment}/>:<span>—</span>}</div><div className="mt-1 text-[11px] text-[var(--muted)]">{home.data.mortgage?home.data.mortgage.remaining_months+' meses pendientes':'—'}</div></div>
-            <div className="rounded-xl bg-[var(--surface-2)] p-4"><div className="text-xs text-[var(--muted)]">Tipo / TIN</div><div className="mt-1 text-xl font-bold">{home.data.mortgage?(home.data.mortgage.interest_type==='fixed'?'Fija':home.data.mortgage.interest_type==='variable'?'Variable':'Mixta'):'—'}</div><div className="mt-1 text-[11px] text-[var(--muted)]">{home.data.mortgage?(Number(home.data.mortgage.nominal_rate)*100).toLocaleString('es-ES',{maximumFractionDigits:3})+'% TIN':'—'}</div></div>
+            <div className="rounded-xl bg-[var(--surface-2)] p-4">
+              <div className="text-xs text-[var(--muted)]">Tipo / TIN</div>
+              <div className="mt-1 text-xl font-bold">{home.data.mortgage?(home.data.mortgage.interest_type==='fixed'?'Fija':home.data.mortgage.interest_type==='variable'?'Variable':'Mixta'):'—'}</div>
+              <div className="mt-1 text-[11px] font-medium">
+                {home.data.mortgage&&home.data.mortgage.interest_type!=='fixed'
+                  ?((home.data.extra.reference_index||home.data.rate_review_automation.reference_index||'Índice pendiente')+(home.data.extra.differential_rate!==null?' + '+(Number(home.data.extra.differential_rate)*100).toLocaleString('es-ES',{maximumFractionDigits:3})+'%':' + diferencial pendiente'))
+                  :home.data.mortgage?'Tipo fijo contractual':'—'}
+              </div>
+              <div className="mt-1 text-[11px] text-[var(--muted)]">{home.data.mortgage?'TIN actual '+(Number(home.data.mortgage.nominal_rate)*100).toLocaleString('es-ES',{maximumFractionDigits:3})+'%':'—'}</div>
+            </div>
             <div className="rounded-xl bg-[var(--surface-2)] p-4"><div className="text-xs text-[var(--muted)]">TAE contractual</div><div className="mt-1 text-xl font-bold">{home.data.extra.apr_rate===null?'—':(Number(home.data.extra.apr_rate)*100).toLocaleString('es-ES',{maximumFractionDigits:3})+'%'}</div><div className="mt-1 text-[11px] text-[var(--muted)]">Dato original/contractual; no se sobrescribe en revisiones.</div></div>
             <div className="rounded-xl bg-[var(--surface-2)] p-4"><div className="text-xs text-[var(--muted)]">TAE estimada actual</div><div className="mt-1 text-xl font-bold">{home.data.current_apr_estimate?.rate?(Number(home.data.current_apr_estimate.rate)*100).toLocaleString('es-ES',{maximumFractionDigits:3})+'%':'—'}</div><div className="mt-1 text-[11px] text-[var(--muted)]">{home.data.current_apr_estimate?.rate?'TIN vigente + costes futuros vinculados conocidos':'Sin datos suficientes'}</div></div>
             <div className="rounded-xl bg-[var(--surface-2)] p-4"><div className="text-xs text-[var(--muted)]">Vencimiento</div><div className="mt-1 text-xl font-bold">{home.data.extra.maturity_date?new Date(home.data.extra.maturity_date).toLocaleDateString('es-ES'):'—'}</div><div className="mt-1 text-[11px] text-[var(--muted)]">{home.data.extra.next_review_date?'Próxima revisión '+new Date(home.data.extra.next_review_date).toLocaleDateString('es-ES'):'Sin próxima revisión informada'}</div></div>
@@ -516,11 +535,14 @@ export default function WealthPage(){
         {!creatingMortgage&&home.data?.mortgage&&<div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Capital pendiente</div><strong><Money value={home.data.mortgage.remaining_principal}/></strong>{home.data.principal_progress&&<div className="text-[11px] text-[var(--muted)]">{Number(home.data.principal_progress.remaining_percent).toLocaleString('es-ES',{maximumFractionDigits:1})}% pendiente</div>}</div>
           <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Cuota mensual</div><strong><Money value={home.data.mortgage.monthly_payment}/></strong></div>
-          <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">TIN</div><strong>{(Number(home.data.mortgage.nominal_rate)*100).toLocaleString('es-ES',{maximumFractionDigits:3})}%</strong></div>
+          <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Tipo / TIN</div><strong>{home.data.mortgage.interest_type==='fixed'?'Fija':home.data.mortgage.interest_type==='variable'?'Variable':'Mixta'} · {(Number(home.data.mortgage.nominal_rate)*100).toLocaleString('es-ES',{maximumFractionDigits:3})}%</strong>{home.data.mortgage.interest_type!=='fixed'&&<div className="mt-1 text-[11px] text-[var(--muted)]">{home.data.extra.reference_index||home.data.rate_review_automation.reference_index||'Índice pendiente'}{home.data.extra.differential_rate!==null?' + '+(Number(home.data.extra.differential_rate)*100).toLocaleString('es-ES',{maximumFractionDigits:3})+'%':' + diferencial pendiente'}</div>}</div>
           <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Vivienda / LTV</div><strong>{home.data.property?<Money value={home.data.property.value}/>:<span>—</span>}</strong><div className="text-[11px] text-[var(--muted)]">{home.data.ltv===null?'Sin LTV':Number(home.data.ltv).toLocaleString('es-ES',{maximumFractionDigits:1})+'% LTV'}</div></div>
         </div>}
         <form className="mt-4 grid gap-2 sm:grid-cols-2" onSubmit={(e:FormEvent)=>{e.preventDefault();saveMortgage.mutate()}}>
-          <input className="fin-input sm:col-span-2" placeholder="Entidad" value={mortgageForm.lender} onChange={e=>setMortgageForm({...mortgageForm,lender:e.target.value})} required/>
+          <select className="fin-input sm:col-span-2" aria-label="Cuenta bancaria de la hipoteca" value={mortgageForm.account_id} onChange={e=>setMortgageForm({...mortgageForm,account_id:e.target.value})} required>
+            <option value="">Cuenta bancaria de la hipoteca…</option>
+            {allAccounts.data?.map(account=><option key={account.id} value={account.id}>{account.institution_name} · {account.name}</option>)}
+          </select>
           <input className="fin-input" type="number" min="0.01" step=".01" placeholder="Capital pendiente (€)" value={mortgageForm.remaining_principal} onChange={e=>setMortgageForm({...mortgageForm,remaining_principal:e.target.value})} required/>
           <input className="fin-input" type="number" min="0.01" step=".01" placeholder="Cuota mensual (€)" value={mortgageForm.monthly_payment} onChange={e=>setMortgageForm({...mortgageForm,monthly_payment:e.target.value})} required/>
           <select className="fin-input" aria-label="Tipo de hipoteca" value={mortgageForm.interest_type} onChange={e=>setMortgageForm({...mortgageForm,interest_type:e.target.value})}><option value="fixed">Fija</option><option value="variable">Variable</option><option value="mixed">Mixta</option></select>

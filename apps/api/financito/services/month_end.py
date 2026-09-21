@@ -151,20 +151,23 @@ def _remaining_projection_for_account(
     }
 
 
-def _known_commitments(session: Session, start: date, end: date) -> Decimal:
+def _known_commitments(session: Session, start: date, end: date, account_id: str | None = None, account_type: str | None = None) -> Decimal:
     if end < start:
         return Decimal("0")
-    rows = session.scalars(
-        select(Commitment).where(
-            Commitment.due_date >= start,
-            Commitment.due_date <= end,
-            Commitment.status == "active",
-        )
-    ).all()
+    stmt=select(Commitment).where(
+        Commitment.due_date >= start,
+        Commitment.due_date <= end,
+        Commitment.status == "active",
+    )
+    if account_id:
+        stmt=stmt.where(Commitment.account_id==account_id)
+    elif account_type:
+        stmt=stmt.where(Commitment.account_id.in_(select(Account.id).where(Account.account_type==account_type)))
+    rows = session.scalars(stmt).all()
     return sum((row.amount for row in rows), Decimal("0"))
 
 
-def _backtest_accuracy(session: Session, as_of: date, months: int = 6) -> dict:
+def _backtest_accuracy(session: Session, as_of: date, months: int = 6, account_id: str | None = None, account_type: str | None = None) -> dict:
     expense_abs_error = Decimal("0")
     expense_actual_total = Decimal("0")
     savings_abs_error = Decimal("0")
@@ -177,15 +180,20 @@ def _backtest_accuracy(session: Session, as_of: date, months: int = 6) -> dict:
         cutoff = cursor.replace(day=cutoff_day)
         month_start = cursor.replace(day=1)
 
-        actual = cash_flow(session, month_start, month_end)
+        actual = cash_flow(session, month_start, month_end, account_id, account_type)
         if actual["income"] == 0 and actual["expenses"] == 0:
             cursor = month_start - timedelta(days=1)
             continue
 
-        partial = cash_flow(session, month_start, cutoff)
+        partial = cash_flow(session, month_start, cutoff, account_id, account_type)
         remaining_income = Decimal("0")
         remaining_expenses = Decimal("0")
-        for account in session.scalars(select(Account)).all():
+        account_stmt=select(Account)
+        if account_id:
+            account_stmt=account_stmt.where(Account.id==account_id)
+        elif account_type:
+            account_stmt=account_stmt.where(Account.account_type==account_type)
+        for account in session.scalars(account_stmt).all():
             projection = _remaining_projection_for_account(session, account.id, cutoff, month_end)
             remaining_income += Decimal(projection["income"])
             remaining_expenses += Decimal(projection["expenses"])
@@ -217,13 +225,18 @@ def _backtest_accuracy(session: Session, as_of: date, months: int = 6) -> dict:
     }
 
 
-def month_end_projection(session: Session, as_of: date | None = None) -> dict:
+def month_end_projection(session: Session, as_of: date | None = None, account_id: str | None = None, account_type: str | None = None) -> dict:
     as_of = as_of or date.today()
     start = as_of.replace(day=1)
     end = _month_end(as_of)
-    actual = cash_flow(session, start, as_of)
+    actual = cash_flow(session, start, as_of, account_id, account_type)
 
-    accounts = session.scalars(select(Account).order_by(Account.name)).all()
+    account_stmt=select(Account).order_by(Account.name)
+    if account_id:
+        account_stmt=account_stmt.where(Account.id==account_id)
+    elif account_type:
+        account_stmt=account_stmt.where(Account.account_type==account_type)
+    accounts = session.scalars(account_stmt).all()
     account_rows = []
     remaining_income = Decimal("0")
     remaining_expenses = Decimal("0")
@@ -250,7 +263,7 @@ def month_end_projection(session: Session, as_of: date | None = None) -> dict:
             "history_days": projection["history_days"],
         })
 
-    commitments = _known_commitments(session, as_of + timedelta(days=1), end)
+    commitments = _known_commitments(session, as_of + timedelta(days=1), end, account_id, account_type)
     # Commitments are not linked to a bank account in the current domain model.
     # Treat them as a floor for total remaining expenses, never distribute them
     # arbitrarily across accounts.
@@ -263,7 +276,7 @@ def month_end_projection(session: Session, as_of: date | None = None) -> dict:
     current_total_balance = sum((account.current_balance for account in accounts), Decimal("0"))
     projected_total_balance = current_total_balance + remaining_income - total_remaining_expenses
 
-    accuracy = _backtest_accuracy(session, as_of)
+    accuracy = _backtest_accuracy(session, as_of, account_id=account_id, account_type=account_type)
     return {
         "as_of": str(as_of),
         "month_start": str(start),
@@ -292,7 +305,7 @@ def month_end_projection(session: Session, as_of: date | None = None) -> dict:
         "notes": [
             "La proyección combina el mismo periodo del año anterior con el ritmo de los últimos 60 días cuando ambos existen.",
             "Los compromisos conocidos actúan como mínimo de gasto restante para no contarlos dos veces sobre el patrón histórico.",
-            "Los compromisos no se reparten entre cuentas porque actualmente no tienen una cuenta bancaria asociada.",
+            "Los compromisos se incluyen según la cuenta bancaria vinculada cuando el filtro global limita el ámbito.",
             "Es una estimación basada en histórico y datos actuales, no un saldo garantizado.",
         ],
     }

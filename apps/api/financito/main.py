@@ -45,6 +45,7 @@ from .services.local_ai import status as ai_status
 from .services.secure_config import provider_status
 from .services.snapshots import record_snapshot
 from .services.banking import sync_all_connections
+from .services.account_links import synchronize_product_account_links
 
 
 def _refresh_stale_document_ai() -> None:
@@ -87,6 +88,7 @@ async def lifespan(_: FastAPI):
         ensure_categories(db)
         synchronize_transaction_semantics(db)
         synchronize_all_document_evidence(db)
+        synchronize_product_account_links(db)
         db.commit()
     watcher=VaultWatcher(); watcher.start()
     banking_stop=Event()
@@ -215,11 +217,16 @@ def update_category(transaction_id:str,payload:TransactionCategoryUpdate,db:Sess
 
 
 @app.get("/api/v1/dashboard")
-def dashboard(start:date|None=None,end:date|None=None,db:Session=Depends(get_db)):
+def dashboard(start:date|None=None,end:date|None=None,account_id:str|None=None,account_type:str|None=None,db:Session=Depends(get_db)):
     today=date.today(); end=end or today; start=start or end.replace(day=1)
     if end<start: raise HTTPException(400,"La fecha final debe ser igual o posterior a la inicial.")
-    flow_data=cash_flow(db,start,end)
-    balances=sum((a.current_balance for a in db.scalars(select(Account)).all()),Decimal("0"))
+    flow_data=cash_flow(db,start,end,account_id,account_type)
+    account_stmt=select(Account)
+    if account_id:
+        account_stmt=account_stmt.where(Account.id==account_id)
+    elif account_type:
+        account_stmt=account_stmt.where(Account.account_type==account_type)
+    balances=sum((a.current_balance for a in db.scalars(account_stmt).all()),Decimal("0"))
     upcoming=[
         event for event in calendar_events(db,today,today+timedelta(days=45))
         if event["type"] in {"commitment","recurring","renewal"}
@@ -235,7 +242,7 @@ def dashboard(start:date|None=None,end:date|None=None,db:Session=Depends(get_db)
             continue
         seen.add(key);deduped.append(event)
     actions=db.scalars(select(ActionItem).where(ActionItem.status.in_(["pending","in_progress"])).order_by(ActionItem.due_date.asc().nullslast()).limit(10)).all()
-    category_rows=category_spending(db,start,end)
+    category_rows=category_spending(db,start,end,account_id,account_type)
     return {
         "period":{"start":start,"end":end},
         "liquidity":str(balances),"income":str(flow_data["income"]),"expenses":str(flow_data["expenses"]),
@@ -263,24 +270,37 @@ def list_budgets(db:Session=Depends(get_db)):
 
 @app.post("/api/v1/commitments")
 def create_commitment(payload:CommitmentCreate,db:Session=Depends(get_db)):
+    if payload.account_id and not db.get(Account,payload.account_id):
+        raise HTTPException(404,"Account not found")
     row=Commitment(**payload.model_dump(),source_type="manual"); db.add(row); db.commit(); db.refresh(row)
-    return {"id":row.id,"title":row.title,"amount":str(row.amount),"due_date":row.due_date}
+    return {"id":row.id,"account_id":row.account_id,"title":row.title,"amount":str(row.amount),"due_date":row.due_date}
 
 
 @app.get("/api/v1/commitments")
-def list_commitments(db:Session=Depends(get_db)):
-    rows=db.scalars(select(Commitment).order_by(Commitment.due_date)).all()
-    return [{"id":r.id,"title":r.title,"amount":str(r.amount),"due_date":r.due_date,"status":r.status,"confidence":str(r.confidence)} for r in rows]
+def list_commitments(account_id:str|None=None,account_type:str|None=None,db:Session=Depends(get_db)):
+    stmt=select(Commitment).order_by(Commitment.due_date)
+    if account_id:
+        stmt=stmt.where(Commitment.account_id==account_id)
+    elif account_type:
+        stmt=stmt.where(Commitment.account_id.in_(select(Account.id).where(Account.account_type==account_type)))
+    rows=db.scalars(stmt).all()
+    accounts={a.id:a for a in db.scalars(select(Account)).all()}
+    return [{
+        "id":r.id,"account_id":r.account_id,
+        "account_name":None if r.account_id not in accounts else accounts[r.account_id].name,
+        "account_institution":None if r.account_id not in accounts else accounts[r.account_id].institution_name,
+        "title":r.title,"amount":str(r.amount),"due_date":r.due_date,"status":r.status,"confidence":str(r.confidence)
+    } for r in rows]
 
 
 @app.post("/api/v1/forecast")
-def calculate_forecast(payload:ForecastRequest,db:Session=Depends(get_db)):
-    result=forecast(db,payload.start,payload.end)
+def calculate_forecast(payload:ForecastRequest,account_id:str|None=None,account_type:str|None=None,db:Session=Depends(get_db)):
+    result=forecast(db,payload.start,payload.end,account_id,account_type)
     return {k:(str(v) if isinstance(v,Decimal) else v) for k,v in result.__dict__.items()}
 
 @app.get("/api/v1/forecast/month-end")
-def calculate_month_end_forecast(as_of:date|None=None,db:Session=Depends(get_db)):
-    return month_end_projection(db,as_of)
+def calculate_month_end_forecast(as_of:date|None=None,account_id:str|None=None,account_type:str|None=None,db:Session=Depends(get_db)):
+    return month_end_projection(db,as_of,account_id,account_type)
 
 
 def _analyze_document_background(document_id:str)->None:
@@ -678,6 +698,8 @@ def delete_document(document_id:str,db:Session=Depends(get_db)):
         metadata_json=json.dumps({"file_name":file_name}),
     ))
     db.delete(row)
+    db.flush()
+    synchronize_product_account_links(db)
     db.commit()
 
     file_deleted=False

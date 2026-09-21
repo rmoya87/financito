@@ -31,23 +31,23 @@ class ForecastResult:
 MODEL_VERSION = "seasonal-commitments-v1"
 
 
-def _sum_transactions(session: Session, start: date, end: date, positive: bool) -> Decimal:
-    flow = cash_flow(session, start, end)
+def _sum_transactions(session: Session, start: date, end: date, positive: bool, account_id: str | None = None, account_type: str | None = None) -> Decimal:
+    flow = cash_flow(session, start, end, account_id, account_type)
     return flow["income"] if positive else flow["expenses"]
 
 
-def forecast(session: Session, start: date, end: date) -> ForecastResult:
+def forecast(session: Session, start: date, end: date, account_id: str | None = None, account_type: str | None = None) -> ForecastResult:
     if end < start:
         raise ValueError("horizon_end must be >= horizon_start")
     ly_start, ly_end = comparable_period_last_year(start, end)
-    baseline_expenses = _sum_transactions(session, ly_start, ly_end, False)
-    baseline_income = _sum_transactions(session, ly_start, ly_end, True)
+    baseline_expenses = _sum_transactions(session, ly_start, ly_end, False, account_id, account_type)
+    baseline_income = _sum_transactions(session, ly_start, ly_end, True, account_id, account_type)
 
     days = (end - start).days + 1
     recent_end = start.fromordinal(start.toordinal() - 1)
     recent_start = recent_end.fromordinal(max(date.min.toordinal(), recent_end.toordinal() - min(days, 90) + 1))
-    recent_expenses = _sum_transactions(session, recent_start, recent_end, False)
-    recent_income = _sum_transactions(session, recent_start, recent_end, True)
+    recent_expenses = _sum_transactions(session, recent_start, recent_end, False, account_id, account_type)
+    recent_income = _sum_transactions(session, recent_start, recent_end, True, account_id, account_type)
     recent_days = max(1, (recent_end - recent_start).days + 1)
     recent_expenses = recent_expenses * Decimal(days) / Decimal(recent_days)
     recent_income = recent_income * Decimal(days) / Decimal(recent_days)
@@ -62,14 +62,23 @@ def forecast(session: Session, start: date, end: date) -> ForecastResult:
         ratio = max(Decimal("0.80"), min(Decimal("1.20"), ratio))
         return baseline * ratio
 
-    commitments = session.scalars(select(Commitment).where(
+    commitment_stmt=select(Commitment).where(
         and_(Commitment.due_date >= start, Commitment.due_date <= end, Commitment.status == "active")
-    )).all()
+    )
+    account_stmt=select(Account)
+    if account_id:
+        commitment_stmt=commitment_stmt.where(Commitment.account_id==account_id)
+        account_stmt=account_stmt.where(Account.id==account_id)
+    elif account_type:
+        scoped_ids=select(Account.id).where(Account.account_type==account_type)
+        commitment_stmt=commitment_stmt.where(Commitment.account_id.in_(scoped_ids))
+        account_stmt=account_stmt.where(Account.account_type==account_type)
+    commitments = session.scalars(commitment_stmt).all()
     known_commitments = sum((c.amount for c in commitments), Decimal("0"))
     predicted_expenses = adjusted(baseline_expenses, recent_expenses) + known_commitments
     predicted_income = adjusted(baseline_income, recent_income)
     predicted_savings = predicted_income - predicted_expenses
-    balances = sum((a.current_balance for a in session.scalars(select(Account)).all()), Decimal("0"))
+    balances = sum((a.current_balance for a in session.scalars(account_stmt).all()), Decimal("0"))
     min_liquidity = balances + min(Decimal("0"), predicted_savings)
 
     uncertainty = max(predicted_expenses * Decimal("0.10"), Decimal("50"))

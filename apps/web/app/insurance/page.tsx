@@ -11,7 +11,8 @@ import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
 import {EntityDocumentsModal} from '@/components/entity-documents-modal';
 
 type CoverageRequirement={id:string;insurance_type:string|null;coverage_type:string;minimum_limit:string|null;currency:string;notes:string|null;enabled:boolean};
-type InsuranceProfile={id:string;insurance_type:string;annual_premium:string;deductible:string|null;currency:string;policy_number_masked?:string|null;contract_id:string|null;provider_name?:string|null;renewal_date?:string|null;cancellation_notice_days?:number|null;early_exit_penalty?:string|null;document_count?:number;source_document_ids?:string[];linked_mortgage_ids?:string[]};
+type Account={id:string;name:string;institution_name:string;account_type:string;current_balance:string;available_balance:string|null};
+type InsuranceProfile={id:string;account_id:string|null;account_name?:string|null;account_institution?:string|null;insurance_type:string;annual_premium:string;deductible:string|null;currency:string;policy_number_masked?:string|null;contract_id:string|null;provider_name?:string|null;renewal_date?:string|null;cancellation_notice_days?:number|null;early_exit_penalty?:string|null;document_count?:number;source_document_ids?:string[];linked_mortgage_ids?:string[]};
 type MortgageRef={id:string;lender:string;remaining_principal:string;currency:string};
 type InsurancePayment={transaction_id:string;booking_date:string;description:string;merchant:string|null;amount:string;currency:string;account_id:string;account_name:string|null;institution_name:string|null};
 type Policy={
@@ -91,6 +92,7 @@ function PolicyInsightGroup({title,rows,field}:{title:string;rows:DocInsight[];f
 export default function InsurancePage(){
   const qc=useQueryClient();
   const profiles=useQuery({queryKey:['insurance'],queryFn:()=>apiGet<InsuranceProfile[]>('/api/v1/insurance')});
+  const accounts=useQuery({queryKey:['accounts','insurance-link'],queryFn:()=>apiGet<Account[]>('/api/v1/accounts')});
   const mortgages=useQuery({queryKey:['mortgages'],queryFn:()=>apiGet<MortgageRef[]>('/api/v1/mortgages')});
   const verdict=useQuery({queryKey:['insurance-verdict'],queryFn:()=>apiGet<Verdict>('/api/v1/insurance/verdict')});
   const requirements=useQuery({queryKey:['coverage-requirements'],queryFn:()=>apiGet<CoverageRequirement[]>('/api/v1/coverage-requirements')});
@@ -98,10 +100,10 @@ export default function InsurancePage(){
   const market=useQuery({queryKey:['insurance-market-references'],queryFn:()=>apiGet<InsuranceMarketScan>('/api/v1/decision-lab/market-scan'),enabled:false,retry:false});
   const analyze=useMutation({
     mutationFn:()=>apiMutate<Verdict>('/api/v1/insurance/verdict/analyze','POST'),
-    onSuccess:data=>qc.setQueryData(['insurance-verdict'],data),
+    onSuccess:()=>qc.invalidateQueries({queryKey:['insurance-verdict']}),
   });
 
-  const emptyPolicy={provider_name:'',insurance_type:'home',annual_premium:'',deductible:'',policy_number_masked:'',renewal_date:'',cancellation_notice_days:'',early_exit_penalty:''};
+  const emptyPolicy={account_id:'',provider_name:'',insurance_type:'home',annual_premium:'',deductible:'',policy_number_masked:'',renewal_date:'',cancellation_notice_days:'',early_exit_penalty:''};
   const [policyForm,setPolicyForm]=useState(emptyPolicy);
   const [editingPolicyId,setEditingPolicyId]=useState<string|null>(null);
   const [showPolicyForm,setShowPolicyForm]=useState(false);
@@ -125,6 +127,7 @@ export default function InsurancePage(){
   };
   const savePolicy=useMutation({
     mutationFn:()=>apiMutate<InsuranceProfile>(editingPolicyId?'/api/v1/insurance/'+editingPolicyId:'/api/v1/insurance',editingPolicyId?'PATCH':'POST',{
+      account_id:policyForm.account_id||null,
       provider_name:policyForm.provider_name.trim()||null,
       insurance_type:policyForm.insurance_type,
       annual_premium:policyForm.annual_premium,
@@ -167,6 +170,7 @@ export default function InsurancePage(){
       const profile=profiles.data?.find(p=>p.id===missing.policy_id);
       if(!policy)throw new Error('No se ha encontrado la póliza');
       const body:any={
+        account_id:profile?.account_id||null,
         provider_name:policy.contract?.provider_name||profile?.provider_name||null,
         insurance_type:policy.insurance_type,
         annual_premium:policy.annual_premium,
@@ -193,6 +197,7 @@ export default function InsurancePage(){
     const profile=profiles.data?.find(x=>x.id===p.id);
     setEditingPolicyId(p.id);setShowPolicyForm(true);
     setPolicyForm({
+      account_id:profile?.account_id||'',
       provider_name:p.contract?.provider_name||profile?.provider_name||'',
       insurance_type:p.insurance_type,
       annual_premium:p.annual_premium,
@@ -244,6 +249,7 @@ export default function InsurancePage(){
         {data.ai?.error&&<div className="mt-3 text-xs text-[var(--muted)]">La IA local no pudo ampliar el análisis: {data.ai.error}. El veredicto determinista sigue disponible.</div>}
         {showPolicyForm&&<form className="mt-4 grid gap-2 rounded-xl border border-[var(--border)] p-4 sm:grid-cols-2" onSubmit={e=>{e.preventDefault();savePolicy.mutate()}}>
           <div className="sm:col-span-2 font-semibold">{editingPolicyId?'Editar seguro':'Crear seguro'}</div>
+          <select className="fin-input" aria-label="Cuenta bancaria del seguro" value={policyForm.account_id} onChange={e=>setPolicyForm({...policyForm,account_id:e.target.value})} required><option value="">Cuenta bancaria del seguro…</option>{accounts.data?.map(account=><option key={account.id} value={account.id}>{account.institution_name} · {account.name}</option>)}</select>
           <input className="fin-input" placeholder="Aseguradora" value={policyForm.provider_name} onChange={e=>setPolicyForm({...policyForm,provider_name:e.target.value})}/>
           <select className="fin-input" value={policyForm.insurance_type} onChange={e=>setPolicyForm({...policyForm,insurance_type:e.target.value})}><option value="home">Hogar</option><option value="car">Coche</option><option value="life">Vida</option><option value="health">Salud</option><option value="pet">Mascota</option><option value="travel">Viaje</option><option value="other">Otro</option></select>
           <input className="fin-input" type="number" min="0" step=".01" placeholder="Prima anual (€)" value={policyForm.annual_premium} onChange={e=>setPolicyForm({...policyForm,annual_premium:e.target.value})} required/>
@@ -259,8 +265,8 @@ export default function InsurancePage(){
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card><div className="text-xs uppercase text-[var(--muted)]">Primas documentadas</div><div className="mt-2 text-2xl font-bold"><Money value={data.finances.documented_annual_premiums}/>/año</div><div className="mt-1 text-xs text-[var(--muted)]">{data.policies.length} póliza(s) registradas</div></Card>
-        <Card><div className="text-xs uppercase text-[var(--muted)]">Pagos clasificados como seguros</div><div className="mt-2 text-2xl font-bold"><Money value={data.finances.spend_reconciliation.observed_insurance_spend}/></div><div className="mt-1 text-xs text-[var(--muted)]">Últimos {data.finances.spend_reconciliation.data_coverage_days} días disponibles</div></Card>
-        <Card><div className="text-xs uppercase text-[var(--muted)]">Peso sobre ingresos</div><div className="mt-2 text-2xl font-bold">{data.finances.premium_share_of_income===null?'—':(Number(data.finances.premium_share_of_income)*100).toLocaleString('es-ES',{maximumFractionDigits:1})+'%'}</div><div className="mt-1 text-xs text-[var(--muted)]">Primas documentadas / ingresos observados en 365 días</div></Card>
+        <Card><div className="text-xs uppercase text-[var(--muted)]">Pagos clasificados como seguros</div><div className="mt-2 text-2xl font-bold"><Money value={data.finances.spend_reconciliation.observed_insurance_spend}/></div><div className="mt-1 text-xs text-[var(--muted)]">{data.finances.spend_reconciliation.period_start} → {data.finances.spend_reconciliation.period_end}</div></Card>
+        <Card><div className="text-xs uppercase text-[var(--muted)]">Peso sobre ingresos</div><div className="mt-2 text-2xl font-bold">{data.finances.premium_share_of_income===null?'—':(Number(data.finances.premium_share_of_income)*100).toLocaleString('es-ES',{maximumFractionDigits:1})+'%'}</div><div className="mt-1 text-xs text-[var(--muted)]">Primas equivalentes del periodo / ingresos del periodo seleccionado</div></Card>
         <Card><div className="text-xs uppercase text-[var(--muted)]">Coberturas verificadas</div><div className="mt-2 text-2xl font-bold">{data.coverage.verified}</div><div className="mt-1 text-xs text-[var(--muted)]">{data.coverage.gaps.length} hueco(s) · {data.coverage.overlaps.length} posible(s) duplicidad(es)</div></Card>
       </div>
 
@@ -381,16 +387,17 @@ export default function InsurancePage(){
                 <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Prima anual</div><strong><Money value={selectedPolicy.annual_premium}/></strong></div>
                 <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Equivalente mensual</div><strong><Money value={selectedPolicy.monthly_equivalent}/></strong></div>
                 <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Franquicia general</div><strong><Money value={selectedPolicy.deductible}/></strong></div>
-                <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Pagado últimos 365 días</div><strong><Money value={selectedPolicy.linked_payments_last_365_total}/></strong><div className="text-[11px] text-[var(--muted)]">{selectedPolicy.linked_payment_count} pago(s) vinculados</div></div>
+                <div className="rounded-xl bg-[var(--surface-2)] p-3"><div className="text-xs text-[var(--muted)]">Pagado en el periodo</div><strong><Money value={selectedPolicy.linked_payments_last_365_total}/></strong><div className="text-[11px] text-[var(--muted)]">{selectedPolicy.linked_payment_count} pago(s) vinculados en total</div></div>
               </div>
               <div className="mt-4 grid gap-3 md:grid-cols-2">
-                <div className="rounded-xl border border-[var(--border)] p-4 text-sm"><h3 className="font-semibold">Identificación</h3><div className="mt-3 space-y-2"><div>Aseguradora: <strong>{selectedPolicy.contract?.provider_name||selectedProfile?.provider_name||'—'}</strong></div><div>Nº póliza: <strong>{selectedPolicy.policy_number_masked||selectedProfile?.policy_number_masked||'—'}</strong></div><div>Tipo: <strong>{insuranceLabel[selectedPolicy.insurance_type]||selectedPolicy.insurance_type}</strong></div><div>Documentos: <strong>{selectedPolicy.source_documents?.length||0}</strong></div></div></div>
+                <div className="rounded-xl border border-[var(--border)] p-4 text-sm"><h3 className="font-semibold">Identificación</h3><div className="mt-3 space-y-2"><div>Aseguradora: <strong>{selectedPolicy.contract?.provider_name||selectedProfile?.provider_name||'—'}</strong></div><div>Cuenta bancaria: <strong>{selectedProfile?.account_id?(selectedProfile.account_institution||'Banco')+' · '+(selectedProfile.account_name||'Cuenta'):'Sin vincular'}</strong></div><div>Nº póliza: <strong>{selectedPolicy.policy_number_masked||selectedProfile?.policy_number_masked||'—'}</strong></div><div>Tipo: <strong>{insuranceLabel[selectedPolicy.insurance_type]||selectedPolicy.insurance_type}</strong></div><div>Documentos: <strong>{selectedPolicy.source_documents?.length||0}</strong></div></div></div>
                 <div className="rounded-xl border border-[var(--border)] p-4 text-sm"><h3 className="font-semibold">Situación</h3><div className="mt-3 space-y-2"><div>Renovación: <strong>{selectedPolicy.contract?.renewal_date||'—'}</strong></div><div>Evidencia: <strong>{selectedPolicy.contract?.evidence_status||'Sin contrato consolidado'}</strong></div><div>Hipotecas vinculadas: <strong>{selectedPolicy.linked_mortgage_ids?.length||0}</strong></div><div>Objeto asegurado: <strong>{readableDetail(selectedPolicy.insured_object)}</strong></div></div></div>
               </div>
 
               {editingPolicyId===selectedPolicy.id&&showPolicyForm&&<form className="mt-5 grid gap-2 rounded-xl border border-[var(--border)] p-4 sm:grid-cols-2" onSubmit={e=>{e.preventDefault();savePolicy.mutate()}}>
                 <div className="sm:col-span-2"><h3 className="font-semibold">Editar seguro</h3><p className="mt-1 text-xs text-[var(--muted)]">Actualiza solo los datos que conoces. La documentación sigue siendo la fuente de verdad de las condiciones extraídas.</p></div>
-                <input className="fin-input" placeholder="Aseguradora" value={policyForm.provider_name} onChange={e=>setPolicyForm({...policyForm,provider_name:e.target.value})}/>
+                <select className="fin-input" aria-label="Cuenta bancaria del seguro" value={policyForm.account_id} onChange={e=>setPolicyForm({...policyForm,account_id:e.target.value})} required><option value="">Cuenta bancaria del seguro…</option>{accounts.data?.map(account=><option key={account.id} value={account.id}>{account.institution_name} · {account.name}</option>)}</select>
+          <input className="fin-input" placeholder="Aseguradora" value={policyForm.provider_name} onChange={e=>setPolicyForm({...policyForm,provider_name:e.target.value})}/>
                 <select className="fin-input" value={policyForm.insurance_type} onChange={e=>setPolicyForm({...policyForm,insurance_type:e.target.value})}><option value="home">Hogar</option><option value="car">Coche</option><option value="life">Vida</option><option value="health">Salud</option><option value="pet">Mascota</option><option value="travel">Viaje</option><option value="other">Otro</option></select>
                 <input className="fin-input" type="number" min="0" step=".01" placeholder="Prima anual (€)" value={policyForm.annual_premium} onChange={e=>setPolicyForm({...policyForm,annual_premium:e.target.value})} required/>
                 <input className="fin-input" type="number" min="0" step=".01" placeholder="Franquicia (€)" value={policyForm.deductible} onChange={e=>setPolicyForm({...policyForm,deductible:e.target.value})}/>

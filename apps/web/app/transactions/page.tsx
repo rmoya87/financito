@@ -1,10 +1,10 @@
 'use client';
 
 import {FormEvent,useDeferredValue,useEffect,useMemo,useState} from 'react';
+import {MoreHorizontal} from 'lucide-react';
 import {useMutation,useQuery,useQueryClient} from '@tanstack/react-query';
 import {apiGet,apiMutate,apiUpload} from '@/lib/api';
 import {PageHeader} from '@/components/page-header';
-import {DateRangeSelector,DateRangeKey,resolveDateRange} from '@/components/date-range-selector';
 import {Card} from '@/components/ui/card';
 import {Money} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
@@ -47,11 +47,6 @@ export default function TransactionsPage(){
   const [file,setFile]=useState<File|null>(null);
   const [search,setSearch]=useState('');
   const [categoryFilter,setCategoryFilter]=useState('');
-  const defaults=resolveDateRange('month');
-  const [range,setRange]=useState<DateRangeKey>('month');
-  const [customStart,setCustomStart]=useState(defaults.start);
-  const [customEnd,setCustomEnd]=useState(defaults.end);
-  const dates=resolveDateRange(range,customStart,customEnd);
   const [page,setPage]=useState(1);
   const [pageSize,setPageSize]=useState(50);
   const deferredSearch=useDeferredValue(search);
@@ -69,13 +64,11 @@ export default function TransactionsPage(){
   const insurance=useQuery({queryKey:['insurance'],queryFn:()=>apiGet<InsuranceRef[]>('/api/v1/insurance')});
   const mortgages=useQuery({queryKey:['mortgages'],queryFn:()=>apiGet<MortgageRef[]>('/api/v1/mortgages')});
   const txs=useQuery({
-    queryKey:['transactions',deferredSearch,categoryFilter,dates.start,dates.end,page,pageSize],
+    queryKey:['transactions',deferredSearch,categoryFilter,page,pageSize],
     queryFn:()=>{
       const params=new URLSearchParams({page:String(page),page_size:String(pageSize)});
       if(deferredSearch.trim())params.set('q',deferredSearch.trim());
       if(categoryFilter)params.set('category_id',categoryFilter);
-      if(dates.start)params.set('start',dates.start);
-      if(dates.end)params.set('end',dates.end);
       return apiGet<TxPage>('/api/v1/transactions/page?'+params.toString());
     },
   });
@@ -164,7 +157,7 @@ export default function TransactionsPage(){
 
   useEffect(()=>{
     setPage(1);
-  },[deferredSearch,categoryFilter,dates.start,dates.end,pageSize]);
+  },[deferredSearch,categoryFilter,pageSize]);
 
   useEffect(()=>{
     if(txs.data&&page!==txs.data.page)setPage(txs.data.page);
@@ -191,15 +184,6 @@ export default function TransactionsPage(){
     <PageHeader
       title="Movimientos"
       description="Todos tus movimientos en un único sitio. Si cambias una categoría, Financito aplica esa corrección a todo el histórico con el mismo concepto y crea una regla para los futuros movimientos iguales."
-      action={<DateRangeSelector
-        range={range}
-        customStart={customStart}
-        customEnd={customEnd}
-        onRangeChange={setRange}
-        onCustomStartChange={setCustomStart}
-        onCustomEndChange={setCustomEnd}
-        ariaLabel="Periodo de Movimientos"
-      />}
     />
 
     <Card>
@@ -240,15 +224,15 @@ export default function TransactionsPage(){
       {mortgageLink.error&&<div className="mt-3"><ErrorState error={mortgageLink.error}/></div>}
     </Card>
 
-    <Card className="mt-4 overflow-x-auto">
+    <Card className="mt-4 overflow-visible">
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="font-bold">Todos los movimientos</h2>
           <p className="mt-1 text-sm text-[var(--muted)]">{total?`Mostrando ${rangeStart}–${rangeEnd} de ${total}`:'Sin movimientos para estos filtros'}.</p>
         </div>
-        <div className="grid w-full gap-2 xl:w-auto xl:grid-cols-[minmax(260px,1fr)_210px_130px]">
-          <input className="fin-input" type="search" aria-label="Buscar movimientos" placeholder="Buscar concepto, comercio, categoría o importe…" value={search} onChange={e=>setSearch(e.target.value)}/>
-          <select className="fin-input" aria-label="Filtrar por categoría" value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}>
+        <div className="grid w-full gap-2 lg:w-auto lg:grid-cols-[minmax(240px,1fr)_190px_110px]">
+          <input className="fin-input min-w-0" type="search" aria-label="Buscar movimientos" placeholder="Buscar concepto, comercio, categoría o importe…" value={search} onChange={e=>setSearch(e.target.value)}/>
+          <select className="fin-input min-w-0" aria-label="Filtrar por categoría" value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}>
             <option value="">Todas las categorías</option>
             {cats.data?.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
@@ -257,74 +241,68 @@ export default function TransactionsPage(){
       </div>
 
       {txs.isLoading?<Loading/>:txs.error?<ErrorState error={txs.error}/>:rows.length?
-        <table className="w-full min-w-[1050px] text-sm">
-          <thead className="text-left text-xs uppercase text-[var(--muted)]">
-            <tr><th className="pb-3">Fecha</th><th>Concepto</th><th>Categoría</th><th>Seguro</th><th>Hipoteca</th><th>Tratamiento</th><th>Acciones</th><th className="text-right">Importe</th></tr>
-          </thead>
-          <tbody>{rows.map(t=>{
-            const category=categoryById.get(t.category_id||'');
-            const semantic=category?specialHelp[category.system_key]:undefined;
-            return <tr key={t.id} className="border-t border-[var(--border)] align-top">
-              <td className="py-3">{t.booking_date}</td>
-              <td className="max-w-[340px] py-3">
-                <div className="truncate font-medium">{t.description_raw}</div>
-                {t.merchant_raw&&<div className="text-xs text-[var(--muted)]">{t.merchant_raw}</div>}
-              </td>
-              <td className="py-3">
-                <select className="rounded-lg border border-[var(--border)] bg-white px-2 py-1" aria-label={'Categoría para '+t.description_raw} value={t.category_id||''} onChange={e=>categoryMutation.mutate({id:t.id,category_id:e.target.value})}>
-                  <option value="" disabled>Sin categoría</option>
-                  {cats.data?.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </td>
-              <td className="min-w-[220px] py-3">
-                {Number(t.amount)<0&&!t.is_internal_transfer?<div>
-                  <select
-                    className="max-w-[240px] rounded-lg border border-[var(--border)] bg-white px-2 py-1 text-xs"
-                    aria-label={'Seguro para '+t.description_raw}
-                    value={t.linked_insurance_policy_id||''}
-                    disabled={insuranceLink.isPending}
-                    onChange={e=>insuranceLink.mutate({transactionId:t.id,policyId:e.target.value})}
-                  >
-                    <option value="">Sin vincular a seguro</option>
-                    {insurance.data?.map(p=><option key={p.id} value={p.id}>{p.provider_name||insuranceLabel[p.insurance_type]||'Seguro'} · {insuranceLabel[p.insurance_type]||p.insurance_type}{p.policy_number_masked?' · '+p.policy_number_masked:''}</option>)}
+        <div className="w-full">
+          <table className="w-full table-fixed text-sm">
+            <colgroup><col className="w-[92px]"/><col/><col className="w-[190px]"/><col className="hidden w-[180px] xl:table-column"/><col className="w-[118px]"/><col className="w-[54px]"/></colgroup>
+            <thead className="text-left text-xs uppercase text-[var(--muted)]">
+              <tr><th className="pb-3">Fecha</th><th>Concepto</th><th>Categoría</th><th className="hidden xl:table-cell">Tratamiento</th><th className="text-right">Importe</th><th className="text-right">Opc.</th></tr>
+            </thead>
+            <tbody>{rows.map(t=>{
+              const category=categoryById.get(t.category_id||'');
+              const semantic=category?specialHelp[category.system_key]:undefined;
+              const linkedPolicy=insurance.data?.find(p=>p.id===t.linked_insurance_policy_id);
+              const linkedMortgage=mortgages.data?.find(m=>m.id===t.linked_mortgage_id);
+              return <tr key={t.id} className="border-t border-[var(--border)] align-top">
+                <td className="py-3 pr-2 text-xs whitespace-nowrap">{t.booking_date}</td>
+                <td className="min-w-0 py-3 pr-3">
+                  <div className="truncate font-medium" title={t.description_raw}>{t.description_raw}</div>
+                  <div className="mt-0.5 flex min-w-0 flex-wrap gap-x-2 text-[11px] text-[var(--muted)]">
+                    {t.merchant_raw&&<span className="max-w-full truncate">{t.merchant_raw}</span>}
+                    {linkedPolicy&&<span className="font-medium text-[var(--brand)]">Seguro · {linkedPolicy.provider_name||insuranceLabel[linkedPolicy.insurance_type]||'póliza'}</span>}
+                    {linkedMortgage&&<span className="font-medium text-[var(--brand)]">Hipoteca · {linkedMortgage.lender}</span>}
+                  </div>
+                </td>
+                <td className="py-3 pr-3">
+                  <select className="w-full min-w-0 rounded-lg border border-[var(--border)] bg-white px-2 py-1 text-xs" aria-label={'Categoría para '+t.description_raw} value={t.category_id||''} onChange={e=>categoryMutation.mutate({id:t.id,category_id:e.target.value})}>
+                    <option value="" disabled>Sin categoría</option>
+                    {cats.data?.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
-                  {t.linked_insurance_policy_id&&<div className="mt-1 text-[11px] font-medium text-[var(--brand)]">Pago vinculado · mismo concepto automático</div>}
-                </div>:<span className="text-xs text-[var(--muted)]">—</span>}
-              </td>
-              <td className="min-w-[220px] py-3">
-                {Number(t.amount)<0&&!t.is_internal_transfer?<div>
-                  <select
-                    className="max-w-[240px] rounded-lg border border-[var(--border)] bg-white px-2 py-1 text-xs"
-                    aria-label={'Hipoteca para '+t.description_raw}
-                    value={t.linked_mortgage_id||''}
-                    disabled={mortgageLink.isPending}
-                    onChange={e=>mortgageLink.mutate({transactionId:t.id,mortgageId:e.target.value})}
-                  >
-                    <option value="">Sin vincular a hipoteca</option>
-                    {mortgages.data?.map(m=><option key={m.id} value={m.id}>{m.lender} · {Number(m.remaining_principal).toLocaleString('es-ES')} {m.currency}</option>)}
-                  </select>
-                  {t.linked_mortgage_id&&<div className="mt-1 text-[11px] font-medium text-[var(--brand)]">Cuota vinculada · mismo concepto automático</div>}
-                </div>:<span className="text-xs text-[var(--muted)]">—</span>}
-              </td>
-              <td className="max-w-[260px] py-3 text-xs text-[var(--muted)]">
-                {semantic||(
-                  t.user_verified?'Clasificación confirmada por ti':
-                  t.categorization_method+' · '+Math.round(Number(t.categorization_confidence)*100)+'%'
-                )}
-              </td>
-              <td className="py-3">
-                <div className="flex flex-wrap gap-2">
-                  <button className="text-xs underline" onClick={()=>openRuleFor(t)}>Crear regla</button>
-                  <button className="text-xs underline" onClick={()=>{setSplitTx(t);setSplits([{amount:'',category_id:t.category_id||'',note:''},{amount:'',category_id:'',note:''}])}}>Dividir</button>
-                </div>
-              </td>
-              <td className={'py-3 text-right font-semibold '+(Number(t.amount)<0?'':'text-[var(--brand)]')}><Money value={t.amount} currency={t.currency}/></td>
-            </tr>
-          })}</tbody>
-        </table>:<EmptyState>No hay movimientos que coincidan con los filtros.</EmptyState>}
+                </td>
+                <td className="hidden py-3 pr-3 text-xs text-[var(--muted)] xl:table-cell">
+                  <div className="line-clamp-2">{semantic||(t.user_verified?'Clasificación confirmada por ti':t.categorization_method+' · '+Math.round(Number(t.categorization_confidence)*100)+'%')}</div>
+                </td>
+                <td className={'py-3 text-right font-semibold whitespace-nowrap '+(Number(t.amount)<0?'':'text-[var(--brand)]')}><Money value={t.amount} currency={t.currency}/></td>
+                <td className="relative py-3 text-right">
+                  <details className="group relative inline-block text-left">
+                    <summary className="inline-flex size-8 cursor-pointer list-none items-center justify-center rounded-lg border border-[var(--border)] bg-white hover:bg-[var(--surface-2)] [&::-webkit-details-marker]:hidden" aria-label={'Opciones de '+t.description_raw}><MoreHorizontal size={17}/></summary>
+                    <div className="absolute right-0 z-30 mt-2 w-72 rounded-xl border border-[var(--border)] bg-white p-3 text-left shadow-xl">
+                      {Number(t.amount)<0&&!t.is_internal_transfer&&<>
+                        <label className="block text-[11px] font-medium text-[var(--muted)]">Seguro
+                          <select className="fin-input mt-1 w-full text-xs" aria-label={'Seguro para '+t.description_raw} value={t.linked_insurance_policy_id||''} disabled={insuranceLink.isPending} onChange={e=>insuranceLink.mutate({transactionId:t.id,policyId:e.target.value})}>
+                            <option value="">Sin vincular</option>
+                            {insurance.data?.map(p=><option key={p.id} value={p.id}>{p.provider_name||insuranceLabel[p.insurance_type]||'Seguro'} · {insuranceLabel[p.insurance_type]||p.insurance_type}{p.policy_number_masked?' · '+p.policy_number_masked:''}</option>)}
+                          </select>
+                        </label>
+                        <label className="mt-3 block text-[11px] font-medium text-[var(--muted)]">Hipoteca
+                          <select className="fin-input mt-1 w-full text-xs" aria-label={'Hipoteca para '+t.description_raw} value={t.linked_mortgage_id||''} disabled={mortgageLink.isPending} onChange={e=>mortgageLink.mutate({transactionId:t.id,mortgageId:e.target.value})}>
+                            <option value="">Sin vincular</option>
+                            {mortgages.data?.map(m=><option key={m.id} value={m.id}>{m.lender} · {Number(m.remaining_principal).toLocaleString('es-ES')} {m.currency}</option>)}
+                          </select>
+                        </label>
+                        <div className="my-3 border-t border-[var(--border)]"/>
+                      </>}
+                      <button className="block w-full rounded-lg px-2 py-2 text-left text-xs hover:bg-[var(--surface-2)]" type="button" onClick={e=>{(e.currentTarget.closest('details') as HTMLDetailsElement|null)?.removeAttribute('open');openRuleFor(t)}}>Crear regla con este movimiento</button>
+                      <button className="block w-full rounded-lg px-2 py-2 text-left text-xs hover:bg-[var(--surface-2)]" type="button" onClick={e=>{(e.currentTarget.closest('details') as HTMLDetailsElement|null)?.removeAttribute('open');setSplitTx(t);setSplits([{amount:'',category_id:t.category_id||'',note:''},{amount:'',category_id:'',note:''}])}}>Dividir movimiento</button>
+                    </div>
+                  </details>
+                </td>
+              </tr>
+            })}</tbody>
+          </table>
+        </div>:<EmptyState>No hay movimientos que coincidan con los filtros.</EmptyState>}
       {!txs.isLoading&&!txs.error&&total>0&&<div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] pt-4 text-sm">
         <div className="text-[var(--muted)]">Página {currentPage} de {pages} · {rangeStart}–{rangeEnd} de {total}</div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button className="fin-button secondary py-1.5" disabled={currentPage<=1||txs.isFetching} onClick={()=>setPage(1)}>Primera</button>
           <button className="fin-button secondary py-1.5" disabled={currentPage<=1||txs.isFetching} onClick={()=>setPage(p=>Math.max(1,p-1))}>Anterior</button>
           <button className="fin-button secondary py-1.5" disabled={currentPage>=pages||txs.isFetching} onClick={()=>setPage(p=>Math.min(pages,p+1))}>Siguiente</button>

@@ -284,3 +284,23 @@ Reglas:
 - los campos críticos desconocidos conservan estado needs_more_data;
 - los datos externos de mercado son una capa de contraste y nunca sustituyen la evidencia contractual particular.
 
+
+
+## Contexto financiero transversal
+
+El frontend mantiene un `FinancialFiltersProvider` único en el shell. Persiste únicamente identificadores de ámbito y fechas en `localStorage`; no persiste datos financieros. La capa `apiGet/apiMutate/apiUpload` propaga `start`, `end`, `account_id` o `account_type` sin sobrescribir parámetros específicos de una operación.
+
+Los endpoints que tienen dimensión temporal o bancaria consumen ese contexto de forma explícita. Los endpoints atemporales o sin una relación de cuenta definida pueden ignorar esos parámetros. Los bienes físicos siguen siendo patrimonio del hogar y no se asignan artificialmente a una cuenta bancaria.
+
+Las relaciones estables producto-cuenta se almacenan en el dominio:
+- `Mortgage.account_id`;
+- `InsurancePolicy.account_id`;
+- `Portfolio.account_id`;
+- `FinancialGoal.account_id`;
+- `Commitment.account_id`.
+
+`account_links.synchronize_product_account_links` solo completa relaciones antiguas cuando los pagos existentes apuntan inequívocamente a una cuenta. Para hipotecas vinculadas, la entidad bancaria de `Account` prevalece sobre un proveedor extraído de documentos.
+
+## IA conversacional observable
+
+El servicio de chat comprueba `available`, `configured_model` y `chat_ready` antes de generar. La respuesta API incluye metadatos `ai.used`, `ai.ready`, `ai.model` y `ai.error`. Esto permite que la UI diferencie una respuesta realmente generada por el modelo local de un fallback determinista.

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import {useEffect,useState} from 'react';
 import {usePathname} from 'next/navigation';
+import {FinancialFiltersProvider,GlobalFinancialFilters} from '@/components/financial-filters';
 import {
   ArrowLeftRight,
   Bot,
@@ -116,7 +117,7 @@ export function Shell({children}:{children:React.ReactNode}){
   const activeArea=areas.find(area=>matches(path,area.paths));
   const inConfiguration=matches(path,configurationPaths);
 
-  return <div className="min-h-screen lg:grid lg:grid-cols-[224px_1fr]">
+  return <FinancialFiltersProvider><div className="min-h-screen lg:grid lg:grid-cols-[224px_1fr]">
     <aside className="border-b border-[var(--border)] bg-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:border-b-0 lg:border-r">
       <div className="flex items-center gap-3 px-5 py-5">
         <div className="grid size-10 place-items-center rounded-xl bg-[var(--brand)] text-white"><Gauge size={22}/></div>
@@ -150,9 +151,10 @@ export function Shell({children}:{children:React.ReactNode}){
     </aside>
 
     <main className="min-w-0 p-4 md:p-7 lg:p-9">
+      <GlobalFinancialFilters/>
       {activeArea&&activeArea.href!=='/'?<ContextNav label={activeArea.label} items={activeArea.secondary} path={contextPath} onHashChange={setHash}/>:null}
       {inConfiguration?<ContextNav label="Configuración" items={configurationNav} path={path}/>:null}
       {children}
     </main>
-  </div>;
+  </div></FinancialFiltersProvider>;
 }

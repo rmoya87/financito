@@ -5,7 +5,7 @@ from decimal import Decimal
 from sqlalchemy import delete,select
 from sqlalchemy.orm import Session
 
-from ..models import Mortgage,Transaction
+from ..models import Account,Mortgage,Transaction
 from ..models_analytics import EntityLink,ProductPaymentRule
 from ..models_extended import InsurancePolicy,MortgagePaymentAllocation
 from .categorization import normalize_text
@@ -36,6 +36,8 @@ def _set_insurance_link(session:Session,tx:Transaction,policy_id:str,source_type
     policy=session.get(InsurancePolicy,policy_id)
     if policy is None:
         return False
+    if policy.account_id is None:
+        policy.account_id=tx.account_id
     existing_mortgage=session.scalar(select(MortgagePaymentAllocation).where(
         MortgagePaymentAllocation.transaction_id==tx.id
     ))
@@ -57,6 +59,11 @@ def _set_mortgage_link(
     mortgage=session.get(Mortgage,mortgage_id)
     if mortgage is None:
         return False
+    if mortgage.account_id is None:
+        mortgage.account_id=tx.account_id
+        account=session.get(Account,tx.account_id)
+        if account is not None and account.institution_name:
+            mortgage.lender=account.institution_name[:180]
     _remove_insurance_link(session,tx.id)
     existing=session.scalar(select(MortgagePaymentAllocation).where(
         MortgagePaymentAllocation.transaction_id==tx.id

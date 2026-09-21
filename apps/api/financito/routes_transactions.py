@@ -11,7 +11,7 @@ from .services.transaction_ops import apply_category_semantics,apply_rules_to_un
 from .services.forecast_accuracy import evaluate as forecast_evaluate
 from .services.financial_analytics import overview as analytics_overview
 from .services.ai_categorization import improve_categorization
-from .models import CategorizationAudit,Category,Mortgage,Transaction
+from .models import Account,CategorizationAudit,Category,Mortgage,Transaction
 from .models_extended import InsurancePolicy,MortgagePaymentAllocation
 from .services.categorization import normalize_text,propagate_verified_merchant
 from .services.mortgage_payments import unlink_payment as unlink_mortgage_payment
@@ -226,6 +226,8 @@ def transaction_page(
     category_id:str|None=None,
     start:date|None=None,
     end:date|None=None,
+    account_id:str|None=None,
+    account_type:str|None=None,
     page:int=Query(default=1,ge=1),
     page_size:int=Query(default=50,ge=10,le=100),
     db:Session=Depends(dbdep),
@@ -234,6 +236,10 @@ def transaction_page(
         raise HTTPException(400,"La fecha final debe ser igual o posterior a la inicial.")
 
     filters=[]
+    if account_id:
+        filters.append(Transaction.account_id==account_id)
+    elif account_type:
+        filters.append(Transaction.account_id.in_(select(Account.id).where(Account.account_type==account_type)))
     if category_id:
         filters.append(Transaction.category_id==category_id)
     if start:
@@ -295,11 +301,11 @@ def review_queue(limit:int=100,db:Session=Depends(dbdep)):
     return [{"id":r.id,"booking_date":r.booking_date,"amount":str(r.amount),"currency":r.currency,"description_raw":r.description_raw,"merchant_raw":r.merchant_raw,"category_id":r.category_id,"confidence":str(r.categorization_confidence),"method":r.categorization_method} for r in rows]
 
 @router.get("/analytics/overview")
-def analytics(start:date|None=None,end:date|None=None,db:Session=Depends(dbdep)):
+def analytics(start:date|None=None,end:date|None=None,account_id:str|None=None,account_type:str|None=None,db:Session=Depends(dbdep)):
     from datetime import date as _date,timedelta
     end=end or _date.today();start=start or end-timedelta(days=365)
     if end<start:raise HTTPException(400,"end must be >= start")
-    return analytics_overview(db,start,end)
+    return analytics_overview(db,start,end,account_id,account_type)
 
 @router.delete("/transaction-rules/{rule_id}")
 def delete_rule(rule_id:str,db:Session=Depends(dbdep)):

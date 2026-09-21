@@ -60,6 +60,7 @@ class TransactionCategoryUpdate(BaseModel):
 
 
 class CommitmentCreate(BaseModel):
+    account_id: str | None = None
     commitment_type: str
     title: str
     amount: Decimal

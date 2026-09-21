@@ -67,21 +67,18 @@ test('cuenta e importación de extracto funcionan de extremo a extremo',async({p
   await page.getByRole('button',{name:'Cerrar'}).click();
 });
 
-test('Movimientos y Análisis comparten el selector temporal de Inicio',async({page})=>{
+test('el selector global de periodo se conserva entre Movimientos y Análisis',async({page})=>{
   await page.goto('/transactions/');
-  const movementPeriod=page.getByRole('combobox',{name:'Periodo de Movimientos'});
-  await expect(movementPeriod).toBeVisible();
-  await movementPeriod.selectOption('custom');
+  const period=page.getByRole('combobox',{name:'Periodo global'});
+  await expect(period).toBeVisible();
+  await period.selectOption('custom');
   await page.getByLabel('Desde').fill('2026-09-21');
   await page.getByLabel('Hasta').fill('2026-09-21');
   await expect(page.getByText('Compra E2E',{exact:true})).not.toBeVisible();
-  await movementPeriod.selectOption('month');
-  await expect(page.getByText('Compra E2E',{exact:true})).toBeVisible();
+  await period.selectOption('90d');
 
   await page.goto('/analytics/');
-  const analyticsPeriod=page.getByRole('combobox',{name:'Periodo de Análisis'});
-  await expect(analyticsPeriod).toBeVisible();
-  await analyticsPeriod.selectOption('90d');
+  await expect(page.getByRole('combobox',{name:'Periodo global'})).toHaveValue('90d');
   await expect(page.getByRole('heading',{name:'Análisis y resiliencia'})).toBeVisible();
   await expect(page.getByText('Ingresos, gasto y ahorro')).toBeVisible();
   await expectAccessible(page);
@@ -119,6 +116,13 @@ test('Cuentas permite eliminar una cuenta y sus movimientos locales',async({page
 });
 
 test('Patrimonio incorpora Casa y permite eliminar otras deudas',async({page})=>{
+  await page.goto('/accounts/');
+  await page.getByLabel('Nombre').fill('Cuenta Hipoteca E2E');
+  await page.getByLabel('Entidad').fill('Hipoteca E2E');
+  await page.getByLabel('Saldo actual').fill('2500');
+  await page.getByRole('button',{name:'Guardar cuenta'}).click();
+  await expect(page.getByText('Cuenta Hipoteca E2E',{exact:true})).toBeVisible();
+
   await page.goto('/wealth/');
   const wealthNav=page.getByRole('navigation',{name:'Navegación de Patrimonio'});
   const casa=wealthNav.getByRole('link',{name:'Casa'});
@@ -133,7 +137,7 @@ test('Patrimonio incorpora Casa y permite eliminar otras deudas',async({page})=>
   await page.getByRole('button',{name:'Nueva hipoteca'}).click();
   const newMortgage=page.getByRole('dialog',{name:'Nueva hipoteca'});
   await expect(newMortgage).toBeVisible();
-  await newMortgage.getByPlaceholder('Entidad').fill('Hipoteca E2E');
+  await newMortgage.getByRole('combobox',{name:'Cuenta bancaria de la hipoteca'}).selectOption({label:'Hipoteca E2E · Cuenta Hipoteca E2E'});
   await newMortgage.getByPlaceholder('Capital pendiente (€)').fill('150000');
   await newMortgage.getByPlaceholder('Cuota mensual (€)').fill('800');
   await newMortgage.getByPlaceholder('TIN actual (%)').fill('2.5');
@@ -196,11 +200,12 @@ test('Movimientos vincula una cuota hipotecaria y solo descuenta capital',async(
   await page.getByRole('button',{name:'Importar extracto'}).click();
   await expect(page.getByText('Cuota Hipoteca Vinculada E2E',{exact:true})).toBeVisible();
 
+  await page.getByRole('button',{name:'Opciones de Cuota Hipoteca Vinculada E2E'}).click();
   const mortgageSelect=page.getByRole('combobox',{name:'Hipoteca para Cuota Hipoteca Vinculada E2E'});
   const mortgageOptionValue=await mortgageSelect.locator('option').filter({hasText:'Hipoteca E2E'}).getAttribute('value');
   expect(mortgageOptionValue).toBeTruthy();
   await mortgageSelect.selectOption(mortgageOptionValue!);
-  await expect(page.getByText('Cuota vinculada · mismo concepto automático',{exact:true})).toBeVisible();
+  await expect(page.getByText(/Hipoteca · Hipoteca E2E/)).toBeVisible();
   await page.getByRole('button',{name:/Ver reglas/}).click();
   const rulesDialog=page.getByRole('dialog',{name:'Reglas automáticas'});
   await expect(rulesDialog.getByRole('heading',{name:'Vinculaciones automáticas de pagos'})).toBeVisible();
@@ -229,6 +234,8 @@ test('Movimientos vincula una cuota hipotecaria y solo descuenta capital',async(
 test('al pulsar un seguro se abre su ficha completa',async({page})=>{
   await page.goto('/insurance/');
   await page.getByRole('button',{name:'Nuevo seguro'}).click();
+  const insuranceAccount=page.getByRole('combobox',{name:'Cuenta bancaria del seguro'}).first();
+  await insuranceAccount.selectOption({index:1});
   await page.getByPlaceholder('Aseguradora').fill('Seguro E2E');
   await page.getByPlaceholder('Prima anual (€)').fill('480');
   await page.getByPlaceholder('Franquicia (€)').fill('100');
@@ -285,6 +292,7 @@ test('Movimientos permite vincular un pago a un seguro y verlo en su detalle',as
 
   await page.goto('/insurance/');
   await page.getByRole('button',{name:'Nuevo seguro'}).click();
+  await page.getByRole('combobox',{name:'Cuenta bancaria del seguro'}).first().selectOption({label:'Manual · Cuenta Pago Seguro E2E'});
   await page.getByPlaceholder('Aseguradora').fill('Aseguradora Pagos E2E');
   await page.getByPlaceholder('Prima anual (€)').fill('123.45');
   await page.getByRole('button',{name:'Crear seguro'}).click();
@@ -393,6 +401,7 @@ test('Para ti abre Seguros y coberturas en modal sin salir de Inicio',async({pag
 test('Patrimonio permite eliminar directamente un seguro de hogar',async({page})=>{
   await page.goto('/insurance/');
   await page.getByRole('button',{name:'Nuevo seguro'}).click();
+  await page.getByRole('combobox',{name:'Cuenta bancaria del seguro'}).first().selectOption({index:1});
   await page.getByPlaceholder('Aseguradora').fill('Seguro Borrar Patrimonio E2E');
   await page.getByPlaceholder('Prima anual (€)').fill('240');
   await page.getByRole('button',{name:'Crear seguro'}).click();

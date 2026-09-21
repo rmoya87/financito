@@ -1154,7 +1154,10 @@ def _ensure_mortgage_projection(
 
     changed=False
     provider=str(values.get("provider_name",{}).get("value") or "").strip()
-    if provider and mortgage.lender!=provider[:180]:
+    # Cuando la hipoteca está vinculada a una cuenta bancaria, la entidad se
+    # identifica por esa cuenta. Un documento puede aportar condiciones, pero
+    # no volver a sobrescribir el banco con texto antiguo o una oferta errónea.
+    if mortgage.account_id is None and provider and mortgage.lender!=provider[:180]:
         mortgage.lender=provider[:180];changed=True
     if "remaining_principal" in values:
         principal=_decimal(values["remaining_principal"].get("value"))
