@@ -8,6 +8,7 @@ import {Card} from '@/components/ui/card';
 import {Money} from '@/components/ui/money';
 import {EmptyState,ErrorState,Loading} from '@/components/ui/states';
 import {DetailGroup,ModalHero} from '@/components/finance-ui';
+import {InsuranceCoverageChips} from '@/components/insurance-coverage-chips';
 
 type InsightItem={title:string;detail:string;pages:number[];impact?:string};
 type InsightAnalysis={
@@ -91,6 +92,7 @@ export function InsurancePolicyDetailModal({open,onClose,policyId}:{open:boolean
             {label:'Penalización salida',value:<Money value={policy.contract?.early_exit_penalty}/>},
           ]:undefined}
         />
+        {policy&&<div className="mt-4"><InsuranceCoverageChips coverages={policy.coverages} limit={8} emptyText="Todavía no hay coberturas estructuradas para esta póliza."/></div>}
 
         {verdict.isLoading||insights.isLoading?<div className="mt-4"><Loading/></div>:verdict.error||insights.error?<div className="mt-4"><ErrorState error={(verdict.error||insights.error)!}/></div>:policy?<>
           <div className="mt-5 grid gap-4 lg:grid-cols-2">
